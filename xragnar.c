@@ -1,6 +1,7 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xcursor/Xcursor.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -8,11 +9,17 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+#include "config.h"
 
 #define CLIENT_WINDOW_CAP 256
+#define MONITOR_CAP 16
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
+
+typedef struct {
+    float x, y;
+} Vec2;
 
 typedef struct {
     Window win;
@@ -20,12 +27,9 @@ typedef struct {
 } Client;
 
 typedef struct {
-    float x, y;
-} Vec2;
-
-typedef struct {
     Display* display;
     Window root;
+    uint32_t focused_monitor;
 
     bool running;
 
@@ -57,11 +61,16 @@ static void handle_destroy_notify(XDestroyWindowEvent e);
 static int handle_x_error(Display* display, XErrorEvent* e);
 static int handle_wm_detected(Display* display, XErrorEvent* e);
 static void handle_button_press(XButtonEvent e);
-static void handle_button_relaese(XButtonEvent e);
+static void handle_button_release(XButtonEvent e);
 static void handle_key_press(XKeyEvent e);
 static void handle_key_release(XKeyEvent e);
 static bool client_window_exists(Window win);
+static int32_t get_client_index(Window win);
 static Atom* find_atom_ptr_range(Atom* ptr1, Atom* ptr2, Atom val);
+static void grab_global_input();
+static void grab_window_input(Window win);
+static void selected_focused_monitor(uint32_t x_cursor);
+static Vec2 get_cursor_position();
 
 XWM xwm_init() {
     XWM wm;
@@ -80,10 +89,6 @@ void xwm_terminate() {
 }
 
 void xwm_window_frame(Window win, bool created_before_window_manager) {
-    const uint32_t BORDER_WIDTH = 3;
-    const unsigned long BORDER_COLOR = 0x2b34d9;
-    const unsigned long BG_COLOR = 0xffffff;
-
     XWindowAttributes attribs;
 
     assert(XGetWindowAttributes(wm.display, win, &attribs) && "Failed to retrieve window attributes");
@@ -93,48 +98,53 @@ void xwm_window_frame(Window win, bool created_before_window_manager) {
             return;
         }
     }
+    // Calculate X Position of window based on the currently focused monitor
+    int32_t win_x = 0;
+    for(uint32_t i = 0; i < wm.focused_monitor + 1; i++) {
+        if(i > 0) 
+            win_x += Monitors[i - 1].width;
+        if(i == wm.focused_monitor)
+            win_x += Monitors[wm.focused_monitor].width / 2;
+    }
+    win_x -= attribs.width / 2;
 
-    Window win_frame = XCreateSimpleWindow(wm.display, wm.root, attribs.x, attribs.y, attribs.width, attribs.height, BORDER_WIDTH, BORDER_COLOR, BG_COLOR);
+    Window win_frame = XCreateSimpleWindow(wm.display, wm.root, 
+                                           win_x, 
+                                           (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
+                                           WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
 
     XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
-    XAddToSaveSet(wm.display, win);
     XReparentWindow(wm.display, win, win_frame, 0, 0);
 
     XMapWindow(wm.display, win_frame);
 
-    wm.client_windows[wm.clients_count].frame = win_frame;
-    wm.client_windows[wm.clients_count++].win = win;
-
-    XGrabButton(wm.display,Button1,Mod1Mask,win,false,ButtonPressMask | ButtonReleaseMask | ButtonMotionMask,
-                GrabModeAsync,GrabModeAsync,None,None);
-    XGrabButton(wm.display,Button3,Mod1Mask,win,false,ButtonPressMask | ButtonReleaseMask | ButtonMotionMask,
-                GrabModeAsync,GrabModeAsync,None,None);
-    XGrabKey(wm.display, XKeysymToKeycode(wm.display, XK_Q),Mod1Mask, win,false, GrabModeAsync, GrabModeAsync);
-    XGrabKey(wm.display,XKeysymToKeycode(wm.display, XK_Tab),Mod1Mask,win,false, GrabModeAsync,GrabModeAsync);
-    printf("HELLO\n");
+    wm.client_windows[wm.clients_count++] = (Client){.frame = win_frame, .win =  win};
+    grab_window_input(win);
 }
 
 void xwm_window_unframe(Window win) {
     Window frame_win = get_frame_window(win);
 
     XUnmapWindow(wm.display, frame_win);
-    XReparentWindow(wm.display, win, wm.root, 0, 0);
-    XRemoveFromSaveSet(wm.display, win);
+    XDestroyWindow(wm.display, win);
     XDestroyWindow(wm.display, frame_win);
-    for(uint64_t i = win; i < wm.clients_count - 1; i++)
+    for(uint32_t i = get_client_index(win); i < wm.clients_count - 1; i++)
         wm.client_windows[i] = wm.client_windows[i + 1];
-
+    XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
     wm.clients_count--;
-
 }
 void xwm_run() {
-    XSetErrorHandler(handle_wm_detected);
-    XSelectInput(wm.display, wm.root, SubstructureRedirectMask | SubstructureNotifyMask); 
-    XSync(wm.display, false);
     wm.clients_count = 0;
     wm.cursor_start_frame_size = (Vec2){ .x = 0.0f, .y = 0.0f};
     wm.cursor_start_frame_pos = (Vec2){ .x = 0.0f, .y = 0.0f};
-    wm.cursor_start_pos = (Vec2){ .x = 0.0f, .y = 0.0f};
+    wm.cursor_start_pos = (Vec2){ .x = 0.0f, .y = 0.0f}; 
+    wm.running = true;
+    wm.focused_monitor = 0;
+
+    XSetErrorHandler(handle_wm_detected);
+    XSelectInput(wm.display, wm.root, SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask | ButtonPressMask); 
+    XSync(wm.display, false);
+
     wm.ATOM_WM_DELETE_WINDOW = XInternAtom(wm.display, "WM_DELETE_WINDOW", false);
     wm.ATOM_WM_PROTOCOLS = XInternAtom(wm.display, "WM_PROTOCOLS", false);
 
@@ -142,28 +152,17 @@ void xwm_run() {
         printf("Another window manager is already running on this X display.\n");
         return;
     }
+    
+    Cursor cursor = XcursorLibraryLoadCursor(wm.display, "arrow");
+    XDefineCursor(wm.display, wm.root, cursor);
     XSetErrorHandler(handle_x_error);
 
-    XGrabServer(wm.display);
-
-    Window ret_root, ret_parent;
-    Window* top_level_windows;
-    uint32_t top_level_windows_count;
-    assert(XQueryTree(wm.display, wm.root, &ret_root, &ret_parent, &top_level_windows, &top_level_windows_count) 
-           && "Failed to query X tree");
-
-    for(uint32_t i = 0; i < top_level_windows_count; i++) {
-        xwm_window_frame(top_level_windows[i], true);
-    }
-    XFree(top_level_windows);
-    XUngrabServer(wm.display);
-    
-    wm.running = true;
-
-    XGrabKey(wm.display,XKeysymToKeycode(wm.display, XK_C),Mod1Mask, wm.root,false, GrabModeAsync,GrabModeAsync);
-    XGrabKey(wm.display,XKeysymToKeycode(wm.display, XK_Return),Mod1Mask, wm.root,false, GrabModeAsync,GrabModeAsync);
-    XGrabKey(wm.display,XKeysymToKeycode(wm.display, XK_W),Mod1Mask, wm.root,false, GrabModeAsync,GrabModeAsync);
+    grab_global_input();
+     
     while(wm.running) {
+        // Query mouse position to get focused monitor
+        selected_focused_monitor(get_cursor_position().x);
+
         XEvent e;
         XNextEvent(wm.display, &e);
         
@@ -196,7 +195,7 @@ void xwm_run() {
                 handle_button_press(e.xbutton);
                 break;
             case ButtonRelease:
-                handle_button_relaese(e.xbutton);
+                handle_button_release(e.xbutton);
                 break;
             case KeyPress:
                 handle_key_press(e.xkey);
@@ -221,7 +220,7 @@ Window get_frame_window(Window win) {
     return 0;
 }
 void handle_create_notify(XCreateWindowEvent e) {
-    
+   (void)e; 
 }
 void handle_configure_request(XConfigureRequestEvent e) {
     XWindowChanges changes;
@@ -240,22 +239,22 @@ void handle_configure_request(XConfigureRequestEvent e) {
 }
 
 void handle_configure_notify(XConfigureEvent e) {
-
+    (void)e;
 }
 void handle_motion_notify(XMotionEvent e) {
     assert(client_window_exists(e.window) && "Motion on unmapped window");
+    selected_focused_monitor(e.x_root);
+
     Window frame = get_frame_window(e.window);
     Vec2 drag_pos = (Vec2){.x = (float)e.x_root, .y = (float)e.y_root};
     Vec2 delta_drag = (Vec2){.x = drag_pos.x - wm.cursor_start_pos.x, .y = drag_pos.y - wm.cursor_start_pos.y};
 
     if(e.state & Button1Mask) {
-        /* Pressed alt + left mouse */
         Vec2 drag_dest = (Vec2){.x = (float)(wm.cursor_start_frame_pos.x + delta_drag.x), 
             .y = (float)(wm.cursor_start_frame_pos.y + delta_drag.y)};
         XMoveWindow(wm.display, frame, drag_dest.x, drag_dest.y);
 
     } else if(e.state & Button3Mask) {
-        /* Pressed alt + right mouse*/
         Vec2 resize_delta = (Vec2){.x = MAX(delta_drag.x, -wm.cursor_start_frame_size.x),
                                     .y = MAX(delta_drag.y, -wm.cursor_start_frame_size.y)};
         Vec2 resize_dest = (Vec2){.x = wm.cursor_start_frame_size.x + resize_delta.x, 
@@ -270,24 +269,32 @@ void handle_map_request(XMapRequestEvent e) {
     XMapWindow(wm.display, e.window);
 }
 int handle_x_error(Display* display, XErrorEvent* e) {
+    (void)display;
+    char err_msg[1024];
+    XGetErrorText(display, e->error_code, err_msg, sizeof(err_msg));
+    printf("X Error:\n\tRequest: %i\n\tError Code: %i - %s\n\tResource ID: %i\n", 
+           e->request_code, e->error_code, err_msg, (int)e->resourceid); 
     return 0;  
 }
 
 int handle_wm_detected(Display* display, XErrorEvent* e) {
+    (void)display;
     wm_detected = ((int32_t)e->error_code != BadAccess);
     return 0;
 }
 
 void handle_reparent_notify(XReparentEvent e) {
+    (void)e;
 }
 
 void handle_destroy_notify(XDestroyWindowEvent e) {
+    (void)e;
 }
 void handle_map_notify(XMapEvent e) {
+    (void)e;
 }
 void handle_unmap_notify(XUnmapEvent e) {
-    if(!client_window_exists(e.window) || e.event == wm.root) {
-        printf("Ignoring unmap of window %li. Not a client window\n", e.window);
+    if(!client_window_exists(e.window)) {
         return;
     }
     xwm_window_unframe(e.window);
@@ -304,10 +311,10 @@ void handle_button_press(XButtonEvent e) {
     wm.cursor_start_frame_size = (Vec2){.x = (float)width, .y = (float)height};
 
     XRaiseWindow(wm.display, frame);
-    XSetInputFocus(wm.display, frame, RevertToParent, CurrentTime);
+    XSetInputFocus(wm.display, e.window, RevertToParent, CurrentTime);
 }
-void handle_button_relaese(XButtonEvent e) {
-
+void handle_button_release(XButtonEvent e) {
+    (void)e;
 }
 
 Atom* find_atom_ptr_range(Atom* ptr1, Atom* ptr2, Atom val) {
@@ -320,7 +327,7 @@ Atom* find_atom_ptr_range(Atom* ptr1, Atom* ptr2, Atom val) {
     return ptr1;
 }
 void handle_key_press(XKeyEvent e) {
-    if(e.state & Mod1Mask && e.keycode == XKeysymToKeycode(wm.display, XK_Q)) {
+    if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CLOSE_KEY)) {
         Atom* protocols;
         int32_t num_protocols;
         if(XGetWMProtocols(wm.display, e.window, &protocols, &num_protocols)
@@ -337,8 +344,8 @@ void handle_key_press(XKeyEvent e) {
         } else {
             XKillClient(wm.display, e.window);
         }
-    } else if(e.state & Mod1Mask && e.keycode == XKeysymToKeycode(wm.display, XK_Tab)) {
-        Client client;
+    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY)) {
+        Client client = { 0 };
         for(uint32_t i = 0; i < wm.clients_count; i++) {
             if(wm.client_windows[i].win == e.window ||
                 wm.client_windows[i].frame == e.window) {
@@ -352,24 +359,65 @@ void handle_key_press(XKeyEvent e) {
         }
         XRaiseWindow(wm.display, client.frame);
         XSetInputFocus(wm.display, client.win, RevertToParent, CurrentTime);
-    } else if(e.state & Mod1Mask && e.keycode == XKeysymToKeycode(wm.display, XK_C)) {
+    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WM_TERMINATE_KEY)) {
         wm.running = false;
-    } else if(e.state & Mod1Mask && e.keycode == XKeysymToKeycode(wm.display, XK_Return)) {
-        system("alacritty &");   
-    } else if(e.state & Mod1Mask && e.keycode == XKeysymToKeycode(wm.display, XK_W)) {
-
-        system("chromium &");   
+    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, TERMINAL_OPEN_KEY)) {
+        system(TERMINAL_CMD);  
+    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WEB_BROWSER_KEY)) {
+        system(WEB_BROWSER_CMD);   
     }
 }
 void handle_key_release(XKeyEvent e) {
-
+    (void)e;
 }
 bool client_window_exists(Window win) {
     for(uint32_t i = 0; i < wm.clients_count; i++) {
         if(wm.client_windows[i].win == win) return true;
     }
-
     return false;
+}
+
+
+int32_t get_client_index(Window win) {
+    for(uint32_t i = 0; i < wm.clients_count; i++) {
+        if(wm.client_windows[i].win == win) return i;
+    }
+    return -1;
+}
+
+static void grab_global_input() {     
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WM_TERMINATE_KEY),MASTER_KEY, wm.root,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, TERMINAL_OPEN_KEY),MASTER_KEY, wm.root,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WEB_BROWSER_KEY),MASTER_KEY, wm.root, false, GrabModeAsync,GrabModeAsync);
+
+}
+static void grab_window_input(Window win) {
+    XGrabButton(wm.display,Button1,MASTER_KEY,win,false,ButtonPressMask | ButtonReleaseMask | ButtonMotionMask,
+                GrabModeAsync,GrabModeAsync,None,None);
+    XGrabButton(wm.display,Button3,MASTER_KEY,win,false,ButtonPressMask | ButtonReleaseMask | ButtonMotionMask,
+                GrabModeAsync,GrabModeAsync,None,None);
+    XGrabKey(wm.display, XKeysymToKeycode(wm.display, WINDOW_CLOSE_KEY),MASTER_KEY, win,false, GrabModeAsync, GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
+}
+
+void selected_focused_monitor(uint32_t x_cursor) {
+    uint32_t x_offset = 0;
+    for(uint32_t i = 0; i < MONITOR_COUNT; i++) {
+        if(x_cursor >= x_offset && x_cursor <= Monitors[i].width + x_offset) {
+            wm.focused_monitor = i;
+            break;
+        }
+        x_offset += Monitors[i].width;
+    }
+}
+
+static Vec2 get_cursor_position() {
+    Window root_return, child_return;
+    int win_x_return, win_y_return, root_x_return, root_y_return; 
+    uint32_t mask_return;
+    XQueryPointer(wm.display, wm.root, &root_return, &child_return, &root_x_return, &root_y_return, 
+        &win_x_return, &win_y_return, &mask_return);
+    return (Vec2){.x = root_x_return, .y = root_y_return};  
 }
 
 int main(void) {

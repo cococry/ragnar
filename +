@@ -1,0 +1,26 @@
+#pragma once
+
+/* Commands */
+#define TERMINAL_CMD "alacritty &"
+#define WEB_BROWSER_CMD "chromium &"
+
+/* Keybindings */
+#define MASTER_KEY Mod1Mask // super key
+#define TERMINAL_OPEN_KEY XK_Return // enter key
+#define WM_TERMINATE_KEY XK_C
+#define WEB_BROWSER_KEY XK_W
+#define WINDOW_CLOSE_KEY XK_Q
+#define WINDOW_CYCLE_KEY XK_Tab
+
+/* Window properties */
+#define WINDOW_BG_COLOR 0x000000 // black
+#define WINDOW_BORDER_WIDTH 3 
+#define WINDOW_BORDER_COLOR 0x2b34d9 // darkblue
+
+/* Monitors */
+// Ordered From left to right (0 is most left)
+//
+#define MONITOR_0_WIDTH 1920
+#define MONITOR_0_HEIGHT 1080
+#define MONITOR_1_WIDTH 2560
+#define MONITOR_1_HEIGHT 1440
