@@ -455,6 +455,7 @@ static void unset_fullscreen(Window win)  {
 
     Window frame = get_frame_window(win);
     XSetWindowBorderWidth(wm.display, frame, WINDOW_BORDER_WIDTH);
+    wm.client_windows[client_index].fullscreen = false;
     XMoveResizeWindow(wm.display, frame, 
         get_focused_monitor_start_x(),
         0,
