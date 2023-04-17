@@ -12,10 +12,13 @@
 #include "config.h"
 
 #define CLIENT_WINDOW_CAP 256
-#define MONITOR_CAP 16
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
+
+typedef enum {
+    WINDOW_LAYOUT_TILED_MASTER = 0
+} WindowLayout;
 
 typedef struct {
     float x, y;
@@ -26,6 +29,7 @@ typedef struct {
     Window frame;
     bool fullscreen;
     Vec2 fullscreen_revert_size;
+    uint8_t monitor_index;
 } Client;
 
 typedef struct {
@@ -42,8 +46,7 @@ typedef struct {
         cursor_start_frame_pos, 
         cursor_start_frame_size;
 
-    Atom ATOM_WM_DELETE_WINDOW;
-    Atom ATOM_WM_PROTOCOLS;
+    WindowLayout current_layout;
 } XWM;
 
 
@@ -76,6 +79,9 @@ static int32_t get_focused_monitor_window_center_x(int32_t window_x);
 static int32_t get_focused_monitor_start_x();
 static void set_fullscreen(Window win);
 static void unset_fullscreen(Window win);
+static void establish_window_layout();
+static void move_client(Client* client, Vec2 pos);
+static void resize_client(Client* client, Vec2 size);
 
 XWM xwm_init() {
     XWM wm;
@@ -115,8 +121,11 @@ void xwm_window_frame(Window win, bool created_before_window_manager) {
 
     XMapWindow(wm.display, win_frame);
 
-    wm.client_windows[wm.clients_count++] = (Client){.frame = win_frame, .win =  win, .fullscreen = attribs.width >=    (int32_t)Monitors[wm.focused_monitor].width && attribs.height >= (int32_t)Monitors[wm.focused_monitor].height};
+    wm.client_windows[wm.clients_count++] = (Client){.frame = win_frame, .win =  win, 
+        .fullscreen = attribs.width >= (int32_t)Monitors[wm.focused_monitor].width && attribs.height >= (int32_t)Monitors[wm.focused_monitor].height, 
+        .monitor_index = wm.focused_monitor};
     grab_window_input(win);
+    establish_window_layout();
 }
 
 void xwm_window_unframe(Window win) {
@@ -128,6 +137,7 @@ void xwm_window_unframe(Window win) {
         wm.client_windows[i] = wm.client_windows[i + 1];
     XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
     wm.clients_count--;
+    establish_window_layout();
 }
 void xwm_run() {
     wm.clients_count = 0;
@@ -135,15 +145,12 @@ void xwm_run() {
     wm.cursor_start_frame_pos = (Vec2){ .x = 0.0f, .y = 0.0f};
     wm.cursor_start_pos = (Vec2){ .x = 0.0f, .y = 0.0f}; 
     wm.running = true;
-    wm.focused_monitor = 0;
+    wm.focused_monitor = MONITOR_COUNT - 1;
+    wm.current_layout = WINDOW_LAYOUT_TILED_MASTER;
 
     XSetErrorHandler(handle_wm_detected);
     XSelectInput(wm.display, wm.root, SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask | ButtonPressMask); 
     XSync(wm.display, false);
-
-    wm.ATOM_WM_DELETE_WINDOW = XInternAtom(wm.display, "WM_DELETE_WINDOW", false);
-    wm.ATOM_WM_PROTOCOLS = XInternAtom(wm.display, "WM_PROTOCOLS", false);
-
     if(wm_detected) {
         printf("Another window manager is already running on this X display.\n");
         return;
@@ -158,7 +165,6 @@ void xwm_run() {
     while(wm.running) {
         // Query mouse position to get focused monitor
         selected_focused_monitor(get_cursor_position().x);
-
         XEvent e;
         XNextEvent(wm.display, &e);
         
@@ -241,27 +247,23 @@ void handle_motion_notify(XMotionEvent e) {
     assert(client_window_exists(e.window) && "Motion on unmapped window");
     selected_focused_monitor(e.x_root);
 
-    Window frame = get_frame_window(e.window);
     Vec2 drag_pos = (Vec2){.x = (float)e.x_root, .y = (float)e.y_root};
     Vec2 delta_drag = (Vec2){.x = drag_pos.x - wm.cursor_start_pos.x, .y = drag_pos.y - wm.cursor_start_pos.y};
 
     if(e.state & Button1Mask) {
         Vec2 drag_dest = (Vec2){.x = (float)(wm.cursor_start_frame_pos.x + delta_drag.x), 
             .y = (float)(wm.cursor_start_frame_pos.y + delta_drag.y)};
-        XMoveWindow(wm.display, frame, drag_dest.x, drag_dest.y);
         if(wm.client_windows[get_client_index(e.window)].fullscreen) {
             wm.client_windows[get_client_index(e.window)].fullscreen = false;
-            XSetWindowBorderWidth(wm.display, frame, WINDOW_BORDER_WIDTH);
-        }
-
+            XSetWindowBorderWidth(wm.display, wm.client_windows[get_client_index(e.window)].frame, WINDOW_BORDER_WIDTH);
+        } 
+        move_client(&wm.client_windows[get_client_index(e.window)], drag_dest);
     } else if(e.state & Button3Mask) {
-        if(wm.client_windows[get_client_index(e.window)].fullscreen) return; 
         Vec2 resize_delta = (Vec2){.x = MAX(delta_drag.x, -wm.cursor_start_frame_size.x),
                                     .y = MAX(delta_drag.y, -wm.cursor_start_frame_size.y)};
         Vec2 resize_dest = (Vec2){.x = wm.cursor_start_frame_size.x + resize_delta.x, 
                                     .y = wm.cursor_start_frame_size.y + resize_delta.y};
-        XResizeWindow(wm.display, frame, resize_dest.x, resize_dest.y);
-        XResizeWindow(wm.display, e.window, resize_dest.x, resize_dest.y);
+        resize_client(&wm.client_windows[get_client_index(e.window)], resize_dest);
     }
 }
 
@@ -323,11 +325,12 @@ void handle_key_press(XKeyEvent e) {
         XEvent msg;
         memset(&msg, 0, sizeof(msg));
         msg.xclient.type = ClientMessage;
-        msg.xclient.message_type = wm.ATOM_WM_PROTOCOLS;
+        msg.xclient.message_type =  XInternAtom(wm.display, "WM_PROTOCOLS", false);
         msg.xclient.window = e.window;
         msg.xclient.format = 32;
-        msg.xclient.data.l[0] = wm.ATOM_WM_DELETE_WINDOW;
+        msg.xclient.data.l[0] = XInternAtom(wm.display, "WM_DELETE_WINDOW", false);
         XSendEvent(wm.display, e.window, false, 0, &msg);
+        //establish_window_layout();
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY)) {
         Client client = { 0 };
         for(uint32_t i = 0; i < wm.clients_count; i++) {
@@ -435,35 +438,79 @@ int32_t get_focused_monitor_start_x() {
 
 static void set_fullscreen(Window win) {
     uint32_t client_index = get_client_index(win);
-    if(wm.client_windows[client_index].fullscreen) return;
-
-    XWindowAttributes attribs;
-    XGetWindowAttributes(wm.display, win, &attribs);
-    wm.client_windows[client_index].fullscreen = true;
-    wm.client_windows[client_index].fullscreen_revert_size = (Vec2){.x = attribs.width, .y = attribs.height};
-
-    Window frame = get_frame_window(win);
-    XSetWindowBorderWidth(wm.display, frame, 0);
-    XMoveResizeWindow(wm.display, frame, get_focused_monitor_start_x(), 0, 
-        Monitors[wm.focused_monitor].width, Monitors[wm.focused_monitor].height);
-    XResizeWindow(wm.display, win, 
-        Monitors[wm.focused_monitor].width, Monitors[wm.focused_monitor].height);
+    resize_client(&wm.client_windows[client_index], (Vec2){. x = Monitors[wm.focused_monitor].width, .y = Monitors[wm.focused_monitor].height});
+    move_client(&wm.client_windows[client_index], (Vec2){.x = get_focused_monitor_start_x(), 0});
 }
 static void unset_fullscreen(Window win)  {
     uint32_t client_index = get_client_index(win);
-    if(!wm.client_windows[client_index].fullscreen) return;
+    resize_client(&wm.client_windows[client_index], wm.client_windows[client_index].fullscreen_revert_size);
+    move_client(&wm.client_windows[client_index], (Vec2){get_focused_monitor_start_x(), 0});
+}
 
-    Window frame = get_frame_window(win);
-    XSetWindowBorderWidth(wm.display, frame, WINDOW_BORDER_WIDTH);
-    wm.client_windows[client_index].fullscreen = false;
-    XMoveResizeWindow(wm.display, frame, 
-        get_focused_monitor_start_x(),
-        0,
-        wm.client_windows[client_index].fullscreen_revert_size.x,
-        wm.client_windows[client_index].fullscreen_revert_size.y);
-    XResizeWindow(wm.display, win, 
-        wm.client_windows[client_index].fullscreen_revert_size.x,
-        wm.client_windows[client_index].fullscreen_revert_size.y);
+void move_client(Client* client, Vec2 pos) {
+    XMoveWindow(wm.display, client->frame, pos.x, pos.y);
+}
+void resize_client(Client* client, Vec2 size) {
+    XWindowAttributes attribs;
+    XGetWindowAttributes(wm.display, client->win, &attribs);
+    if(size.x >= Monitors[wm.focused_monitor].width || size.y >= Monitors[wm.focused_monitor].height) {
+        client->fullscreen = true;
+        XSetWindowBorderWidth(wm.display, client->frame, 0);
+        client->fullscreen_revert_size = (Vec2){.x = attribs.width, .y = attribs.height};
+    } else {
+        client->fullscreen = false;
+        XSetWindowBorderWidth(wm.display, client->frame, WINDOW_BORDER_WIDTH);
+    }
+    XResizeWindow(wm.display, client->win, size.x, size.y);
+    XResizeWindow(wm.display, client->frame, size.x, size.y);
+}
+
+
+void establish_window_layout() {
+    int32_t master_index = -1;
+    uint32_t clients_on_monitor = 0;
+    bool found_master = false;
+    for(uint32_t i = 0; i < wm.clients_count; i++) {
+        if(wm.client_windows[i].monitor_index == wm.focused_monitor)  {
+            if(!found_master) {
+                master_index = i;
+                found_master = true;
+            }
+            clients_on_monitor++;
+        }
+    }
+    if(clients_on_monitor == 0 || !found_master) return;
+    Client* master = &wm.client_windows[master_index];
+    if(wm.current_layout == WINDOW_LAYOUT_TILED_MASTER) {
+        // set master fullscreen if no slaves
+        if(clients_on_monitor == 1) {
+            set_fullscreen(master->frame);
+            return;
+        }
+            
+        // set master
+        move_client(master, (Vec2){get_focused_monitor_start_x(), 0});
+        resize_client(master, (Vec2){
+            .x = (int32_t)(Monitors[wm.focused_monitor].width / 2),
+            .y = Monitors[wm.focused_monitor].height});
+        master->fullscreen = false;
+        XSetWindowBorderWidth(wm.display, master->frame, WINDOW_BORDER_WIDTH);
+
+        // set slaves
+        for(uint32_t i = 1; i < clients_on_monitor; i++) {
+            uint32_t client_index = master_index + i;
+            if(wm.client_windows[client_index].monitor_index != wm.focused_monitor) continue;
+            resize_client(&wm.client_windows[client_index], (Vec2){
+                (int32_t)(Monitors[wm.focused_monitor].width / 2),
+                (int32_t)(Monitors[wm.focused_monitor].height / (clients_on_monitor - 1))
+            });
+
+            move_client(&wm.client_windows[client_index], (Vec2){
+                get_focused_monitor_start_x() + (int32_t)(Monitors[wm.focused_monitor].width / 2),
+                Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (clients_on_monitor - 1) * i))
+            });
+        }
+    }    
 }
 int main(void) {
     wm = xwm_init();
