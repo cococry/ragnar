@@ -10,18 +10,25 @@ typedef struct {
 #define WEB_BROWSER_CMD "chromium &"
 
 /* Keybindings */
-#define MASTER_KEY Mod1Mask // super key
-#define TERMINAL_OPEN_KEY XK_Return // enter key
+#define MASTER_KEY Mod1Mask 
+#define TERMINAL_OPEN_KEY XK_Return
+#define WEB_BROWSER_OPEN_KEY XK_W
 #define WM_TERMINATE_KEY XK_C
-#define WEB_BROWSER_KEY XK_W
 #define WINDOW_CLOSE_KEY XK_Q
 #define WINDOW_CYCLE_KEY XK_Tab
-#define FULLSCREEN_KEY XK_F
+#define WINDOW_ADD_TO_LAYOUT_KEY XK_space
+#define WINDOW_LAYOUT_MOVE_UP_KEY XK_Up
+#define WINDOW_LAYOUT_MOVE_DOWN_KEY XK_Down
+#define WINDOW_LAYOUT_DECREASE_MASTER_X XK_H
+#define WINDOW_LAYOUT_INCREASE_MASTER_X XK_L
+#define WINDOW_FULLSCREEN_KEY XK_F
+#define WINDOW_LAYOUT_TILED_MASTER_KEY XK_T
+#define WINDOW_LAYOUT_FLOATING_KEY XK_R
 
 /* Window properties */
 #define WINDOW_BG_COLOR 0x32302f // black
 #define WINDOW_BORDER_WIDTH 3 
-#define WINDOW_BORDER_COLOR 0x242424 // darkblue
+#define WINDOW_BORDER_COLOR 0x242424 //  gray
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
