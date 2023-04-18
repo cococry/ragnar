@@ -467,23 +467,18 @@ void resize_client(Client* client, Vec2 size) {
 
 
 void establish_window_layout() {
-    int32_t master_index = -1;
-    uint32_t clients_on_monitor = 0;
-    bool found_master = false;
+    Client* clients[CLIENT_WINDOW_CAP]; 
+    uint32_t client_count = 0;
     for(uint32_t i = 0; i < wm.clients_count; i++) {
-        if(wm.client_windows[i].monitor_index == wm.focused_monitor)  {
-            if(!found_master) {
-                master_index = i;
-                found_master = true;
-            }
-            clients_on_monitor++;
+        if(wm.client_windows[i].monitor_index == wm.focused_monitor) {
+            clients[client_count++] = &wm.client_windows[i];
         }
     }
-    if(clients_on_monitor == 0 || !found_master) return;
-    Client* master = &wm.client_windows[master_index];
+    if(client_count == 0) return;
+    Client* master = clients[0];
     if(wm.current_layout == WINDOW_LAYOUT_TILED_MASTER) {
         // set master fullscreen if no slaves
-        if(clients_on_monitor == 1) {
+        if(client_count == 1) {
             set_fullscreen(master->frame);
             return;
         }
@@ -497,17 +492,16 @@ void establish_window_layout() {
         XSetWindowBorderWidth(wm.display, master->frame, WINDOW_BORDER_WIDTH);
 
         // set slaves
-        for(uint32_t i = 1; i < clients_on_monitor; i++) {
-            uint32_t client_index = master_index + i;
-            if(wm.client_windows[client_index].monitor_index != wm.focused_monitor) continue;
-            resize_client(&wm.client_windows[client_index], (Vec2){
+        for(uint32_t i = 1; i < client_count; i++) {
+            if(clients[i]->monitor_index != wm.focused_monitor) continue;
+            resize_client(clients[i], (Vec2){
                 (int32_t)(Monitors[wm.focused_monitor].width / 2),
-                (int32_t)(Monitors[wm.focused_monitor].height / (clients_on_monitor - 1))
+                (int32_t)(Monitors[wm.focused_monitor].height / (client_count - 1))
             });
 
-            move_client(&wm.client_windows[client_index], (Vec2){
+            move_client(clients[i], (Vec2){
                 get_focused_monitor_start_x() + (int32_t)(Monitors[wm.focused_monitor].width / 2),
-                Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (clients_on_monitor - 1) * i))
+                Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (client_count - 1) * i))
             });
         }
     }    
