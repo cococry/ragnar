@@ -52,6 +52,7 @@ typedef struct {
 
     WindowLayout current_layout;
     uint32_t layout_master_size_x[MONITOR_COUNT];
+    uint32_t window_gap;
 } XWM;
 
 
@@ -172,6 +173,7 @@ void xwm_run() {
     wm.running = true;
     wm.focused_monitor = MONITOR_COUNT - 1;
     wm.current_layout = WINDOW_LAYOUT_TILED_MASTER;
+    wm.window_gap = 10;
     memset(wm.layout_master_size_x, 0, sizeof(wm.layout_master_size_x));
     
     XSetErrorHandler(handle_wm_detected);
@@ -406,12 +408,12 @@ void handle_key_press(XKeyEvent e) {
         move_client_up_layout(&wm.client_windows[get_client_index_window(e.window)]);
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_MOVE_DOWN_KEY)) {
         move_client_down_layout(&wm.client_windows[get_client_index_window(e.window)]);
-    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_MASTER_X)) {
+    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_MASTER_X_KEY)) {
         if(wm.layout_master_size_x[wm.focused_monitor] <= (uint32_t)(Monitors[wm.focused_monitor].width / 1.5)) 
             wm.layout_master_size_x[wm.focused_monitor] += 20;
         establish_window_layout();
         
-    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_DECREASE_MASTER_X)) {
+    } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_DECREASE_MASTER_X_KEY)) {
         if(wm.layout_master_size_x[wm.focused_monitor] >= (uint32_t)(Monitors[wm.focused_monitor].width / 6)) 
             wm.layout_master_size_x[wm.focused_monitor] -= 20;
         establish_window_layout();
@@ -419,7 +421,15 @@ void handle_key_press(XKeyEvent e) {
         wm.current_layout = WINDOW_LAYOUT_TILED_MASTER;
     } else if(e.state & (MASTER_KEY | ShiftMask) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_FLOATING_KEY)) {
         wm.current_layout = WINDOW_LAYOUT_FLOATING;
+    }else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_GAP_INCREASE_KEY)) {
+        wm.window_gap += 2;
+        establish_window_layout();
+    }else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_GAP_DECREASE_KEY)) {
+        wm.window_gap -= 2;
+        establish_window_layout();
     }
+
+
 }
 void handle_key_release(XKeyEvent e) {
     (void)e;
@@ -458,10 +468,12 @@ static void grab_window_input(Window win) {
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_ADD_TO_LAYOUT_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_MOVE_UP_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_MOVE_DOWN_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
-    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_DECREASE_MASTER_X),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
-    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_MASTER_X),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_DECREASE_MASTER_X_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_MASTER_X_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_TILED_MASTER_KEY),MASTER_KEY | ShiftMask,win,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_FLOATING_KEY),MASTER_KEY | ShiftMask,win,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_GAP_INCREASE_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_GAP_DECREASE_KEY),MASTER_KEY,win,false, GrabModeAsync,GrabModeAsync);
 }
 
 void select_focused_monitor(uint32_t x_cursor) {
@@ -567,10 +579,10 @@ void establish_window_layout() {
         }
             
         // set master
-        move_client(master, (Vec2){get_monitor_start_x(wm.focused_monitor), 0});
+        move_client(master, (Vec2){get_monitor_start_x(wm.focused_monitor) + wm.window_gap, wm.window_gap});
         resize_client(master, (Vec2){
-            .x = wm.layout_master_size_x[wm.focused_monitor],
-            .y = Monitors[wm.focused_monitor].height});
+            .x = wm.layout_master_size_x[wm.focused_monitor] - wm.window_gap,
+            .y = Monitors[wm.focused_monitor].height - (wm.window_gap * 2)});
         master->fullscreen = false;
         XSetWindowBorderWidth(wm.display, master->frame, WINDOW_BORDER_WIDTH);
 
@@ -578,13 +590,13 @@ void establish_window_layout() {
         for(uint32_t i = 1; i < client_count; i++) {
             if(clients[i]->monitor_index != wm.focused_monitor) continue;
             resize_client(clients[i], (Vec2){
-                Monitors[wm.focused_monitor].width - wm.layout_master_size_x[wm.focused_monitor],
-                (int32_t)(Monitors[wm.focused_monitor].height / (client_count - 1))
+                (Monitors[wm.focused_monitor].width - wm.layout_master_size_x[wm.focused_monitor]) - wm.window_gap * 2.5f,
+                (int32_t)(Monitors[wm.focused_monitor].height / (client_count - 1)) - wm.window_gap * 2
             });
 
             move_client(clients[i], (Vec2){
-                get_monitor_start_x(wm.focused_monitor) + wm.layout_master_size_x[wm.focused_monitor],
-                Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (client_count - 1) * i))
+                (get_monitor_start_x(wm.focused_monitor) + wm.layout_master_size_x[wm.focused_monitor]) + wm.window_gap,
+                (Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (client_count - 1) * i))) + wm.window_gap
             });
         }
     }    
