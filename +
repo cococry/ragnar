@@ -625,45 +625,24 @@ void establish_window_layout() {
         XSetWindowBorderWidth(wm.display, master->frame, WINDOW_BORDER_WIDTH);
 
         // set slaves
-        int32_t last_y_offset = 0;
         for(uint32_t i = 1; i < client_count; i++) {
             if(clients[i]->monitor_index != wm.focused_monitor) continue;
             resize_client(clients[i], (Vec2){
                 (Monitors[wm.focused_monitor].width - wm.layout_master_size_x[wm.focused_monitor]) - wm.window_gap * 2.35f, 
                 (int32_t)(Monitors[wm.focused_monitor].height / (client_count - 1)) 
+                - wm.window_gap * 2
                 + clients[i]->layout_y_size_offset
-                - last_y_offset
-                - wm.window_gap * 2 
             });
 
             move_client(clients[i], (Vec2){
                 (get_monitor_start_x(wm.focused_monitor) + wm.layout_master_size_x[wm.focused_monitor]) + wm.window_gap,
                 (Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (client_count - 1) * i)))
-                - ((i != client_count - 1) ? clients[i]->layout_y_size_offset : 0)
                 + wm.window_gap
             });
-
-            // The top window in the layout has to be treated diffrently 
-            // for the y size offset. This is because 
-            // there is no window on top of it which it can modify
-            // the y size offset of. 
-            if(i == client_count - 1) {
-                XWindowAttributes attribs;
-                XGetWindowAttributes(wm.display, clients[i - 1]->frame, &attribs);
-                resize_client(clients[i - 1], (Vec2){
-                    .x = attribs.width,
-                    .y = attribs.height - clients[i]->layout_y_size_offset
-                });
-                move_client(clients[i - 1], (Vec2){
-                    .x = attribs.x,
-                    .y = attribs.y + clients[i]->layout_y_size_offset
-                });
-            }
-
-            last_y_offset = clients[i]->layout_y_size_offset;
         }
     }    
 }
+
 
 void move_client_up_layout(Client* client) {
     int32_t client_index = get_client_index(*client);

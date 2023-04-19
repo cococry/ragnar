@@ -7,7 +7,7 @@ typedef struct {
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
-#define WEB_BROWSER_CMD "chromium &"
+#define WEB_BROWSER_CMD "brave &"
 
 /* Keybindings */
 #define MASTER_KEY Mod1Mask 
@@ -21,6 +21,8 @@ typedef struct {
 #define WINDOW_LAYOUT_MOVE_DOWN_KEY XK_Down
 #define WINDOW_LAYOUT_INCREASE_MASTER_X_KEY XK_L
 #define WINDOW_LAYOUT_DECREASE_MASTER_X_KEY XK_H
+#define WINDOW_LAYOUT_INCREASE_SLAVE_Y_KEY XK_K
+#define WINDOW_LAYOUT_DECREASE_SLAVE_Y_KEY XK_J
 #define WINDOW_GAP_INCREASE_KEY XK_plus
 #define WINDOW_GAP_DECREASE_KEY XK_minus
 #define WINDOW_FULLSCREEN_KEY XK_F
