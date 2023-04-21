@@ -10,7 +10,6 @@ also has good looking aestetics.
 
 ## Plans
 
-- Adding Tiling layouts
 - Adding a Menu/Status bar
 - Adding Workspaces
 - Keeping the code clean and bloatless
