@@ -84,7 +84,7 @@ static void     grab_window_input(Window win);
 static Vec2     get_cursor_position();
 
 static void     select_focused_monitor(uint32_t x_cursor);
-static int32_t  get_monitor_index_by_x_pos(int32_t xpos);
+static int32_t  get_monitor_index_by_window(int32_t xpos, int32_t window_width);
 static int32_t  get_focused_monitor_window_center_x(int32_t window_x);
 static int32_t  get_monitor_start_x(int32_t monitor);
 static uint32_t client_count_on_monitor(int32_t monitor);
@@ -149,8 +149,9 @@ void xwm_window_frame(Window win, bool created_before_window_manager) {
 
     wm.focused_client = wm.clients_count - 1;
 
+    XSetInputFocus(wm.display, win, RevertToParent, CurrentTime);
     grab_window_input(win);
-    establish_window_layout();
+    establish_window_layout(); 
 }
 
 void xwm_window_unframe(Window win) {
@@ -161,14 +162,13 @@ void xwm_window_unframe(Window win) {
         wm.layout_master_size_x[wm.focused_monitor] = 0;
     }
     XUnmapWindow(wm.display, frame_win);
+    XReparentWindow(wm.display, win, wm.root, 0, 0);
     XDestroyWindow(wm.display, frame_win);
-    
     // Removing the window from the clients
     for(uint32_t i = get_client_index_window(win); i < wm.clients_count - 1; i++)
         wm.client_windows[i] = wm.client_windows[i + 1];
     wm.clients_count--;
 
-    XSetInputFocus(wm.display, wm.root, RevertToParent, CurrentTime);
     establish_window_layout();
 }
 void xwm_run() {
@@ -257,7 +257,7 @@ Window get_frame_window(Window win) {
     return 0;
 }
 void handle_create_notify(XCreateWindowEvent e) {
-   (void)e; 
+  (void)e;
 }
 void handle_configure_request(XConfigureRequestEvent e) {
     XWindowChanges changes;
@@ -300,7 +300,9 @@ void handle_motion_notify(XMotionEvent e) {
             client->in_layout = false;
             establish_window_layout();
         }
-        client->monitor_index = get_monitor_index_by_x_pos(drag_dest.x); 
+        XWindowAttributes attribs;
+        XGetWindowAttributes(wm.display, e.window, &attribs);
+        client->monitor_index = get_monitor_index_by_window(drag_dest.x, attribs.width); 
     } else if(e.state & Button3Mask) {
         Vec2 resize_delta = (Vec2){.x = MAX(delta_drag.x, -wm.cursor_start_frame_size.x),
                                     .y = MAX(delta_drag.y, -wm.cursor_start_frame_size.y)};
@@ -509,9 +511,9 @@ void select_focused_monitor(uint32_t x_cursor) {
     }
 }
 
-int32_t get_monitor_index_by_x_pos(int32_t xpos) {
+int32_t get_monitor_index_by_window(int32_t xpos, int32_t window_width) {
     for(int32_t i = 0; i < MONITOR_COUNT; i++) {
-        if(xpos >= get_monitor_start_x(i) && xpos <= (int32_t)(get_monitor_start_x(i) + Monitors[i].width)) {
+        if(xpos >= (get_monitor_start_x(i) - window_width) && xpos <= (int32_t)(get_monitor_start_x(i) + Monitors[i].width + window_width)) {
             return i;
         }
     }
@@ -628,6 +630,7 @@ void establish_window_layout() {
         int32_t last_y_offset = 0;
         for(uint32_t i = 1; i < client_count; i++) {
             if(clients[i]->monitor_index != wm.focused_monitor) continue;
+            clients[i]->fullscreen = false;
             resize_client(clients[i], (Vec2){
                 (Monitors[wm.focused_monitor].width - wm.layout_master_size_x[wm.focused_monitor]) - wm.window_gap * 2.35f, 
                 (int32_t)(Monitors[wm.focused_monitor].height / (client_count - 1)) 
