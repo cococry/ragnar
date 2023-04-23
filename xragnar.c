@@ -84,7 +84,7 @@ static void     grab_window_input(Window win);
 static Vec2     get_cursor_position();
 
 static void     select_focused_monitor(uint32_t x_cursor);
-static int32_t  get_monitor_index_by_window(int32_t xpos, int32_t window_width);
+static int32_t  get_monitor_index_by_window(int32_t xpos);
 static int32_t  get_focused_monitor_window_center_x(int32_t window_x);
 static int32_t  get_monitor_start_x(int32_t monitor);
 static uint32_t client_count_on_monitor(int32_t monitor);
@@ -301,9 +301,7 @@ void handle_motion_notify(XMotionEvent e) {
             client->in_layout = false;
             establish_window_layout();
         }
-        XWindowAttributes attribs;
-        XGetWindowAttributes(wm.display, e.window, &attribs);
-        client->monitor_index = get_monitor_index_by_window(drag_dest.x, attribs.width); 
+        client->monitor_index = get_monitor_index_by_window(drag_dest.x); 
     } else if(e.state & Button3Mask) {
         Vec2 resize_delta = (Vec2){.x = MAX(delta_drag.x, -wm.cursor_start_frame_size.x),
                                     .y = MAX(delta_drag.y, -wm.cursor_start_frame_size.y)};
@@ -373,7 +371,7 @@ void handle_button_release(XButtonEvent e) {
 }
 
 void handle_key_press(XKeyEvent e) {
-    int32_t client_index = client_index;
+    int32_t client_index = get_client_index_window(e.window);
     if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CLOSE_KEY)) {
         XEvent msg;
         memset(&msg, 0, sizeof(msg));
@@ -512,9 +510,9 @@ void select_focused_monitor(uint32_t x_cursor) {
     }
 }
 
-int32_t get_monitor_index_by_window(int32_t xpos, int32_t window_width) {
+int32_t get_monitor_index_by_window(int32_t xpos) {
     for(int32_t i = 0; i < MONITOR_COUNT; i++) {
-        if(xpos >= (get_monitor_start_x(i) - window_width) && xpos <= (int32_t)(get_monitor_start_x(i) + Monitors[i].width + window_width)) {
+        if(xpos >= get_monitor_start_x(i) && xpos <= (int32_t)(get_monitor_start_x(i) + Monitors[i].width)) {
             return i;
         }
     }
@@ -571,7 +569,6 @@ static void set_fullscreen(Window win) {
 
     resize_client(&wm.client_windows[client_index], (Vec2){. x = Monitors[wm.focused_monitor].width, .y = Monitors[wm.focused_monitor].height});
     move_client(&wm.client_windows[client_index], (Vec2){.x = get_monitor_start_x(wm.focused_monitor), 0});
-    XRaiseWindow(wm.display, win);
 }
 static void unset_fullscreen(Window win)  {
     uint32_t client_index = get_client_index_window(win);
@@ -634,7 +631,6 @@ void establish_window_layout() {
         int32_t last_y_offset = 0;
         for(uint32_t i = 1; i < client_count; i++) {
             if(clients[i]->monitor_index != wm.focused_monitor) continue;
-            clients[i]->fullscreen = false;
             resize_client(clients[i], (Vec2){
                 (Monitors[wm.focused_monitor].width - wm.layout_master_size_x[wm.focused_monitor]) - wm.window_gap * 2.35f, 
                 (int32_t)(Monitors[wm.focused_monitor].height / (client_count - 1)) 
