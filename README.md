@@ -1,5 +1,6 @@
 # XRagnar
 
+<img src="https://github.com/cococry/Xragnar/blob/main/branding/workflow.png" width="800"/>
 ## Overview
 
 XRagnar is a minimal window manager for X written in C.
