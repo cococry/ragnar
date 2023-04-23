@@ -169,13 +169,14 @@ void xwm_window_unframe(Window win) {
         wm.client_windows[i] = wm.client_windows[i + 1];
     wm.clients_count--;
 
+    XSetInputFocus(wm.display, wm.clients_count == 0 ? wm.root : wm.client_windows[wm.clients_count - 1].win, RevertToPointerRoot, CurrentTime);
     establish_window_layout();
 }
 void xwm_run() {
     // Setting variables to default state 
     wm.clients_count = 0;
     wm.cursor_start_frame_size = (Vec2){ .x = 0.0f, .y = 0.0f};
-    wm.cursor_start_frame_pos = (Vec2){ .x = 0.0f, .y = 0.0f};
+    wm.cursor_start_frame_pos = (Vec2){ .x = 0.0f, .y = 0.0f}; 
     wm.cursor_start_pos = (Vec2){ .x = 0.0f, .y = 0.0f}; 
     wm.running = true;
     wm.focused_monitor = MONITOR_COUNT - 1;
@@ -194,7 +195,7 @@ void xwm_run() {
     Cursor cursor = XcursorLibraryLoadCursor(wm.display, "arrow");
     XDefineCursor(wm.display, wm.root, cursor);
     XSetErrorHandler(handle_x_error);
-
+    
     grab_global_input();
      
     while(wm.running) {
@@ -372,6 +373,7 @@ void handle_button_release(XButtonEvent e) {
 }
 
 void handle_key_press(XKeyEvent e) {
+    int32_t client_index = client_index;
     if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CLOSE_KEY)) {
         XEvent msg;
         memset(&msg, 0, sizeof(msg));
@@ -384,7 +386,6 @@ void handle_key_press(XKeyEvent e) {
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY)) {
         Client client = { 0 };
         // Get the next client in the cycle
-        int32_t client_index = get_client_index_window(e.window);
         if(wm.client_windows[client_index].monitor_index == wm.focused_monitor) { 
             if((uint32_t)client_index + 1 >= wm.clients_count) {
                 client = wm.client_windows[0];
@@ -403,20 +404,20 @@ void handle_key_press(XKeyEvent e) {
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WEB_BROWSER_OPEN_KEY)) {
         system(WEB_BROWSER_CMD);   
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_FULLSCREEN_KEY)) {
-        if(get_client_index_window(e.window) == -1) return;
-        if(!wm.client_windows[get_client_index_window(e.window)].fullscreen) {
+        if(client_index == -1 || e.window == wm.root) return;
+        if(!wm.client_windows[client_index].fullscreen) {
             set_fullscreen(e.window);
         } else {
             unset_fullscreen(e.window);
             establish_window_layout();
         }
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_ADD_TO_LAYOUT_KEY)) {
-        wm.client_windows[get_client_index_window(e.window)].in_layout = true;
+        wm.client_windows[client_index].in_layout = true;
         establish_window_layout();
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_MOVE_UP_KEY)) {
-        move_client_up_layout(&wm.client_windows[get_client_index_window(e.window)]);
+        move_client_up_layout(&wm.client_windows[client_index]);
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_MOVE_DOWN_KEY)) {
-        move_client_down_layout(&wm.client_windows[get_client_index_window(e.window)]);
+        move_client_down_layout(&wm.client_windows[client_index]);
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_MASTER_X_KEY)) {
         if(wm.layout_master_size_x[wm.focused_monitor] <= (uint32_t)(Monitors[wm.focused_monitor].width / 1.5)) 
             wm.layout_master_size_x[wm.focused_monitor] += 20;
@@ -561,6 +562,7 @@ static uint32_t client_count_on_monitor(int32_t monitor) {
 }
 static void set_fullscreen(Window win) {
     uint32_t client_index = get_client_index_window(win);
+    if(wm.client_windows[client_index].fullscreen) return;
     XWindowAttributes attribs;
     XGetWindowAttributes(wm.display, wm.client_windows[client_index].win, &attribs);
     wm.client_windows[client_index].fullscreen_revert_size = (Vec2){.x = attribs.width, .y = attribs.height};
@@ -569,9 +571,11 @@ static void set_fullscreen(Window win) {
 
     resize_client(&wm.client_windows[client_index], (Vec2){. x = Monitors[wm.focused_monitor].width, .y = Monitors[wm.focused_monitor].height});
     move_client(&wm.client_windows[client_index], (Vec2){.x = get_monitor_start_x(wm.focused_monitor), 0});
+    XRaiseWindow(wm.display, win);
 }
 static void unset_fullscreen(Window win)  {
     uint32_t client_index = get_client_index_window(win);
+    if(!wm.client_windows[client_index].fullscreen) return;
     resize_client(&wm.client_windows[client_index], wm.client_windows[client_index].fullscreen_revert_size);
     move_client(&wm.client_windows[client_index], (Vec2){get_monitor_start_x(wm.focused_monitor), 0});
     wm.client_windows[client_index].fullscreen = false;
