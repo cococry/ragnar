@@ -149,7 +149,6 @@ void xwm_window_frame(Window win, bool created_before_window_manager) {
 
     wm.focused_client = wm.clients_count - 1;
 
-    XSetInputFocus(wm.display, win, RevertToParent, CurrentTime);
     grab_window_input(win);
     establish_window_layout(); 
 }
@@ -162,14 +161,14 @@ void xwm_window_unframe(Window win) {
         wm.layout_master_size_x[wm.focused_monitor] = 0;
     }
     XUnmapWindow(wm.display, frame_win);
-    XReparentWindow(wm.display, win, wm.root, 0, 0);
     XDestroyWindow(wm.display, frame_win);
+    XReparentWindow(wm.display, frame_win, wm.root, 0, 0);
+    XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
     // Removing the window from the clients
     for(uint32_t i = get_client_index_window(win); i < wm.clients_count - 1; i++)
         wm.client_windows[i] = wm.client_windows[i + 1];
     wm.clients_count--;
 
-    XSetInputFocus(wm.display, wm.clients_count == 0 ? wm.root : wm.client_windows[wm.clients_count - 1].win, RevertToPointerRoot, CurrentTime);
     establish_window_layout();
 }
 void xwm_run() {
@@ -384,14 +383,12 @@ void handle_key_press(XKeyEvent e) {
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY)) {
         Client client = { 0 };
         // Get the next client in the cycle
-        if(wm.client_windows[client_index].monitor_index == wm.focused_monitor) { 
-            if((uint32_t)client_index + 1 >= wm.clients_count) {
-                client = wm.client_windows[0];
-                wm.focused_client = 0;
-            } else {
-                client = wm.client_windows[client_index + 1];
-                wm.focused_client = client_index + 1;
-            }
+        if((uint32_t)client_index + 1 >= wm.clients_count) {
+            client = wm.client_windows[0];
+            wm.focused_client = 0;
+        } else {
+            client = wm.client_windows[client_index + 1];
+            wm.focused_client = client_index + 1;
         }
         XRaiseWindow(wm.display, client.frame);
         XSetInputFocus(wm.display, client.win, RevertToParent, CurrentTime);
@@ -439,17 +436,29 @@ void handle_key_press(XKeyEvent e) {
     } else if(e.state & (MASTER_KEY | ShiftMask) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_FLOATING_KEY)) {
         wm.current_layout = WINDOW_LAYOUT_FLOATING;
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_GAP_INCREASE_KEY)) {
-        wm.window_gap += 2;
-        establish_window_layout();
+        if(wm.window_gap < WINDOW_MAX_GAP) {
+            wm.window_gap += 2;
+            establish_window_layout();
+        }
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_GAP_DECREASE_KEY)) {
-        wm.window_gap -= 2;
-        establish_window_layout();
+        if(wm.window_gap > 0 ) {
+            wm.window_gap -= 2;
+            establish_window_layout();
+        }
     }  else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_SLAVE_Y_KEY)) {
-        wm.client_windows[wm.focused_client].layout_y_size_offset += 10;
-        establish_window_layout();
+        XWindowAttributes attribs;
+        XGetWindowAttributes(wm.display, wm.client_windows[wm.focused_client].frame, &attribs);
+        if(attribs.height < (int32_t)(Monitors[wm.focused_monitor].height - WINDOW_MIN_SIZE_Y_LAYOUT)) {
+            wm.client_windows[wm.focused_client].layout_y_size_offset += 10;
+            establish_window_layout();
+        }
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_DECREASE_SLAVE_Y_KEY)) {
-        wm.client_windows[wm.focused_client].layout_y_size_offset -= 10;
-        establish_window_layout();
+        XWindowAttributes attribs;
+        XGetWindowAttributes(wm.display, wm.client_windows[wm.focused_client].frame, &attribs);
+        if(attribs.height > WINDOW_MIN_SIZE_Y_LAYOUT) {
+            wm.client_windows[wm.focused_client].layout_y_size_offset -= 10;
+            establish_window_layout();
+        }
     } 
 }
 void handle_key_release(XKeyEvent e) {

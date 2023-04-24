@@ -33,6 +33,8 @@ typedef struct {
 #define WINDOW_BG_COLOR 0x32302f // black
 #define WINDOW_BORDER_WIDTH 3 
 #define WINDOW_BORDER_COLOR 0x242424 //  gray
+#define WINDOW_MIN_SIZE_Y_LAYOUT 100
+#define WINDOW_MAX_GAP 400
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
