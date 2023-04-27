@@ -42,6 +42,7 @@ setup in order for the WM to work as intended. Also, for configuration of the WM
 
 | Keybind         |  Action     |
 | ----------------|-------------|
+| ALT + Left Mouse/Middle Mouse | Select Window |
 | ALT + Enter | Open terminal |
 | ALT + W | Open Web-browser |
 | ALT + Q | Quit Application |
