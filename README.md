@@ -14,7 +14,7 @@ is still accesable for non-technical people.
 - [x] Multi-monitor support
 - [x] Altering layout (Application switching, changing master size...)
 - [x] Fullscreening windows
-- [ ] Multiple Desktops
+- [x] Multiple Desktops
 - [ ] Status Bar
 
 ## Running it
