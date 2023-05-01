@@ -35,6 +35,13 @@ exec xragnar
 In the [config.h](https://github.com/cococry/Xragnar/blob/main/config.h) file specify your monitor
 setup in order for the WM to work as intended. Also, for configuration of the WM use the config.h file.
 
+## Notes
+
+For the best experience, i suggest to use a X compositer like picom. I am using [picom pijulius](https://github.com/pijulius/picom)
+because i think it has very clean animation support. 
+
+This project is in early stage and not finished. So if you find bugs or have any problems, feel free to [submit an issue](https://github.com/cococry/Xragnar/issues). 
+Especially multi monitor setups can be problematic at with current state of the code base.
 
 ## Usage
 
@@ -59,3 +66,7 @@ setup in order for the WM to work as intended. Also, for configuration of the WM
 | ALT + F | Fullscreen selected window |
 | ALT + Shift + T | Set tiled master layout |
 | ALT + Shift + R | Set floating layout |
+| ALT + A | Cycle desktop down |
+| ALT + D | Cycle desktop up |
+| ALT + O | Cycle window one desktop down |
+| ALT + P | Cycle window one desktop down |
