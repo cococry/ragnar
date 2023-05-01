@@ -35,7 +35,8 @@ typedef struct {
 
 #define DESKTOP_CYCLE_UP_KEY XK_A
 #define DESKTOP_CYCLE_DOWN_KEY XK_D
-
+#define DESKTOP_CLIENT_CYCLE_UP_KEY XK_O
+#define DESKTOP_CLIENT_CYCLE_DOWN_KEY XK_P
 /* Window properties */
 #define WINDOW_BG_COLOR 0x32302f // black
 #define WINDOW_BORDER_WIDTH 3 
@@ -47,5 +48,5 @@ typedef struct {
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
-#define MONITOR_COUNT 2
-const Monitor Monitors[MONITOR_COUNT] = { (Monitor){ .width = 1920, .height = 1080 }, (Monitor){ .width = 2560, .height = 1440 }};
+#define MONITOR_COUNT 1
+const Monitor Monitors[MONITOR_COUNT] = { (Monitor){ .width = 1920, .height = 1080}};
