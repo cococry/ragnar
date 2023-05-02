@@ -122,6 +122,7 @@ void xwm_terminate() {
 }
 
 void xwm_window_frame(Window win, bool created_before_window_manager) {
+    if(get_client_index_window(win) != -1) return;
     XWindowAttributes attribs;
     XGetWindowAttributes(wm.display, win, &attribs);
     
@@ -193,7 +194,7 @@ void xwm_run() {
     memset(wm.layout_master_size_x, 0, sizeof(wm.layout_master_size_x));
     
     XSetErrorHandler(handle_wm_detected);
-    XSelectInput(wm.display, wm.root, SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask | ButtonPressMask); 
+    XSelectInput(wm.display, wm.root, SubstructureRedirectMask | SubstructureNotifyMask); 
     XSync(wm.display, false);
     if(wm_detected) {
         printf("Another window manager is already running on this X display.\n");

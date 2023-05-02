@@ -10,7 +10,7 @@ typedef struct {
 #define WEB_BROWSER_CMD "brave &"
 
 /* Keybindings */
-#define MASTER_KEY Mod1Mask 
+#define MASTER_KEY Mod4Mask 
 
 #define TERMINAL_OPEN_KEY XK_Return
 #define WEB_BROWSER_OPEN_KEY XK_W
