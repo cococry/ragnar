@@ -16,6 +16,7 @@ is still accesable for non-technical people.
 - [x] Fullscreening windows
 - [x] Multiple Desktops
 - [ ] Status Bar
+- [ ] Auto Start Commands
 
 ## Running it
 
@@ -25,7 +26,7 @@ clone this repo and type
 sudo make clean install
 ```
 
-Then, i your .xinitrc add:
+Then, in your .xinitrc add:
 ```
 exec xragnar
 ```
