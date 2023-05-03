@@ -42,7 +42,7 @@ For the best experience, i suggest to use a X compositer like picom. I am using 
 because i think it has very clean animation support. You can find my picom config [here](https://github.com/cococry/dotfiles/blob/main/picom/picom.conf)
 
 This project is in early stage and not finished. So if you find bugs or have any problems, feel free to [submit an issue](https://github.com/cococry/Xragnar/issues). 
-Especially multi monitor setups can be problematic at with current state of the code base.
+Especially multi monitor setups can be problematic with the current state of the code base.
 
 ## Usage
 
