@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include "config.h"
 
+Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}};
 #define CLIENT_WINDOW_CAP 256
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
@@ -25,6 +26,9 @@ typedef struct {
     float x, y;
 } Vec2;
 
+typedef struct {
+  Window win;
+} Bar;
 typedef struct {
     Window win;
     Window frame;
@@ -59,6 +63,8 @@ typedef struct {
     WindowLayout current_layout;
     uint32_t layout_master_size_x[MONITOR_COUNT][DESKTOP_COUNT];
     uint32_t window_gap;
+
+    Bar bar;
 } XWM;
 
 
@@ -103,7 +109,8 @@ static void     resize_client(Client* client, Vec2 size);
 static int32_t  get_client_index_window(Window win);
 
 static void     change_desktop(int8_t desktop_index);
-static void     change_desktop_of_client(int8_t desktop_index, Client* client);
+
+static void     create_bar();
 
 XWM xwm_init() {
     XWM wm;
@@ -158,6 +165,7 @@ void xwm_window_frame(Window win, bool created_before_window_manager) {
 
     grab_window_input(win);
     establish_window_layout(); 
+    XRaiseWindow(wm.display, wm.bar.win);
 }
 
 void xwm_window_unframe(Window win) {
@@ -207,6 +215,8 @@ void xwm_run() {
     
     grab_global_input();
      
+    create_bar();
+
     while(wm.running) {
         // Query mouse position to get focused monitor
         select_focused_monitor(get_cursor_position().x);
@@ -372,6 +382,7 @@ void handle_button_press(XButtonEvent e) {
     wm.cursor_start_frame_size = (Vec2){.x = (float)width, .y = (float)height};
 
     XRaiseWindow(wm.display, frame);
+    XRaiseWindow(wm.display, wm.bar.win);
     XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
     wm.focused_client = get_client_index_window(e.window);
 }
@@ -760,13 +771,16 @@ void change_desktop(int8_t desktop_index) {
     wm.focused_client = get_client_index_window(wm.root);
 }
 
-
-void change_desktop_of_client(int8_t desktop_index, Client* client) {
-  client->desktop_index = desktop_index;
-  XUnmapWindow(wm.display, client->frame);
-  establish_window_layout();
+void create_bar() {
+    wm.bar.win = XCreateSimpleWindow(wm.display, 
+                                 wm.root, 0, 0, 
+                                 Monitors[MONITOR_COUNT - 1].width, 40, 
+                                 WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
+  XSelectInput(wm.display, wm.bar.win, SubstructureRedirectMask | SubstructureNotifyMask); 
+  XSetStandardProperties(wm.display, wm.bar.win, "RagnarBar", "RagnarBar", None, NULL, 0, NULL);
+  XMapWindow(wm.display, wm.bar.win);
+  XRaiseWindow(wm.display, wm.bar.win);
 }
-
 int main(void) {
     wm = xwm_init();
     xwm_run();

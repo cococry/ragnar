@@ -33,10 +33,13 @@ typedef struct {
 #define WINDOW_GAP_INCREASE_KEY XK_plus
 #define WINDOW_GAP_DECREASE_KEY XK_minus
 
+/* Desktops */
 #define DESKTOP_CYCLE_UP_KEY XK_A
 #define DESKTOP_CYCLE_DOWN_KEY XK_D
 #define DESKTOP_CLIENT_CYCLE_UP_KEY XK_O
 #define DESKTOP_CLIENT_CYCLE_DOWN_KEY XK_P
+#define DESKTOP_COUNT 10
+
 /* Window properties */
 #define WINDOW_BG_COLOR 0x32302f // black
 #define WINDOW_BORDER_WIDTH 3 
@@ -44,9 +47,10 @@ typedef struct {
 #define WINDOW_MIN_SIZE_Y_LAYOUT 100
 #define WINDOW_MAX_GAP 400
 
-#define DESKTOP_COUNT 10
+/* Bar */
+#define BAR_SIZE 10
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
 #define MONITOR_COUNT 1
-const Monitor Monitors[MONITOR_COUNT] = { (Monitor){ .width = 1920, .height = 1080}};
+extern Monitor Monitors[MONITOR_COUNT]; // [!] Define and configure in xragnar.c
