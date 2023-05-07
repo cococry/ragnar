@@ -41,6 +41,7 @@ typedef struct {
 
     bool in_layout;
     int32_t layout_y_size_offset;
+    bool changed_desktop;
 } Client;
 
 typedef struct {
@@ -134,11 +135,11 @@ void xwm_window_frame(Window win, bool created_before_window_manager) {
     XGetWindowAttributes(wm.display, win, &attribs);
     
     // Do not frame 'daemon' windows
-    if(created_before_window_manager) {
-        if(attribs.override_redirect || attribs.map_state != IsViewable) {
-            return;
-        }
-    }
+    //if(created_before_window_manager) {
+    //    if(attribs.override_redirect || attribs.map_state != IsViewable) {
+    //        return;
+    //    }
+    //}
     // Calculate X Position of window based on the currently focused monitor
     int32_t win_x = get_focused_monitor_window_center_x(attribs.width / 2);
 
@@ -159,16 +160,22 @@ void xwm_window_frame(Window win, bool created_before_window_manager) {
         .monitor_index = wm.focused_monitor,
         .desktop_index = wm.focused_desktop[wm.focused_monitor],
         .in_layout = true,
-        .layout_y_size_offset = 0};
+        .layout_y_size_offset = 0,
+        .changed_desktop = false};
 
     wm.focused_client = wm.clients_count - 1;
 
     grab_window_input(win);
     establish_window_layout(); 
-    XRaiseWindow(wm.display, wm.bar.win);
+    //XRaiseWindow(wm.display, wm.bar.win);
 }
 
 void xwm_window_unframe(Window win) {
+    if(get_client_index_window(win) == -1) return;
+    if(wm.client_windows[get_client_index_window(win)].changed_desktop) {
+        wm.client_windows[get_client_index_window(win)].changed_desktop = false;
+        return;
+    }
     Window frame_win = get_frame_window(win);
 
     // If master window of layout was unframed, reset master size
@@ -215,7 +222,7 @@ void xwm_run() {
     
     grab_global_input();
      
-    create_bar();
+    //create_bar();
 
     while(wm.running) {
         // Query mouse position to get focused monitor
@@ -281,20 +288,17 @@ void handle_create_notify(XCreateWindowEvent e) {
 }
 void handle_configure_request(XConfigureRequestEvent e) {
     XWindowChanges changes;
-    changes.x = e.x;
-    changes.y = e.y;
+    changes.x = 0;
+    changes.y = 0;
     changes.width = e.width;
     changes.height = e.height;
     changes.border_width = e.border_width;
     changes.sibling = e.above;
     changes.stack_mode = e.detail;
-    if(get_client_index_window(e.window) != -1) {
-        Window frame_win = get_frame_window(e.window);
-        XConfigureWindow(wm.display,frame_win, e.value_mask, &changes);
-    }
     XConfigureWindow(wm.display, e.window, e.value_mask, &changes);
+    XMoveWindow(wm.display, get_frame_window(e.window), e.x, e.y);
+    XResizeWindow(wm.display, get_frame_window(e.window), e.width, e.height);
 }
-
 void handle_configure_notify(XConfigureEvent e) {
     (void)e;
 }
@@ -355,20 +359,22 @@ int handle_wm_detected(Display* display, XErrorEvent* e) {
 }
 
 void handle_reparent_notify(XReparentEvent e) {
-    (void)e;
+	if(get_client_index_window(e.window) != -1) return;
+	xwm_window_frame(e.window, false);
+	XMapWindow(wm.display, e.window);
 }
 
 void handle_destroy_notify(XDestroyWindowEvent e) {
-if(get_client_index_window(e.window) == -1) {
+	(void)e;
+}
+void handle_map_notify(XMapEvent e) {
+	(void)e;
+}
+void handle_unmap_notify(XUnmapEvent e) {
+    if(get_client_index_window(e.window) == -1) {
         return;
     }
     xwm_window_unframe(e.window);
-}
-void handle_map_notify(XMapEvent e) {
-    (void)e;
-}
-void handle_unmap_notify(XUnmapEvent e) {
-    (void)e;
 }
 
 void handle_button_press(XButtonEvent e) {
@@ -382,7 +388,7 @@ void handle_button_press(XButtonEvent e) {
     wm.cursor_start_frame_size = (Vec2){.x = (float)width, .y = (float)height};
 
     XRaiseWindow(wm.display, frame);
-    XRaiseWindow(wm.display, wm.bar.win);
+    //XRaiseWindow(wm.display, wm.bar.win);
     XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
     wm.focused_client = get_client_index_window(e.window);
 }
@@ -423,6 +429,7 @@ void handle_key_press(XKeyEvent e) {
         if(desktop < 0)
           desktop = DESKTOP_COUNT - 1;
         wm.client_windows[client_index].desktop_index = desktop;
+        wm.client_windows[client_index].changed_desktop = true;
         XUnmapWindow(wm.display, wm.client_windows[client_index].frame);
         establish_window_layout();
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, DESKTOP_CLIENT_CYCLE_UP_KEY)) {
@@ -430,6 +437,7 @@ void handle_key_press(XKeyEvent e) {
         if(desktop >= DESKTOP_COUNT)
           desktop = 0;
         wm.client_windows[client_index].desktop_index = desktop;
+        wm.client_windows[client_index].changed_desktop = true;
         XUnmapWindow(wm.display, wm.client_windows[client_index].frame);
         establish_window_layout();
     }  else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_CYCLE_UP_KEY)) {
@@ -762,6 +770,7 @@ void change_desktop(int8_t desktop_index) {
         if(wm.client_windows[i].desktop_index == wm.focused_desktop[wm.focused_monitor] && 
             wm.client_windows[i].monitor_index == wm.focused_monitor) {
             XUnmapWindow(wm.display, wm.client_windows[i].frame);
+            wm.client_windows[i].changed_desktop = true;
         }
         if(wm.client_windows[i].desktop_index == desktop_index &&
             wm.client_windows[i].monitor_index == wm.focused_monitor) {

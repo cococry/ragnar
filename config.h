@@ -7,7 +7,7 @@ typedef struct {
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
-#define WEB_BROWSER_CMD "brave &"
+#define WEB_BROWSER_CMD "chromium &"
 
 /* Keybindings */
 #define MASTER_KEY Mod4Mask 
