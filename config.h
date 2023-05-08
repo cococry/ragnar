@@ -7,7 +7,7 @@ typedef struct {
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
-#define WEB_BROWSER_CMD "chromium &"
+#define WEB_BROWSER_CMD "brave &"
 
 /* Keybindings */
 #define MASTER_KEY Mod4Mask 
@@ -48,9 +48,16 @@ typedef struct {
 #define WINDOW_MAX_GAP 400
 
 /* Bar */
-#define BAR_SIZE 10
+#define BAR_SIZE 20
+#define BAR_MONITOR 1 // Monitor on which the bar is on. (0 is most left)
+#define BAR_COLOR 0x303030
+#define BAR_TEXT_CMD "date '+%b %d (%a) %I:%M%p'"
+#define BAR_FONT "DejaVu Sans Mono:size=11"
+#define BAR_FONT_SIZE 11 // Temporary
+#define BAR_FONT_COLOR "#ffffff"
+
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
-#define MONITOR_COUNT 1
+#define MONITOR_COUNT 2
 extern Monitor Monitors[MONITOR_COUNT]; // [!] Define and configure in xragnar.c
