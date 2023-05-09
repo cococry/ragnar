@@ -15,7 +15,7 @@ is still accesable for non-technical people.
 - [x] Altering layout (Application switching, changing master size...)
 - [x] Fullscreening windows
 - [x] Multiple Desktops
-- [ ] Status Bar
+- [x] Status Bar
 - [ ] Auto Start Commands
 
 ## Running it
