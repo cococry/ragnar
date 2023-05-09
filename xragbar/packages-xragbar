@@ -1,0 +1,2 @@
+printf "󰏗  "
+pacman -Q | wc -l

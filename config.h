@@ -4,6 +4,14 @@
 typedef struct {
     uint32_t width, height;
 } Monitor;
+typedef struct {
+    const char* cmd;
+    float refresh_time;
+    float timer;
+    char text[512];
+    bool init;
+} BarCommand;
+
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
@@ -34,10 +42,10 @@ typedef struct {
 #define WINDOW_GAP_DECREASE_KEY XK_minus
 
 /* Desktops */
-#define DESKTOP_CYCLE_UP_KEY XK_A
-#define DESKTOP_CYCLE_DOWN_KEY XK_D
-#define DESKTOP_CLIENT_CYCLE_UP_KEY XK_O
-#define DESKTOP_CLIENT_CYCLE_DOWN_KEY XK_P
+#define DESKTOP_CYCLE_UP_KEY XK_D
+#define DESKTOP_CYCLE_DOWN_KEY XK_A
+#define DESKTOP_CLIENT_CYCLE_UP_KEY XK_P
+#define DESKTOP_CLIENT_CYCLE_DOWN_KEY XK_O
 #define DESKTOP_COUNT 10
 
 /* Window properties */
@@ -48,16 +56,34 @@ typedef struct {
 #define WINDOW_MAX_GAP 400
 
 /* Bar */
-#define BAR_SIZE 20
+#define BAR_SIZE 20 // In pixels
 #define BAR_MONITOR 1 // Monitor on which the bar is on. (0 is most left)
-#define BAR_COLOR 0x303030
-#define BAR_TEXT_CMD "date '+%b %d (%a) %I:%M%p'"
-#define BAR_FONT "DejaVu Sans Mono:size=11"
-#define BAR_FONT_SIZE 11 // Temporary
+#define BAR_COLOR 0x202020
+#define BAR_MAIN_LABEL_COLOR 0x91430f
+#define BAR_INFO_LABEL_COLOR 0x91430f
+#define BAR_SECOUNDARY_LABEL_COLOR 0x91430f
+#define BAR_LABEL_PADDING 100 // In pixels
+#define BAR_REFRESH_SPEED 1.0 // In seconds
+#define BAR_FONT "JetBrains Mono Nerd Font:size=11:style=bold"
+#define BAR_FONT_SIZE 11 
 #define BAR_FONT_COLOR "#ffffff"
-
-
+#define BAR_INFO_PROGRAM_ICON ""
+#define BAR_INFO_MONITOR_ICON "󰍹"
+#define BAR_INFO_DESKTOP_ICON ""
+#define BAR_INFO_WINDOW_LAYOUT_ICON ""
+#define BAR_SLICES_COUNT 7
+static BarCommand  BarCommands[BAR_SLICES_COUNT] = 
+{ 
+    (BarCommand){.cmd = "echo \"  󰣇\"", .refresh_time = 300.0f},
+    (BarCommand){.cmd = "clock-xragbar", .refresh_time = 1.0f},
+    (BarCommand){.cmd = "ram-xragbar", .refresh_time = 1.0f,},
+    (BarCommand){.cmd = "kernel-xragbar", .refresh_time = 300.0f},
+    (BarCommand){.cmd = "uptime-xragbar", .refresh_time = 1.0f},
+    (BarCommand){.cmd = "packages-xragbar", .refresh_time = 60.0f},
+    (BarCommand){.cmd = "updates-xragbar", .refresh_time = 300.0f},
+};
 /* Monitors */
 // Ordered From left to right (0 is most left)
 #define MONITOR_COUNT 2
-extern Monitor Monitors[MONITOR_COUNT]; // [!] Define and configure in xragnar.c
+static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}, (Monitor){.width = 2560, .height = 1440}};
+

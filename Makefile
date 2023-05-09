@@ -4,3 +4,5 @@ install:
 clean:
 	rm -f xragnar
 	rm -f /usr/bin/xragnar
+bar:
+	cp xragbar/* /usr/bin
