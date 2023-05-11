@@ -1,10 +1,10 @@
-# XRagnar
+# Ragnar
 
 <img src="https://github.com/cococry/Xragnar/blob/main/branding/workflow.png" width="800"/>
 
 ## Overview
 
-XRagnar is a minimal window manager for X written in C.
+Ragnar is a minimal window manager for X written in C.
 The goal of this project is to create a window manager that has minimal bloat but
 is still accesable for non-technical people. 
 
@@ -20,7 +20,7 @@ is still accesable for non-technical people.
 
 ## Running it
 
-If you want to run Xragnar on your machine, 
+If you want to run Ragnar on your machine, 
 clone this repo and type 
 ```console
 sudo make clean install
