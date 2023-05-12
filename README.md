@@ -50,24 +50,28 @@ Especially multi monitor setups can be problematic with the current state of the
 
 | Keybind         |  Action     |
 | ----------------|-------------|
-| ALT + Left Mouse/Middle Mouse | Select Window |
-| ALT + Enter | Open terminal |
-| ALT + W | Open Web-browser |
-| ALT + Q | Quit Application |
-| ALT + C | Quit WM |
-| ALT + Space | Add window to layout |
-| ALT + Up Arrow | Move layout up in window |
-| ALT + Down Arrow | Move layout down in window |
-| ALT + L | Increase master size in layout |
-| ALT + H | Decrease master size in layout |
-| ALT + J | Increase slave size in layout |
-| ALT + K | Decrease slave size in layout |
-| ALT + Plus | Increase gap size of windows |
-| ALT + Minus | Decrease gap size of windows |
-| ALT + F | Fullscreen selected window |
-| ALT + Shift + T | Set tiled master layout |
-| ALT + Shift + R | Set floating layout |
-| ALT + A | Cycle desktop down |
-| ALT + D | Cycle desktop up |
-| ALT + O | Cycle window one desktop down |
-| ALT + P | Cycle window one desktop down |
+| SUPER + Left Mouse/Middle Mouse | Select Window 
+| SUPER + Enter | Open terminal |
+| SUPER + W | Open Web-browser |
+| SUPER + Q | Quit Application |
+| SUPER + C | Quit WM |
+| SUPER + Space | Add window to layout |
+| SUPER + Up Arrow | Move layout up in window |
+| SUPER + Down Arrow | Move layout down in window |
+| SUPER + L | Increase master size in layout |
+| SUPER + H | Decrease master size in layout |
+| SUPER + J | Increase slave size in layout |
+| SUPER + K | Decrease slave size in layout |
+| SUPER + Plus | Increase gap size of windows |
+| SUPER + Minus | Decrease gap size of windows |
+| SUPER + F | Fullscreen selected window |
+| SUPER + Shift + T | Set tiled master layout |
+| SUPER + Shift + R | Set floating layout |
+| SUPER + A | Cycle desktop down |
+| SUPER + D | Cycle desktop up |
+| SUPER + O | Cycle window one desktop down |
+| SUPER + P | Cycle window one desktop down |
+| SUPER + B | Cycle bar one monitor down |
+| SUPER + N | Cycle bar one monitor up |
+| SUPER + I | Toggle bar visibility |
+
