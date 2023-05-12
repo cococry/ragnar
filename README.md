@@ -57,8 +57,8 @@ Especially multi monitor setups can be problematic with the current state of the
 | SUPER + Q | Quit Application |
 | SUPER + C | Quit WM |
 | SUPER + Space | Add window to layout |
-| SUPER + Up Arrow | Move layout up in window |
-| SUPER + Down Arrow | Move layout down in window |
+| SUPER + Up Arrow | Move window up in layout |
+| SUPER + Down Arrow | Move window down in layout |
 | SUPER + L | Increase master size in layout |
 | SUPER + H | Decrease master size in layout |
 | SUPER + J | Increase slave size in layout |
