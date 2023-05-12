@@ -17,6 +17,7 @@ is still accesable for non-technical people.
 - [x] Multiple Desktops
 - [x] Status Bar
 - [ ] Auto Start Commands
+- [ ] Scratchpads
 
 ## Running it
 
