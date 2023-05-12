@@ -226,7 +226,7 @@ void xwm_window_unframe(Window win) {
         wm.client_windows[i] = wm.client_windows[i + 1];
     wm.clients_count--;
     
-    if(wm.clients_count <= 2) {
+    if(wm.clients_count == 2) {
         wm.client_windows[wm.clients_count - 1].layout_y_size_offset = 0;
     }
 
