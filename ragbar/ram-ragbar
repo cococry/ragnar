@@ -1,4 +1,4 @@
 #!/bin/bash
 
-printf "󰍛 "
+printf "󰍛  "
 free -h | awk '/^Mem: /{ print $3 }'

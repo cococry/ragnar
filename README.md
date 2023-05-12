@@ -1,6 +1,6 @@
 # Ragnar
 
-<img src="https://github.com/cococry/Xragnar/blob/main/branding/workflow.png" width="800"/>
+<img src="https://github.com/cococry/Ragnar/blob/main/branding/workflow.png" width="800"/>
 
 ## Overview
 
@@ -28,12 +28,12 @@ sudo make clean install
 
 Then, in your .xinitrc add:
 ```
-exec xragnar
+exec Ragnar
 ```
 
 ### IMPORTANT
 
-In the [config.h](https://github.com/cococry/Xragnar/blob/main/config.h) file specify your monitor
+In the [config.h](https://github.com/cococry/Ragnar/blob/main/config.h) file specify your monitor
 setup in order for the WM to work as intended. Also, for configuration of the WM use the config.h file.
 
 ## Notes
@@ -41,7 +41,7 @@ setup in order for the WM to work as intended. Also, for configuration of the WM
 For the best experience, i suggest to use a X compositer like picom. I am using [picom pijulius](https://github.com/pijulius/picom)
 because i think it has very clean animation support. You can find my picom config [here](https://github.com/cococry/dotfiles/blob/main/picom/picom.conf)
 
-This project is in early stage and not finished. So if you find bugs or have any problems, feel free to [submit an issue](https://github.com/cococry/Xragnar/issues). 
+This project is in early stage and not finished. So if you find bugs or have any problems, feel free to [submit an issue](https://github.com/cococry/Ragnar/issues). 
 Especially multi monitor setups can be problematic with the current state of the code base.
 
 ## Usage

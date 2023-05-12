@@ -1,8 +1,8 @@
 install:
-	gcc xragnar.c -o xragnar -lX11 -lXcursor -lXft -O3 -ffast-math -Wall -Wextra
-	cp xragnar /usr/bin/xragnar
+	gcc ragnar.c -o ragnar -lX11 -lXcursor -lXft -O3 -ffast-math -Wall -Wextra
+	cp ragnar /usr/bin/ragnar
 clean:
-	rm -f xragnar
-	rm -f /usr/bin/xragnar
+	rm -f ragnar
+	rm -f /usr/bin/ragnar
 bar:
-	cp xragbar/* /usr/bin
+	cp ragbar/* /usr/bin
