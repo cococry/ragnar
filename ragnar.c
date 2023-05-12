@@ -226,7 +226,7 @@ void xwm_window_unframe(Window win) {
         wm.client_windows[i] = wm.client_windows[i + 1];
     wm.clients_count--;
     
-    if(wm.clients_count >= 2) {
+    if(wm.clients_count <= 2) {
         wm.client_windows[wm.clients_count - 1].layout_y_size_offset = 0;
     }
 
@@ -393,6 +393,7 @@ void handle_motion_notify(XMotionEvent e) {
         // Remove the client from the layout 
         if(client->in_layout) {
             client->in_layout = false;
+            client->layout_y_size_offset = 0;
             establish_window_layout();
         }
         client->monitor_index = get_monitor_index_by_window(drag_dest.x); 
@@ -808,7 +809,7 @@ void establish_window_layout() {
         int32_t last_y_offset = 0;
         for(uint32_t i = 1; i < client_count; i++) {
             if(clients[i]->monitor_index != wm.focused_monitor) continue;
-            int32_t offset_bar = ((clients[i]->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? ((i == 1) ? BAR_SIZE : 0) : 0);
+            int32_t offset_bar = ((clients[i]->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? BAR_SIZE : 0);
             resize_client(clients[i], (Vec2){
                 (Monitors[wm.focused_monitor].width 
                 - wm.layout_master_size_x[wm.focused_monitor][wm.focused_desktop[wm.focused_monitor]]) 
@@ -829,7 +830,7 @@ void establish_window_layout() {
                 (Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (client_count - 1) * i)))
                 - ((i != client_count - 1) ? clients[i]->layout_y_size_offset : 0)
                 + wm.window_gap
-                + ((clients[i]->monitor_index == wm.bar_monitor) ? BAR_SIZE : 0)
+                + offset_bar
             });
 
             // The top window in the layout has to be treated diffrently 
