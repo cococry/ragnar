@@ -22,7 +22,7 @@ typedef struct {
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
-#define WEB_BROWSER_CMD "brave &"
+#define WEB_BROWSER_CMD "chromium &"
 #define APPLICATION_LAUNCHER_CMD "dmenu_run &"
 
 /* Keybindings */
@@ -92,7 +92,7 @@ typedef struct {
 #define BAR_COLOR 0x202020
 #define BAR_LABEL_PADDING 100 // In pixels
                             
-#define BAR_FONT "JetBrains Mono Nerd Font:size=11:style=bold"
+#define BAR_FONT "monospace:size=11"
 #define BAR_FONT_SIZE 11 
 #define BAR_FONT_COLOR "#ffffff"
 
@@ -103,34 +103,24 @@ typedef struct {
 #define BAR_VERSION_LABEL_COLOR 0x1e404f
 
                             
-#define BAR_INFO_PROGRAM_ICON ""
-#define BAR_INFO_MONITOR_ICON "󰍹"
-#define BAR_INFO_DESKTOP_ICON ""
-#define BAR_INFO_WINDOW_LAYOUT_ICON ""
+#define BAR_INFO_PROGRAM_ICON "Program: "
+#define BAR_INFO_MONITOR_ICON "Monitor: "
+#define BAR_INFO_DESKTOP_ICON "Desktop: "
+#define BAR_INFO_WINDOW_LAYOUT_ICON "Layout: "
 
-#define BAR_SLICES_COUNT 8
-#define BAR_BUTTON_COUNT 7
+#define BAR_SLICES_COUNT 1
+#define BAR_BUTTON_COUNT 3
 
 static BarCommand  BarCommands[BAR_SLICES_COUNT] = 
 { 
-    (BarCommand){.cmd = "echo \"  󰣇\"", .refresh_time = 300.0f},
-    (BarCommand){.cmd = "echo \"  $(date +%R)  \"", .refresh_time = 1.0f},
-    (BarCommand){.cmd = "ram-ragbar", .refresh_time = 1.0f,},
-    (BarCommand){.cmd = "kernel-ragbar", .refresh_time = 300.0f},
-    (BarCommand){.cmd = "uptime-ragbar", .refresh_time = 1.0f},
-    (BarCommand){.cmd = "packages-ragbar", .refresh_time = 60.0f},
-    (BarCommand){.cmd = "updates-ragbar", .refresh_time = 120.0f},
+    (BarCommand){.cmd = "echo \"$(date +%R)  \"", .refresh_time = 1.0f},
 };
 
 static BarButton BarButtons[BAR_BUTTON_COUNT] =
 {
-    (BarButton){.cmd = APPLICATION_LAUNCHER_CMD, .icon = " "},
-    (BarButton){.cmd = TERMINAL_CMD, .icon = " "},
-    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = " "},
-    (BarButton){.cmd = "steam &", .icon = " 󰓓"},
-    (BarButton){.cmd = "obs &", .icon = " 󰑋"},
-    (BarButton){.cmd = "qtfm &", .icon = " "},
-    (BarButton){.cmd = "nitrogen &", .icon = " "},
+    (BarButton){.cmd = APPLICATION_LAUNCHER_CMD, .icon = "Sarch"},
+    (BarButton){.cmd = TERMINAL_CMD, .icon = "Terminal"},
+    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = "Browser"},
 };
 
 /* Monitors */

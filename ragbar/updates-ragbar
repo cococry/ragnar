@@ -1,2 +1,0 @@
-printf "󰚰  "
-checkupdates | wc -l

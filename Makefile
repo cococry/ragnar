@@ -4,5 +4,3 @@ install:
 clean:
 	rm -f ragnar
 	rm -f /usr/bin/ragnar
-bar:
-	cp ragbar/* /usr/bin
