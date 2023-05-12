@@ -1,4 +1,4 @@
-# Ragnar
+# RagnarWM
 
 <img src="https://github.com/cococry/Ragnar/blob/main/branding/workflow.png" width="800"/>
 
@@ -28,7 +28,7 @@ sudo make clean install
 
 Then, in your .xinitrc add:
 ```
-exec Ragnar
+exec ragnar
 ```
 
 ### IMPORTANT
