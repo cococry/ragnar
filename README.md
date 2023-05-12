@@ -53,6 +53,7 @@ Especially multi monitor setups can be problematic with the current state of the
 | SUPER + Left Mouse/Middle Mouse | Select Window 
 | SUPER + Enter | Open terminal |
 | SUPER + W | Open Web-browser |
+| SUPER + S | Open Application Launcher |
 | SUPER + Q | Quit Application |
 | SUPER + C | Quit WM |
 | SUPER + Space | Add window to layout |
