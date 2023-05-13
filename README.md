@@ -19,7 +19,7 @@ is still accesable for non-technical people.
 - [ ] Auto Start Commands
 - [ ] Scratchpads
 
-## Running it
+## Installation
 
 If you want to run Ragnar on your machine, 
 clone this repo and install all dependencies
