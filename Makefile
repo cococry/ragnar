@@ -5,4 +5,4 @@ clean:
 	rm -f ragnar
 	rm -f /usr/bin/ragnar
 freetype:
-  cp /usr/include/freetype2/* /usr/include
+	mv /usr/include/freetype/*  /usr/include/
