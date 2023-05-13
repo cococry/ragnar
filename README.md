@@ -33,6 +33,16 @@ Then type this command to install the WM
 sudo make clean install
 ```
 
+If you get an error that states something like
+"ft2build.h could not be found", type: 
+```console
+sudo make freetype
+```
+This copies the files of freetype to the location
+where xorg thinks it is. This resolves the issue
+and you can keep going with the installation.
+
+
 Then, in your ~/.xinitrc add:
 ```
 exec ragnar
