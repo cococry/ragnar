@@ -21,6 +21,13 @@ is still accesable for non-technical people.
 
 ## Installation
 
+
+There is a script for Ubuntu users, all of the process is automated:
+
+```console
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/suleyman-kaya/Ragnar/main/ubuntu_installation.sh)"
+```
+
 If you want to run Ragnar on your machine, 
 clone this repo and install all dependencies
 
