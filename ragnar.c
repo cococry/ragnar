@@ -230,7 +230,6 @@ void xwm_window_unframe(Window win) {
         wm.client_windows[wm.clients_count - 1].layout_y_size_offset = 0;
     }
 
-    unhide_bar();
     establish_window_layout();
 }
 void xwm_run() {
@@ -431,7 +430,10 @@ int handle_wm_detected(Display* display, XErrorEvent* e) {
 }
 
 void handle_reparent_notify(XReparentEvent e) {
-    (void)e;
+    if(get_client_index_window(e.window) == -1) {
+        xwm_window_frame(e.window);
+        XMapWindow(wm.display, e.window);
+    }
 }
 
 void handle_destroy_notify(XDestroyWindowEvent e) {
@@ -605,6 +607,7 @@ void handle_key_press(XKeyEvent e) {
             wm.bar_monitor++;
         }
         change_bar_monitor(wm.bar_monitor);
+        establish_window_layout();
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_DOWN_KEY)) {
         if(!SHOW_BAR)
             return;
@@ -614,6 +617,7 @@ void handle_key_press(XKeyEvent e) {
             wm.bar_monitor--;
         }
         change_bar_monitor(wm.bar_monitor);
+        establish_window_layout();
     } 
 }
 void handle_key_release(XKeyEvent e) {
