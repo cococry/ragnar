@@ -1,6 +1,6 @@
 # RagnarWM
 
-<img src="https://github.com/cococry/Ragnar/blob/main/branding/themes.jpg" height="1000"/>
+<img src="https://github.com/cococry/Ragnar/blob/main/branding/themes.jpg" height="600"/>
 
 ## Overview
 
