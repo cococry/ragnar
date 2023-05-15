@@ -12,7 +12,7 @@ OBJ = ${SRC:.c=.o}
 all: ragnar print_options 
 
 print_options:
-	@echo ragnar build options-I:
+	@echo ragnar build options:
 	@echo "CFLAGS = ${CFLAGS}"
 	@echo "LIBS   = ${LIBS}"
 	@echo "INCS   = ${INCS}"
