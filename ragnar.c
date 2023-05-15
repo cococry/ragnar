@@ -17,7 +17,7 @@
 #include "config.h"
 
 
-#define VERSION "0.9"
+#define VERSION "1.0"
 
 #define CLIENT_WINDOW_CAP 256
 
@@ -827,7 +827,7 @@ void establish_window_layout() {
         int32_t last_y_offset = 0;
         for(uint32_t i = 1; i < client_count; i++) {
             if(clients[i]->monitor_index != wm.focused_monitor) continue;
-            int32_t offset_bar = ((clients[i]->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? BAR_SIZE : 0);
+            int32_t offset_bar = ((clients[i]->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? ((i == client_count - 1) ? BAR_SIZE : 0 ) : 0);
             resize_client(clients[i], (Vec2){
                 (Monitors[wm.focused_monitor].width 
                 - wm.layout_master_size_x[wm.focused_monitor][wm.focused_desktop[wm.focused_monitor]]) 
@@ -836,7 +836,7 @@ void establish_window_layout() {
                 (int32_t)(Monitors[wm.focused_monitor].height / (client_count - 1)) 
                 + clients[i]->layout_y_size_offset
                 - last_y_offset
-                - wm.window_gap * 2.3f 
+                - wm.window_gap * 2.3f
                 - offset_bar
             });
 
@@ -847,8 +847,8 @@ void establish_window_layout() {
 
                 (Monitors[wm.focused_monitor].height - (int32_t)((Monitors[wm.focused_monitor].height / (client_count - 1) * i)))
                 - ((i != client_count - 1) ? clients[i]->layout_y_size_offset : 0)
-                + wm.window_gap
                 + offset_bar
+                + wm.window_gap
             });
 
             // The top window in the layout has to be treated diffrently 
@@ -1071,23 +1071,24 @@ void draw_bar() {
         xoffset += 20;
     }
 
-    Window focused;
-    int revert_to;
-    XGetInputFocus(wm.display, &focused, &revert_to);
-    char* window_name = NULL;
-    XFetchName(wm.display, focused, &window_name);
-    bool focused_window = (window_name != NULL);
-    draw_triangle(wm.bar.win, 
-                  (Vec2){.x = xoffset + BAR_LABEL_PADDING, .y = 0}, 
-                  (Vec2){.x = xoffset + BAR_LABEL_PADDING + 20, .y = BAR_SIZE}, 
-                  (Vec2){.x = xoffset + BAR_LABEL_PADDING + 20, .y = 0}, 
-                  BAR_INFO_LABEL_COLOR);
-    xoffset += 20;
-    xoffset += BAR_LABEL_PADDING;
-
+    
     // Info Label
     if(BAR_SHOW_INFO_LABEL)
     {
+        Window focused;
+        int revert_to;
+        XGetInputFocus(wm.display, &focused, &revert_to);
+        char* window_name = NULL;
+        XFetchName(wm.display, focused, &window_name);
+        bool focused_window = (window_name != NULL);
+        draw_triangle(wm.bar.win, 
+                      (Vec2){.x = xoffset + BAR_LABEL_PADDING, .y = 0}, 
+                      (Vec2){.x = xoffset + BAR_LABEL_PADDING + 20, .y = BAR_SIZE}, 
+                      (Vec2){.x = xoffset + BAR_LABEL_PADDING + 20, .y = 0}, 
+                      BAR_INFO_LABEL_COLOR);
+        xoffset += 20;
+        xoffset += BAR_LABEL_PADDING;
+
         if(focused_window) {
             uint32_t program_label_offset = draw_text_icon_color(BAR_INFO_PROGRAM_ICON, window_name, 
                                                                 (Vec2){xoffset, (BAR_SIZE / 2.0f) + (BAR_FONT_SIZE / 2.0f)},

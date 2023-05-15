@@ -87,14 +87,14 @@ typedef struct {
 #define BAR_SHOW_INFO_LABEL true
 #define BAR_SHOW_VERSION_LABEL true
 
-#define BAR_SIZE 30 // In pixels
+#define BAR_SIZE 35 // In pixels
 #define BAR_START_MONITOR 1 // Monitor on which the bar is on. (0 is most left)
 #define BAR_REFRESH_SPEED 1.0 // In seconds
 #define BAR_COLOR 0x202020
 #define BAR_LABEL_PADDING 100 // In pixels
                             
-#define BAR_FONT "JetBrains Mono Nerd Font:size=13:style=bold"
-#define BAR_FONT_SIZE 13 
+#define BAR_FONT "JetBrains Mono Nerd Font:size=14:style=bold"
+#define BAR_FONT_SIZE 13
 #define BAR_FONT_COLOR "#ffffff"
 
 
