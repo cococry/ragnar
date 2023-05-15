@@ -71,6 +71,22 @@ because i think it has very clean animation support. You can find my picom confi
 This project is in early stage and not finished. So if you find bugs or have any problems, feel free to [submit an issue](https://github.com/cococry/Ragnar/issues). 
 Especially multi monitor setups can be problematic with the current state of the code base.
 
+## Inspiration
+
+RagnarWM is mainly inspired by [dwm](https://dwm.suckless.org).
+I, myself used dwm as my main window manager in the past and 
+i really liked the minimalist style of it. But i found
+it really frustrating how the default dwm repository was
+pretty much unusable out of the box. A lot
+of main features are non-existend in dwm or 
+poorly designed. That's why i was inspired to create
+a minimal window manager that comes with usablity
+out of the box. I don't think usablity and features
+have to suffer with minimalism. But don't get
+me wrong, dwm is a great window manager and i
+had a really nice time using it.
+
+
 ## Usage
 
 ### Default Keybindings
