@@ -164,7 +164,7 @@ void xwm_window_frame(Window win) {
 
     XWindowAttributes attribs;
     XGetWindowAttributes(wm.display, win, &attribs);
-
+    
     // Creating the X Window frame
     int32_t win_x = get_focused_monitor_window_center_x(attribs.width / 2);
     Window win_frame = XCreateSimpleWindow(wm.display, wm.root, 
@@ -172,7 +172,7 @@ void xwm_window_frame(Window win) {
         (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
         WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
 
-    XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
+    XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
     XReparentWindow(wm.display, win, win_frame, 0, 0);
     XMapWindow(wm.display, win_frame);
 
@@ -215,11 +215,9 @@ void xwm_window_unframe(Window win) {
     }
 
     // Destroying the window in X
+    XReparentWindow(wm.display, frame_win, wm.root,0,0);
     XUnmapWindow(wm.display, frame_win);
-    XDestroyWindow(wm.display, frame_win);
-    XReparentWindow(wm.display, frame_win, wm.root, 0, 0);
     XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
-
     // Removing the window from the clients
     for(uint32_t i = client_index; i < wm.clients_count - 1; i++) {
         wm.client_windows[i] = wm.client_windows[i + 1];
@@ -250,16 +248,15 @@ void xwm_run() {
 
     XSetErrorHandler(handle_wm_detected);
     XSelectInput(wm.display, wm.root, SubstructureRedirectMask | SubstructureNotifyMask); 
-    XSync(wm.display, false);
     if(wm_detected) {
         printf("Another window manager is already running on this X display.\n");
         return;
     }
     
+    XSync(wm.display, false);
     Cursor cursor = XcursorLibraryLoadCursor(wm.display, "arrow");
     XDefineCursor(wm.display, wm.root, cursor);
     XSetErrorHandler(handle_x_error);
-    XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
 
     grab_global_input();
     
@@ -271,7 +268,6 @@ void xwm_run() {
     while(wm.running) {
         // Query mouse position to get focused monitor
         select_focused_monitor(get_cursor_position().x);
-
         if(XPending(wm.display)) {
             XEvent e;
             XNextEvent(wm.display, &e);
@@ -431,14 +427,11 @@ int handle_wm_detected(Display* display, XErrorEvent* e) {
 }
 
 void handle_reparent_notify(XReparentEvent e) {
-    if(get_client_index_window(e.window) == -1) {
-        xwm_window_frame(e.window);
-        XMapWindow(wm.display, e.window);
-    }
+    (void)e;
 }
 
 void handle_destroy_notify(XDestroyWindowEvent e) {
-	(void)e;
+    (void)e;
 }
 void handle_map_notify(XMapEvent e) {
 	(void)e;
@@ -875,8 +868,6 @@ void establish_window_layout() {
                 });
             }
             last_y_offset = clients[i]->layout_y_size_offset;
-            XClearWindow(wm.display, clients[i]->frame);
-            XClearWindow(wm.display, clients[i]->win);
         }
     }    
 }
