@@ -58,7 +58,6 @@ typedef struct {
     bool in_layout;
     int32_t layout_y_size_offset;
     bool ignore_unmap;
-
 } Client;
 
 typedef struct {
@@ -222,8 +221,10 @@ void xwm_window_unframe(Window win) {
     XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
 
     // Removing the window from the clients
-    for(uint32_t i = get_client_index_window(win); i < wm.clients_count - 1; i++)
+    for(uint32_t i = client_index; i < wm.clients_count - 1; i++) {
         wm.client_windows[i] = wm.client_windows[i + 1];
+    }
+    memset(&wm.client_windows[wm.clients_count - 1], 0, sizeof(Client));
     wm.clients_count--;
     
     if(wm.clients_count == 2) {
@@ -618,6 +619,25 @@ void handle_key_press(XKeyEvent e) {
         }
         change_bar_monitor(wm.bar_monitor);
         establish_window_layout();
+    } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY)) {
+        int32_t index = wm.focused_client + 1;
+        uint32_t first_index = 0;
+        for(uint32_t i = 0; i < wm.clients_count; i++) {
+            if(wm.client_windows[i].desktop_index == wm.focused_desktop[wm.focused_monitor] && 
+                wm.client_windows[i].monitor_index == wm.focused_monitor) {
+                first_index = i;
+                break;
+            }
+        }
+        if(index >= (int32_t)wm.clients_count) {
+            index = first_index;
+        }
+        if(wm.client_windows[index].desktop_index != wm.focused_desktop[wm.focused_monitor] || 
+            wm.client_windows[index].monitor_index != wm.focused_monitor) {
+            index = first_index;
+        }
+        XSetInputFocus(wm.display, wm.client_windows[index].win, RevertToPointerRoot, CurrentTime);
+        wm.focused_client = index;
     } 
 }
 void handle_key_release(XKeyEvent e) {
@@ -640,6 +660,7 @@ static void grab_global_input() {
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_TILED_MASTER_KEY),MASTER_KEY | ShiftMask,wm.root,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_FLOATING_KEY),MASTER_KEY | ShiftMask,wm.root,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, APPLICATION_LAUNCHER_OPEN_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
     if(SHOW_BAR) {
         XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_TOGGLE_KEY), MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
         XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_UP_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
@@ -854,6 +875,8 @@ void establish_window_layout() {
                 });
             }
             last_y_offset = clients[i]->layout_y_size_offset;
+            XClearWindow(wm.display, clients[i]->frame);
+            XClearWindow(wm.display, clients[i]->win);
         }
     }    
 }
