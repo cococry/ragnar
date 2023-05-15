@@ -40,7 +40,7 @@ yay -S xorg xorg-dev xorg-xinit gcc make
 
 Then type this command to install the WM 
 ```console
-sudo make clean install
+sudo make ragnar install
 ```
 
 If you get an error that states something like
