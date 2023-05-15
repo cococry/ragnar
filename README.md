@@ -1,10 +1,8 @@
 # RagnarWM
 
 <p float="left">
-  <p style="align=center">
-    <img src="https://github.com/cococry/Ragnar/blob/main/branding/themes.jpg" height="500" />
-  </p>
-  <img src="https://github.com/cococry/Ragnar/blob/main/branding/workflow.png" width="400"  /> 
+   <img src="https://github.com/cococry/Ragnar/blob/main/branding/themes.jpg" height="500" />
+   <img src="https://github.com/cococry/Ragnar/blob/main/branding/workflow.png" width="400"  /> 
 </p>
 
 ## Overview
