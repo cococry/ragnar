@@ -1,9 +1,10 @@
 CC = cc
 
 # includes and flags
-FREETYPEINC = /usr/include/freetype2
-LIBS =  -lXft -lX11 -lXcursor -lXft -I${FREETYPEINC}
 CFLAGS = -O3 -ffast-math -Wall -Wextra
+LIBS = -lXft -lX11 -lXcursor -lXft -lfontconfig
+FREETYPEINC = /usr/include/freetype2
+INCS = -I${FREETYPEINC}
 
 SRC = ragnar.c
 OBJ = ${SRC:.c=.o}
@@ -11,18 +12,19 @@ OBJ = ${SRC:.c=.o}
 all: ragnar print_options 
 
 print_options:
-	@echo ragnar build options:
+	@echo ragnar build options-I:
 	@echo "CFLAGS = ${CFLAGS}"
 	@echo "LIBS   = ${LIBS}"
+	@echo "INCS   = ${INCS}"
 	@echo "CC     = ${CC}"
 
 .c.o:
-	${CC} -c ${CFLAGS} $<
+	${CC} -c ${CFLAGS} ${LIBS} ${INCS} $<
 
 ${OBJ}: config.h
 
 ragnar: ${OBJ}
-	${CC} -o $@ ${OBJ} ${LIBS}
+	${CC} -o $@ ${OBJ} ${LIBS} ${INCS}
 
 install:
 	cp -f ragnar /usr/bin
@@ -37,6 +39,6 @@ uninstall:
 	rm -f /usr/share/applications/ragnar.desktop
 
 freetype:
-	mv /usr/include/freetype/*  /usr/include/
+	mv /usr/include/freetype/* /usr/include/
 
 .PHONY: all print_options clean install uninstall freetype
