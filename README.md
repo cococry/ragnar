@@ -9,7 +9,7 @@
 
 Ragnar is a minimal window manager for X written in C.
 The goal of this project is to create a window manager that has minimal bloat but
-is still accesable for non-technical people. 
+is still aestetic and usable.
 
 ## Features
 
