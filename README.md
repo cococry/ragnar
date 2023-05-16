@@ -118,4 +118,4 @@ had a really nice time using it.
 | SUPER + B | Cycle bar one monitor down |
 | SUPER + N | Cycle bar one monitor up |
 | SUPER + I | Toggle bar visibility |
-
+| SUPER + Tab | Cycle through windows |
