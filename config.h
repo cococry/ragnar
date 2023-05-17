@@ -1,6 +1,14 @@
 #pragma once
 #include <X11/X.h>
 #include <stdint.h>
+#include <X11/Xft/Xft.h>
+
+// INTERNAL -- IGNORE
+typedef struct {
+    XftFont* font;
+    XftColor color;
+    XftDraw* draw;
+} FontStruct;
 
 typedef struct {
     uint32_t width, height;
@@ -17,13 +25,19 @@ typedef struct {
     const char* cmd;
     const char* icon;
     Window win;
+    FontStruct font;
 } BarButton;
 
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
-#define WEB_BROWSER_CMD "brave &"
+#define WEB_BROWSER_CMD "chromium &"
 #define APPLICATION_LAUNCHER_CMD "dmenu_run &"
+
+/* Font */
+#define FONT "monospace:size=11"
+#define FONT_SIZE 11 
+#define FONT_COLOR "#ffffff"
 
 /* Keybindings */
 #define MASTER_KEY Mod4Mask 
@@ -55,6 +69,8 @@ typedef struct {
 #define BAR_CYCLE_MONITOR_UP_KEY XK_N
 #define BAR_CYCLE_MONITOR_DOWN_KEY XK_B
 
+#define DECORATION_TOGGLE_KEY XK_U
+
 /* Desktops */
 #define DESKTOP_CYCLE_UP_KEY XK_D
 #define DESKTOP_CYCLE_DOWN_KEY XK_A
@@ -68,6 +84,13 @@ typedef struct {
 #define WINDOW_BORDER_COLOR 0x242424 
 #define WINDOW_MIN_SIZE_Y_LAYOUT 100 // In pixels
 #define WINDOW_MAX_GAP 400 // In pixels
+
+/* Window decoration */
+#define SHOW_DECORATION true
+#define DECORATION_CLOSE_ICON "X"
+#define DECORATION_TITLEBAR_SIZE 30
+#define DECORATION_COLOR 0x1e404f // #1e404f
+                                  
 
 /* Bar */
 
@@ -87,48 +110,36 @@ typedef struct {
 #define BAR_SHOW_INFO_LABEL true
 #define BAR_SHOW_VERSION_LABEL true
 
-#define BAR_SIZE 35 // In pixels
+#define BAR_SIZE 20 // In pixels
 #define BAR_START_MONITOR 1 // Monitor on which the bar is on. (0 is most left)
 #define BAR_REFRESH_SPEED 1.0 // In seconds
 #define BAR_COLOR 0x202020
 #define BAR_LABEL_PADDING 100 // In pixels
+
+#define BAR_MAIN_LABEL_COLOR 0x1e404f
+#define BAR_INFO_LABEL_COLOR 0x1e404f
+#define BAR_BUTTON_LABEL_COLOR 0x1e404f
+#define BAR_VERSION_LABEL_COLOR 0x1e404f
+
                             
-#define BAR_FONT "JetBrains Mono Nerd Font:size=14:style=bold"
-#define BAR_FONT_SIZE 13
-#define BAR_FONT_COLOR "#ffffff"
+#define BAR_INFO_PROGRAM_ICON "Program: "
+#define BAR_INFO_MONITOR_ICON "Monitor: "
+#define BAR_INFO_DESKTOP_ICON "Desktop: "
+#define BAR_INFO_WINDOW_LAYOUT_ICON "Layout: "
 
-
-#define BAR_MAIN_LABEL_COLOR 0x664e43
-#define BAR_INFO_LABEL_COLOR 0x664e43 
-#define BAR_BUTTON_LABEL_COLOR 0x664e43 
-#define BAR_VERSION_LABEL_COLOR 0x664e43 // #664e43
-                            
-#define BAR_INFO_PROGRAM_ICON ""
-#define BAR_INFO_MONITOR_ICON "󰍹"
-#define BAR_INFO_DESKTOP_ICON ""
-#define BAR_INFO_WINDOW_LAYOUT_ICON ""
-
-#define BAR_SLICES_COUNT 4
-#define BAR_BUTTON_COUNT 5
+#define BAR_SLICES_COUNT 1
+#define BAR_BUTTON_COUNT 3
 
 static BarCommand  BarCommands[BAR_SLICES_COUNT] = 
 { 
-    (BarCommand){.cmd = "echo \"  󰣇\"", .refresh_time = 300.0f},
-    (BarCommand){.cmd = "echo \"  $(date +%R) \"", .refresh_time = 1.0f},
-    (BarCommand){.cmd = "ram-ragbar", .refresh_time = 1.0f,},
-    //(BarCommand){.cmd = "kernel-ragbar", .refresh_time = 300.0f},
-    (BarCommand){.cmd = "uptime-ragbar", .refresh_time = 1.0f},
-    //(BarCommand){.cmd = "packages-ragbar", .refresh_time = 60.0f},
-    //(BarCommand){.cmd = "updates-ragbar", .refresh_time = 120.0f},
+    (BarCommand){.cmd = "echo \"$(date +%R)  \"", .refresh_time = 1.0f},
 };
 
 static BarButton BarButtons[BAR_BUTTON_COUNT] =
 {
-    (BarButton){.cmd = APPLICATION_LAUNCHER_CMD, .icon = " "},
-    (BarButton){.cmd = TERMINAL_CMD, .icon = " "},
-    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = " "},
-    (BarButton){.cmd = "qtfm &", .icon = " "},
-    (BarButton){.cmd = "nitrogen &", .icon = " "},
+    (BarButton){.cmd = APPLICATION_LAUNCHER_CMD, .icon = "Search"},
+    (BarButton){.cmd = TERMINAL_CMD, .icon = "Terminal"},
+    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = "Browser"},
 };
 
 /* Monitors */
