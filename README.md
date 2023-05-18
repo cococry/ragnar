@@ -20,6 +20,7 @@ is still aestetic and usable.
 - [x] Multiple Desktops
 - [x] Status Bar
 - [ ] Auto Start Commands
+- [x] Window decorations
 - [ ] Scratchpads
 
 ## Installation
