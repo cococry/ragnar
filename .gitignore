@@ -1,3 +1,4 @@
 ragnar
 ragnar.o
 *.patch
+config.h

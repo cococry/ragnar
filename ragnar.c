@@ -16,7 +16,7 @@
 #include <time.h>
 #include "config.h"
 
-#define VERSION "1.0"
+#define VERSION "1.1"
 
 #define CLIENT_WINDOW_CAP 256
 
@@ -570,6 +570,10 @@ void handle_button_press(XButtonEvent e) {
                 break;
             }
         }
+        if(wm.client_windows[i].win != e.window) 
+            XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR);
+        else 
+            XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR_ACTIVE);
     }
     if(get_client_index_window(e.window) != -1) { 
         XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
@@ -725,12 +729,14 @@ void handle_key_press(XKeyEvent e) {
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_CYCLE_KEY)) {
         int32_t index = wm.focused_client + 1;
         uint32_t first_index = 0;
+        bool found_index = false;
         for(uint32_t i = 0; i < wm.clients_count; i++) {
             if(wm.client_windows[i].desktop_index == wm.focused_desktop[wm.focused_monitor] && 
-                wm.client_windows[i].monitor_index == wm.focused_monitor) {
+                wm.client_windows[i].monitor_index == wm.focused_monitor && !found_index) {
                 first_index = i;
-                break;
+                found_index = true;
             }
+            XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR);
         }
         if(index >= (int32_t)wm.clients_count) {
             index = first_index;
@@ -740,6 +746,7 @@ void handle_key_press(XKeyEvent e) {
             index = first_index;
         }
         XSetInputFocus(wm.display, wm.client_windows[index].win, RevertToPointerRoot, CurrentTime);
+            XSetWindowBorder(wm.display, wm.client_windows[index].frame, WINDOW_BORDER_COLOR_ACTIVE);
         wm.focused_client = index;
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, DECORATION_TOGGLE_KEY)) {
         if(!SHOW_DECORATION)
@@ -1003,19 +1010,22 @@ void redraw_client_decoration(Client* client) {
         XFillRectangle(wm.display, client->decoration.titlebar, DefaultGC(wm.display, wm.screen), 0, 0, extents.xOff, DECORATION_TITLEBAR_SIZE);
         draw_str(window_name, client->decoration.titlebar_font, 0, 20);
         XFree(window_name);
-        draw_triangle(client->decoration.titlebar, 
-                  (Vec2){extents.xOff + 20, DECORATION_TITLEBAR_SIZE}, 
-                  (Vec2){extents.xOff, DECORATION_TITLEBAR_SIZE}, 
-                  (Vec2){extents.xOff, 0}, DECORATION_TITLE_COLOR);
-
+        if(DECORATION_TRIANGLES) {
+            draw_triangle(client->decoration.titlebar, 
+                      (Vec2){extents.xOff + 20, DECORATION_TITLEBAR_SIZE}, 
+                      (Vec2){extents.xOff, DECORATION_TITLEBAR_SIZE}, 
+                      (Vec2){extents.xOff, 0}, DECORATION_TITLE_COLOR);
+        }
     }
     
+    if(DECORATION_TRIANGLES) {
     XWindowAttributes attribs;
     XGetWindowAttributes(wm.display, client->frame, &attribs);
     draw_triangle(client->decoration.titlebar, 
                   (Vec2){attribs.width - x_offset - 20, DECORATION_TITLEBAR_SIZE}, 
                   (Vec2){attribs.width - x_offset, DECORATION_TITLEBAR_SIZE}, 
                   (Vec2){attribs.width - x_offset, 0}, DECORATION_MAXIMIZE_ICON_COLOR);
+    }
 }
 
 void establish_window_layout() {
