@@ -491,6 +491,7 @@ void handle_motion_notify(XMotionEvent e) {
         // Remove the client from the layout
         if(client->in_layout) {
             client->in_layout = false;
+            client->layout_y_size_offset = 0;
             establish_window_layout();
         }
     }
@@ -1060,7 +1061,7 @@ void establish_window_layout() {
             XSetWindowBorderWidth(wm.display, master->frame, WINDOW_BORDER_WIDTH);
             return;
         }
-            
+        
         // set master
         move_client(master, (Vec2){get_monitor_start_x(wm.focused_monitor) + wm.window_gap, wm.window_gap + offset_bar_master});
         resize_client(master, (Vec2){
