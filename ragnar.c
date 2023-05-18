@@ -16,7 +16,6 @@
 #include <time.h>
 #include "config.h"
 
-
 #define VERSION "1.0"
 
 #define CLIENT_WINDOW_CAP 256
@@ -38,12 +37,16 @@ typedef struct {
     Window win;
     bool hidden;
     FontStruct font;
+    bool spawned;
 } Bar;
 
 typedef struct {
+    bool hidden;
     Window titlebar;
     Window closebutton;
-    FontStruct closebutton_font, titlebar_font;
+    Window maximize_button;
+    FontStruct closebutton_font, 
+        titlebar_font, maximize_button_font;
 } Decoration;
 
 typedef struct {
@@ -52,6 +55,7 @@ typedef struct {
 
     bool fullscreen;
     Vec2 fullscreen_revert_size;
+    Vec2 fullscreen_revert_pos;
 
     uint8_t monitor_index;
     int8_t desktop_index;
@@ -121,7 +125,7 @@ static int32_t      get_focused_monitor_window_center_x(int32_t window_x);
 static int32_t      get_monitor_start_x(int8_t monitor);
 static int32_t      get_client_index_window(Window win);
 
-static void         set_fullscreen(Window win);
+static void         set_fullscreen(Window win, bool hide_decoration);
 static void         unset_fullscreen(Window win);
 
 static void         establish_window_layout();
@@ -150,7 +154,7 @@ static FontStruct   font_create(const char* fontname, const char* fontcolor, Win
 
 static void         draw_str(const char* str, FontStruct font, int x, int y);
 static void         draw_triangle(Window win, Vec2 p1, Vec2 p2, Vec2 p3, uint32_t color);
-static uint32_t     draw_text_icon_color(const char* icon, const char* text, Vec2 pos, FontStruct font, uint32_t color, uint32_t rect_x_add);
+static uint32_t     draw_text_icon_color(const char* icon, const char* text, Vec2 pos, FontStruct font, uint32_t color, uint32_t rect_x_add, Window win, uint32_t height);
 
 XWM xwm_init() {
     XWM wm;
@@ -185,8 +189,6 @@ void xwm_window_frame(Window win) {
     XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
     XReparentWindow(wm.display, win, win_frame, 0, ((SHOW_DECORATION && !wm.decoration_hidden) ? DECORATION_TITLEBAR_SIZE : 0));
     XMapWindow(wm.display, win_frame);
-    //XSetInputFocus(wm.display, win, RevertToPointerRoot, CurrentTime);
-
     Client client = (Client){
         .frame = win_frame, 
         .win =  win, 
@@ -203,35 +205,55 @@ void xwm_window_frame(Window win) {
 
     grab_window_input(win);
     establish_window_layout();
-    if (SHOW_DECORATION && !wm.decoration_hidden) { 
+    if (SHOW_DECORATION) { 
         int32_t client_index = get_client_index_window(win);
 
         XWindowAttributes attribs_frame;
         XGetWindowAttributes(wm.display, win_frame, &attribs_frame);
-
-        wm.client_windows[client_index].decoration.titlebar = XCreateSimpleWindow(wm.display, win_frame, 0, 0, attribs_frame.width, DECORATION_TITLEBAR_SIZE,0,0,BAR_INFO_LABEL_COLOR);
+        
+        /* Titlebar */
+        wm.client_windows[client_index].decoration.titlebar = XCreateSimpleWindow(wm.display, win_frame, 0, 0, attribs_frame.width, DECORATION_TITLEBAR_SIZE,0,0, DECORATION_COLOR);
         XSelectInput(wm.display, wm.client_windows[client_index].decoration.titlebar, SubstructureRedirectMask | SubstructureNotifyMask); 
         XMapWindow(wm.display, wm.client_windows[client_index].decoration.titlebar);
         XReparentWindow(wm.display, wm.client_windows[client_index].decoration.titlebar, win_frame, 0, 0);
-        
-        uint32_t offset = draw_text_icon_color(DECORATION_CLOSE_ICON, "", (Vec2){FONT_SIZE / 2.0f, 20}, wm.bar.font, BAR_BUTTON_LABEL_COLOR, 0);
-        wm.client_windows[client_index].decoration.closebutton = XCreateSimpleWindow(wm.display, win_frame, attribs_frame.width - offset, 0, 
-                                                50, DECORATION_TITLEBAR_SIZE - WINDOW_BORDER_WIDTH, WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, DECORATION_COLOR);
-        XSelectInput(wm.display,wm.client_windows[client_index].decoration.closebutton, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
-        XMapWindow(wm.display, wm.client_windows[client_index].decoration.closebutton);
-        XRaiseWindow(wm.display, wm.client_windows[client_index].decoration.closebutton);
+       
+        /* Close button */
+        uint32_t x_offset = 0;
+        if(DECORATION_SHOW_CLOSE_ICON) {
+            x_offset += DECORATION_CLOSE_ICON_SIZE;
+            wm.client_windows[client_index].decoration.closebutton = XCreateSimpleWindow(wm.display, win_frame, attribs_frame.width - x_offset, 0, 
+                                                    DECORATION_CLOSE_ICON_SIZE, DECORATION_TITLEBAR_SIZE, 0,  WINDOW_BORDER_COLOR, DECORATION_CLOSE_ICON_COLOR);
+            XSelectInput(wm.display,wm.client_windows[client_index].decoration.closebutton, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
+            XMapWindow(wm.display, wm.client_windows[client_index].decoration.closebutton);
+            XRaiseWindow(wm.display, wm.client_windows[client_index].decoration.closebutton);
+        }
+        /* Fullscreen button */
+        if(DECORATION_SHOW_MAXIMIZE_ICON) {
+            x_offset += DECORATION_MAXIMIZE_ICON_SIZE;
+            wm.client_windows[client_index].decoration.maximize_button = XCreateSimpleWindow(wm.display, win_frame, attribs_frame.width - x_offset, 0, 
+                                                    DECORATION_MAXIMIZE_ICON_SIZE, DECORATION_TITLEBAR_SIZE, 0,  WINDOW_BORDER_COLOR, DECORATION_MAXIMIZE_ICON_COLOR);
+            XSelectInput(wm.display,wm.client_windows[client_index].decoration.maximize_button, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
+            XMapWindow(wm.display, wm.client_windows[client_index].decoration.maximize_button);
+            XRaiseWindow(wm.display, wm.client_windows[client_index].decoration.maximize_button);
+        }
 
+        /* Creating fonts & drawing decoration */
         wm.client_windows[client_index].decoration.closebutton_font = font_create(FONT, FONT_COLOR, wm.client_windows[client_index].decoration.closebutton);
-        draw_str(DECORATION_CLOSE_ICON, wm.client_windows[client_index].decoration.closebutton_font ,FONT_SIZE / 2.0f, 20);
-
+        wm.client_windows[client_index].decoration.maximize_button_font = font_create(FONT, FONT_COLOR, wm.client_windows[client_index].decoration.maximize_button);
         wm.client_windows[client_index].decoration.titlebar_font = font_create(FONT, FONT_COLOR, wm.client_windows[client_index].decoration.titlebar);
 
-        char* window_name = NULL;
-        XFetchName(wm.display, wm.client_windows[client_index].win, &window_name);
-        if(window_name != NULL) {
-            draw_str(window_name, wm.client_windows[client_index].decoration.titlebar_font, 0, 20);
-            XFree(window_name);
+        if(wm.decoration_hidden) {
+            hide_client_decoration(&wm.client_windows[client_index]);
+            XMoveWindow(wm.display, wm.client_windows[client_index].win, 0, 0);
+            XResizeWindow(wm.display, wm.client_windows[client_index].win, attribs_frame.width, attribs_frame.height);
+        } else { 
+            redraw_client_decoration(&wm.client_windows[client_index]);
         }
+    }
+    if(!wm.bar.spawned) {
+        hide_bar();
+        unhide_bar();
+        wm.bar.spawned = true;
     }
     raise_bar();
 }
@@ -252,6 +274,15 @@ void xwm_window_unframe(Window win) {
     if(wm.client_windows[client_index].in_layout && get_client_index_window(win) == 0) {
         wm.layout_master_size_x[wm.focused_monitor][wm.focused_desktop[wm.focused_monitor]] = 0;
     }
+    if(SHOW_DECORATION) {
+        /* Title bar */
+        XftColorFree(wm.display, DefaultVisual(wm.display, 0), DefaultColormap(wm.display, wm.screen), &wm.client_windows[client_index].decoration.titlebar_font.color);
+        XftFontClose(wm.display, wm.client_windows[client_index].decoration.titlebar_font.font);
+        /* Close button */
+        XftColorFree(wm.display, DefaultVisual(wm.display, 0), DefaultColormap(wm.display, wm.screen), &wm.client_windows[client_index].decoration.titlebar_font.color);
+        XftFontClose(wm.display, wm.client_windows[client_index].decoration.titlebar_font.font);
+    }
+
 
     // Destroying the window in X
     XReparentWindow(wm.display, frame_win, wm.root,0,0);
@@ -283,7 +314,7 @@ void xwm_run() {
     wm.current_layout = WINDOW_LAYOUT_TILED_MASTER;
     wm.bar_monitor = BAR_START_MONITOR;
     wm.window_gap = 30;
-    wm.decoration_hidden = false;
+    wm.decoration_hidden = !SHOW_DECORATION;
     memset(wm.focused_desktop, 0, sizeof(wm.focused_desktop));
     memset(wm.layout_master_size_x, 0, sizeof(wm.layout_master_size_x));
     wm.screen = DefaultScreen(wm.display);
@@ -300,12 +331,13 @@ void xwm_run() {
     XDefineCursor(wm.display, wm.root, cursor);
     XSetErrorHandler(handle_x_error);
 
+    XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
     grab_global_input();
     
     if(SHOW_BAR)
         create_bar();
 
-    double refresh_timer = BAR_REFRESH_SPEED;
+    double refresh_timer = WM_REFRESH_SPEED;
 
     while(wm.running) {
         // Query mouse position to get focused monitor
@@ -363,7 +395,7 @@ void xwm_run() {
                 BarCommands[i].timer += delta_time;
             }
         }
-        if(refresh_timer >= BAR_REFRESH_SPEED) {
+        if(refresh_timer >= WM_REFRESH_SPEED) {
             if(SHOW_BAR) 
                 draw_bar();
             if(SHOW_DECORATION && !wm.decoration_hidden) {
@@ -374,6 +406,8 @@ void xwm_run() {
             refresh_timer = 0;
         }    
     }
+
+    xwm_terminate();
 }
 
 Window get_frame_window(Window win) {
@@ -434,6 +468,7 @@ void handle_motion_notify(XMotionEvent e) {
             client->fullscreen = false;
             XSetWindowBorderWidth(wm.display, client->frame, WINDOW_BORDER_WIDTH);
             unhide_bar();
+            unhide_client_decoration(client);
         } 
         move_client(client, drag_dest);
         // Remove the client from the layout 
@@ -517,8 +552,22 @@ void handle_button_press(XButtonEvent e) {
         }
     }
     for(uint32_t i = 0; i < wm.clients_count; i++) {
-        if(wm.client_windows[i].decoration.closebutton == e.window) {
-            xwm_window_unframe(wm.client_windows[i].win);
+        if(DECORATION_SHOW_MAXIMIZE_ICON) {
+            if(wm.client_windows[i].decoration.maximize_button == e.window) {
+                if(wm.client_windows[i].fullscreen) {
+                    unset_fullscreen(wm.client_windows[i].frame);
+                    establish_window_layout();
+                } else {
+                    set_fullscreen(wm.client_windows[i].frame, false);
+                }
+                break;
+            }
+        }
+        if(DECORATION_SHOW_CLOSE_ICON) {
+            if(wm.client_windows[i].decoration.closebutton == e.window) {
+                xwm_window_unframe(wm.client_windows[i].win);
+                break;
+            }
         }
     }
     XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
@@ -549,7 +598,7 @@ void handle_key_press(XKeyEvent e) {
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_FULLSCREEN_KEY)) {
         if(client_index == -1 || e.window == wm.root) return;
         if(!wm.client_windows[client_index].fullscreen) {
-            set_fullscreen(e.window);
+            set_fullscreen(e.window, true);
         } else {
             unset_fullscreen(e.window);
             establish_window_layout();
@@ -696,12 +745,14 @@ void handle_key_press(XKeyEvent e) {
             for(uint32_t i = 0; i < wm.clients_count; i++) {
                 unhide_client_decoration(&wm.client_windows[i]);
             }
+            wm.decoration_hidden = false;
         } else {
             for(uint32_t i = 0; i < wm.clients_count; i++) {
                 hide_client_decoration(&wm.client_windows[i]);
             }
+            wm.decoration_hidden = true;
         }
-        //establish_window_layout();
+        establish_window_layout();
     }
 
 }
@@ -807,14 +858,15 @@ int32_t get_monitor_start_x(int8_t monitor) {
     return x;
 }
 
-static void set_fullscreen(Window win) {
+static void set_fullscreen(Window win, bool hide_decoration) {
     uint32_t client_index = get_client_index_window(win);
     if(wm.client_windows[client_index].fullscreen) return;
 
     XWindowAttributes attribs;
-    XGetWindowAttributes(wm.display, wm.client_windows[client_index].win, &attribs);
+    XGetWindowAttributes(wm.display, wm.client_windows[client_index].frame, &attribs);
 
     wm.client_windows[client_index].fullscreen_revert_size = (Vec2){.x = attribs.width, .y = attribs.height};
+    wm.client_windows[client_index].fullscreen_revert_pos = (Vec2){.x = attribs.x, .y = attribs.y};
     wm.client_windows[client_index].fullscreen = true;
 
     XSetWindowBorderWidth(wm.display, wm.client_windows[client_index].frame, 0);
@@ -825,14 +877,16 @@ static void set_fullscreen(Window win) {
 
     resize_client(&wm.client_windows[client_index], (Vec2){. x = Monitors[wm.focused_monitor].width, .y = Monitors[wm.focused_monitor].height});
     move_client(&wm.client_windows[client_index], (Vec2){.x = get_monitor_start_x(wm.focused_monitor), 0});
-    hide_client_decoration(&wm.client_windows[client_index]);
+
+    if(hide_decoration)
+        hide_client_decoration(&wm.client_windows[client_index]);
 }
 static void unset_fullscreen(Window win)  {
     uint32_t client_index = get_client_index_window(win);
     if(!wm.client_windows[client_index].fullscreen) return;
 
     resize_client(&wm.client_windows[client_index], wm.client_windows[client_index].fullscreen_revert_size);
-    move_client(&wm.client_windows[client_index], (Vec2){get_monitor_start_x(wm.focused_monitor), BAR_SIZE});
+    move_client(&wm.client_windows[client_index], wm.client_windows[client_index].fullscreen_revert_pos);
 
     wm.client_windows[client_index].fullscreen = false;
     XSetWindowBorderWidth(wm.display, wm.client_windows[client_index].frame, WINDOW_BORDER_WIDTH);
@@ -845,7 +899,8 @@ static void unset_fullscreen(Window win)  {
     if(wm.client_windows[client_index].decoration.closebutton_font.font != NULL && !wm.decoration_hidden && SHOW_DECORATION) {
         redraw_client_decoration(&wm.client_windows[client_index]);
     }
-    unhide_client_decoration(&wm.client_windows[client_index]);
+    if(SHOW_DECORATION && !wm.decoration_hidden)
+        unhide_client_decoration(&wm.client_windows[client_index]);
 }
 
 void move_client(Client* client, Vec2 pos) {
@@ -856,7 +911,7 @@ void resize_client(Client* client, Vec2 size) {
         XWindowAttributes attribs;
         XGetWindowAttributes(wm.display, client->win, &attribs);
         client->fullscreen_revert_size = (Vec2){.x = attribs.width, .y = attribs.height};
-        client->fullscreen = true;
+                client->fullscreen = true;
     }
     if(!wm.decoration_hidden && SHOW_DECORATION) {
         XMoveWindow(wm.display, client->win, 0, DECORATION_TITLEBAR_SIZE);
@@ -868,45 +923,97 @@ void resize_client(Client* client, Vec2 size) {
 
     if(client->decoration.closebutton_font.font != NULL && !wm.decoration_hidden && SHOW_DECORATION) {
         redraw_client_decoration(client);
-        XGlyphInfo extents;
-        XftTextExtents8(wm.display, client->decoration.closebutton_font.font, (FcChar8*)DECORATION_CLOSE_ICON, strlen(DECORATION_CLOSE_ICON), &extents);
-        XMoveWindow(wm.display, client->decoration.closebutton, size.x - extents.xOff, 0);
+        uint32_t x_offset = 0;
+        if(DECORATION_SHOW_CLOSE_ICON) {
+            x_offset += DECORATION_CLOSE_ICON_SIZE;
+            XMoveWindow(wm.display, client->decoration.closebutton, size.x - x_offset, 0);
+        }
+        if(DECORATION_SHOW_MAXIMIZE_ICON) {
+            x_offset += DECORATION_MAXIMIZE_ICON_SIZE;
+            XMoveWindow(wm.display, client->decoration.maximize_button, size.x - x_offset, 0);
+        }
     }
 }
 
 void hide_client_decoration(Client* client) {
-    XUnmapWindow(wm.display, client->decoration.closebutton);
+    if(!SHOW_DECORATION) return;
+    if(client->decoration.hidden) return;
+    if(DECORATION_SHOW_CLOSE_ICON)
+        XUnmapWindow(wm.display, client->decoration.closebutton);
+    if(DECORATION_SHOW_MAXIMIZE_ICON)
+        XUnmapWindow(wm.display, client->decoration.maximize_button);
+
     XUnmapWindow(wm.display, client->decoration.titlebar);
     XWindowAttributes attribs;
     XGetWindowAttributes(wm.display, client->win, &attribs);
     XMoveWindow(wm.display, client->win, 0, 0);
     XResizeWindow(wm.display, client->win, attribs.width, attribs.height + DECORATION_TITLEBAR_SIZE);
-    wm.decoration_hidden = true;
+    client->decoration.hidden = true;
+    
 }
 
 void unhide_client_decoration(Client* client) {
-    XMapWindow(wm.display, client->decoration.closebutton);
+    if(!SHOW_DECORATION) return;
+    if(!client->decoration.hidden) return;
+    if(DECORATION_SHOW_CLOSE_ICON)
+        XMapWindow(wm.display, client->decoration.closebutton);
+    if(DECORATION_SHOW_MAXIMIZE_ICON)
+        XMapWindow(wm.display, client->decoration.maximize_button);
+
     XMapWindow(wm.display, client->decoration.titlebar);
     XWindowAttributes attribs;
     XGetWindowAttributes(wm.display, client->win, &attribs);
     XMoveWindow(wm.display, client->win, 0, DECORATION_TITLEBAR_SIZE);
     XResizeWindow(wm.display, client->win, attribs.x, attribs.y - DECORATION_TITLEBAR_SIZE);
-    wm.decoration_hidden = false;
     redraw_client_decoration(client);
+    client->decoration.hidden = false;
 }
 
 
 void redraw_client_decoration(Client* client) {
-    XClearWindow(wm.display, client->decoration.closebutton);
+    if(!SHOW_DECORATION || (!DECORATION_SHOW_CLOSE_ICON && !DECORATION_SHOW_MAXIMIZE_ICON)) return;
+    uint32_t x_offset = 0;
+    if(DECORATION_SHOW_CLOSE_ICON) {
+        x_offset += DECORATION_CLOSE_ICON_SIZE;
+        XClearWindow(wm.display, client->decoration.closebutton);
+        XGlyphInfo extents;
+        XftTextExtents8(wm.display, client->decoration.closebutton_font.font, (FcChar8*)DECORATION_CLOSE_ICON, strlen(DECORATION_CLOSE_ICON), &extents);
+        draw_str(DECORATION_CLOSE_ICON, client->decoration.closebutton_font,
+                 (DECORATION_CLOSE_ICON_SIZE / 2.0f) - (extents.xOff / 2.0f), (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f)); 
+    }
+    if(DECORATION_SHOW_MAXIMIZE_ICON) {
+        x_offset += DECORATION_MAXIMIZE_ICON_SIZE;
+        XClearWindow(wm.display, client->decoration.maximize_button);
+        XGlyphInfo extents;
+        XftTextExtents8(wm.display, client->decoration.maximize_button_font.font, (FcChar8*)DECORATION_MAXIMIZE_ICON, strlen(DECORATION_MAXIMIZE_ICON), &extents);
+        draw_str(DECORATION_MAXIMIZE_ICON, client->decoration.maximize_button_font,
+                 (DECORATION_MAXIMIZE_ICON_SIZE / 2.0f) - (extents.xOff / 2.0f), (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f)); 
+    }
     XClearWindow(wm.display, client->decoration.titlebar);
-    draw_str(DECORATION_CLOSE_ICON, client->decoration.closebutton_font, FONT_SIZE / 2.0f, 20);
     char* window_name = NULL;
     XFetchName(wm.display, client->win, &window_name);
     if(window_name != NULL) {
+        XGlyphInfo extents;
+        XftTextExtents8(wm.display, client->decoration.titlebar_font.font, (FcChar8*)window_name, strlen(window_name), &extents);
+        XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), DECORATION_TITLE_COLOR);
+        XFillRectangle(wm.display, client->decoration.titlebar, DefaultGC(wm.display, wm.screen), 0, 0, extents.xOff, DECORATION_TITLEBAR_SIZE);
         draw_str(window_name, client->decoration.titlebar_font, 0, 20);
         XFree(window_name);
+        draw_triangle(client->decoration.titlebar, 
+                  (Vec2){extents.xOff + 20, DECORATION_TITLEBAR_SIZE}, 
+                  (Vec2){extents.xOff, DECORATION_TITLEBAR_SIZE}, 
+                  (Vec2){extents.xOff, 0}, DECORATION_TITLE_COLOR);
+
     }
+    
+    XWindowAttributes attribs;
+    XGetWindowAttributes(wm.display, client->frame, &attribs);
+    draw_triangle(client->decoration.titlebar, 
+                  (Vec2){attribs.width - x_offset - 20, DECORATION_TITLEBAR_SIZE}, 
+                  (Vec2){attribs.width - x_offset, DECORATION_TITLEBAR_SIZE}, 
+                  (Vec2){attribs.width - x_offset, 0}, DECORATION_MAXIMIZE_ICON_COLOR);
 }
+
 void establish_window_layout() {
     if(wm.current_layout == WINDOW_LAYOUT_FLOATING) return;
 
@@ -1091,11 +1198,12 @@ void create_bar() {
         XMapWindow(wm.display, BarButtons[i].win);
         XRaiseWindow(wm.display, BarButtons[i].win);
         BarButtons[i].font = font_create(FONT, FONT_COLOR, BarButtons[i].win);
-        draw_text_icon_color(BarButtons[i].icon, "", (Vec2){0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, BarButtons[i].font, BAR_BUTTON_LABEL_COLOR, 0);
+        draw_text_icon_color(BarButtons[i].icon, "", (Vec2){0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, BarButtons[i].font, BAR_BUTTON_LABEL_COLOR, 0, BarButtons[i].win, BAR_SIZE);
         draw_str(BarButtons[i].icon, BarButtons[i].font, 0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
         xoffset += extents.xOff + 20;
     }
     wm.bar.hidden = false;
+    wm.bar.spawned = false;
 }
 
 void hide_bar() {
@@ -1120,7 +1228,7 @@ void unhide_bar() {
         XGlyphInfo extents;
         XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
 
-        draw_text_icon_color(BarButtons[i].icon, "", (Vec2){0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, BarButtons[i].font, BAR_BUTTON_LABEL_COLOR, 0);
+        draw_text_icon_color(BarButtons[i].icon, "", (Vec2){0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, BarButtons[i].font, BAR_BUTTON_LABEL_COLOR, 0, BarButtons[i].win, BAR_SIZE);
         draw_str(BarButtons[i].icon, BarButtons[i].font, 0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
         xoffset += extents.xOff + 20;
     } 
@@ -1159,7 +1267,7 @@ FontStruct font_create(const char* fontname, const char* fontcolor, Window win) 
     XftDraw* xft_draw = XftDrawCreate(wm.display, win, DefaultVisual(wm.display, wm.screen), DefaultColormap(wm.display, wm.screen)); 
     XftColor xft_font_color;
     XftColorAllocName(wm.display,DefaultVisual(wm.display,0),DefaultColormap(wm.display,0),fontcolor, &xft_font_color);
-
+    
     fs.font = xft_font;
     fs.draw = xft_draw;
     fs.color = xft_font_color;
@@ -1222,21 +1330,21 @@ void draw_bar() {
         if(focused_window) {
             uint32_t program_label_offset = draw_text_icon_color(BAR_INFO_PROGRAM_ICON, window_name, 
                                                                 (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)},
-                                                                 wm.bar.font, BAR_INFO_LABEL_COLOR, 20);
+                                                                 wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
             xoffset += program_label_offset;
         }
         char monitor_index_str[8];
         sprintf(monitor_index_str, "%i", wm.focused_monitor);
         uint32_t monitor_label_offset = draw_text_icon_color(BAR_INFO_MONITOR_ICON, monitor_index_str, 
                                                              (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, 
-                                                              wm.bar.font, BAR_INFO_LABEL_COLOR, 20);
+                                                              wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
         xoffset += monitor_label_offset;
         
         char desktop_index_str[8];
         sprintf(desktop_index_str, "%hhd", wm.focused_desktop[wm.focused_monitor]);
         uint32_t desktop_label_offset = draw_text_icon_color(BAR_INFO_DESKTOP_ICON, desktop_index_str, 
                                                              (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, 
-                                                             wm.bar.font, BAR_INFO_LABEL_COLOR, 20);
+                                                             wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
         xoffset += desktop_label_offset;
 
         char current_layout_str[64];
@@ -1251,7 +1359,7 @@ void draw_bar() {
         }
         uint32_t window_layout_label_offset = draw_text_icon_color(BAR_INFO_WINDOW_LAYOUT_ICON, current_layout_str, 
                                                              (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, 
-                                                             wm.bar.font, BAR_INFO_LABEL_COLOR, 20);
+                                                             wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
         xoffset += window_layout_label_offset;
 
         XFree(window_name);
@@ -1277,7 +1385,7 @@ void draw_bar() {
         draw_str(text, wm.bar.font, monitor_width - extents.xOff, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
 
         draw_triangle(wm.bar.win, 
-                (Vec2){.x = monitor_width - extents.xOff - 20, .y = 0}, 
+                (Vec2){.x = monitor_width - extents.xOff - 20, .y = BAR_SIZE}, 
                   (Vec2){.x = monitor_width - extents.xOff, .y = BAR_SIZE}, 
                   (Vec2){.x = monitor_width - extents.xOff, .y = 0}, 
                   BAR_INFO_LABEL_COLOR);
@@ -1304,17 +1412,17 @@ void draw_triangle(Window win, Vec2 p1, Vec2 p2, Vec2 p3, uint32_t color) {
     XFillPolygon(wm.display, win, DefaultGC(wm.display, wm.screen), points, 3, Convex, CoordModeOrigin);
 
 }
-uint32_t draw_text_icon_color(const char* icon, const char* text, Vec2 pos, FontStruct font, uint32_t color, uint32_t rect_x_add) {
+uint32_t draw_text_icon_color(const char* icon, const char* text, Vec2 pos, FontStruct font, uint32_t color, uint32_t rect_x_add, Window win, uint32_t height) {
         XGlyphInfo extents;
         XftTextExtents8(wm.display, font.font, (FcChar8*)text, strlen(text), &extents);
         XGlyphInfo extents_icon;
-        XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)icon, strlen(icon), &extents_icon);
+        XftTextExtents8(wm.display, font.font, (FcChar8*)icon, strlen(icon), &extents_icon);
 
         XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), color);
-        XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), pos.x, 0, extents.xOff + extents_icon.xOff + rect_x_add, BAR_SIZE);
+        XFillRectangle(wm.display, win, DefaultGC(wm.display, wm.screen), pos.x, 0, extents.xOff + extents_icon.xOff + rect_x_add, height);
 
-        draw_str(icon, wm.bar.font, pos.x, pos.y);
-        draw_str(text, wm.bar.font, pos.x + extents_icon.xOff, pos.y);
+        draw_str(icon, font, pos.x, pos.y);
+        draw_str(text, font, pos.x + extents_icon.xOff, pos.y);
         
         return extents.xOff + extents_icon.xOff + rect_x_add;
 }

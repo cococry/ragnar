@@ -34,9 +34,17 @@ typedef struct {
 #define WEB_BROWSER_CMD "chromium &"
 #define APPLICATION_LAUNCHER_CMD "dmenu_run &"
 
+#define WM_REFRESH_SPEED 1.0 // In seconds
+                             
 /* Font */
+/*
+ * IMPORTANT: 
+ * Unicode characters often need some tweaking with positioning.
+ * If you use a unicode character as an icon and it is not correctly centered,
+ * just add spaces to the back or front of the icon to center it. */
+
 #define FONT "monospace:size=11"
-#define FONT_SIZE 11 
+#define FONT_SIZE 11
 #define FONT_COLOR "#ffffff"
 
 /* Keybindings */
@@ -87,10 +95,19 @@ typedef struct {
 
 /* Window decoration */
 #define SHOW_DECORATION true
-#define DECORATION_CLOSE_ICON "X"
 #define DECORATION_TITLEBAR_SIZE 30
-#define DECORATION_COLOR 0x1e404f // #1e404f
-                                  
+#define DECORATION_COLOR 0x2d2d2d // #2d2d2d 
+#define DECORATION_TITLE_COLOR 0x212121 // #212121
+                                        //
+#define DECORATION_SHOW_CLOSE_ICON true
+#define DECORATION_CLOSE_ICON "X"
+#define DECORATION_CLOSE_ICON_COLOR 0x212121 // #212121
+#define DECORATION_CLOSE_ICON_SIZE 50
+
+#define DECORATION_SHOW_MAXIMIZE_ICON true
+#define DECORATION_MAXIMIZE_ICON "Max"
+#define DECORATION_MAXIMIZE_ICON_COLOR 0x212121 // #212121
+#define DECORATION_MAXIMIZE_ICON_SIZE 50
 
 /* Bar */
 
@@ -112,7 +129,6 @@ typedef struct {
 
 #define BAR_SIZE 20 // In pixels
 #define BAR_START_MONITOR 1 // Monitor on which the bar is on. (0 is most left)
-#define BAR_REFRESH_SPEED 1.0 // In seconds
 #define BAR_COLOR 0x202020
 #define BAR_LABEL_PADDING 100 // In pixels
 
@@ -120,7 +136,6 @@ typedef struct {
 #define BAR_INFO_LABEL_COLOR 0x1e404f
 #define BAR_BUTTON_LABEL_COLOR 0x1e404f
 #define BAR_VERSION_LABEL_COLOR 0x1e404f
-
                             
 #define BAR_INFO_PROGRAM_ICON "Program: "
 #define BAR_INFO_MONITOR_ICON "Monitor: "
