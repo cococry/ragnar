@@ -188,6 +188,7 @@ void xwm_window_frame(Window win) {
     
     XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
     XReparentWindow(wm.display, win, win_frame, 0, ((SHOW_DECORATION && !wm.decoration_hidden) ? DECORATION_TITLEBAR_SIZE : 0));
+    XResizeWindow(wm.display, win, attribs.width,attribs.height - DECORATION_TITLEBAR_SIZE);
     XMapWindow(wm.display, win_frame);
     Client client = (Client){
         .frame = win_frame, 
@@ -570,8 +571,10 @@ void handle_button_press(XButtonEvent e) {
             }
         }
     }
-    XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
-    wm.focused_client = get_client_index_window(e.window);
+    if(get_client_index_window(e.window) != -1) { 
+        XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
+        wm.focused_client = get_client_index_window(e.window);
+    }
     raise_bar();
 }
 void handle_button_release(XButtonEvent e) {
@@ -880,6 +883,7 @@ static void set_fullscreen(Window win, bool hide_decoration) {
 
     if(hide_decoration)
         hide_client_decoration(&wm.client_windows[client_index]);
+    redraw_client_decoration(&wm.client_windows[client_index]);
 }
 static void unset_fullscreen(Window win)  {
     uint32_t client_index = get_client_index_window(win);
