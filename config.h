@@ -28,6 +28,12 @@ typedef struct {
     FontStruct font;
 } BarButton;
 
+typedef struct {
+    const char* cmd;
+    uint8_t key;
+    bool spawned, hidden;
+    Window win, frame;
+} ScratchpadDef;
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
@@ -164,6 +170,17 @@ static BarButton BarButtons[BAR_BUTTON_COUNT] =
     (BarButton){.cmd = WEB_BROWSER_CMD, .icon = " "},
     (BarButton){.cmd = "qtfm &", .icon = " "},
     (BarButton){.cmd = "nitrogen &", .icon = " "},
+};
+
+/* Scratchpads */
+#define SCRATCH_PAD_COUNT 5
+static ScratchpadDef ScratchpadDefs[SCRATCH_PAD_COUNT] = 
+{
+    (ScratchpadDef){.cmd = "alacritty &", .key = XK_1},
+    (ScratchpadDef){.cmd = "alacritty -e mocp &", .key = XK_2},
+    (ScratchpadDef){.cmd = "alacritty -e cava &", .key = XK_3},
+    (ScratchpadDef){.cmd = "alacritty -e tty-clock -C 3 &", .key = XK_4},
+    (ScratchpadDef){.cmd = "alacritty -e nvim ~/dev/Ragnar/config.h &", .key = XK_5}
 };
 
 /* Monitors */
