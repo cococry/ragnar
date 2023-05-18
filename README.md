@@ -19,9 +19,9 @@ is still aestetic and usable.
 - [x] Fullscreening windows
 - [x] Multiple Desktops
 - [x] Status Bar
-- [ ] Auto Start Commands
+- [x] Scratchpads
 - [x] Window decorations
-- [ ] Scratchpads
+- [ ] Auto Start Commands
 
 ## Installation
 

@@ -557,6 +557,7 @@ void handle_unmap_notify(XUnmapEvent e) {
     }
     if(get_scratchpad_index_window(e.window) != -1) {
         XUnmapWindow(wm.display, ScratchpadDefs[get_scratchpad_index_window(e.window)].frame);
+        ScratchpadDefs[get_scratchpad_index_window(e.window)].spawned = false;
         XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
     }
 }
