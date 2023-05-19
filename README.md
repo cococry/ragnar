@@ -124,3 +124,6 @@ had a really nice time using it.
 | SUPER + N | Cycle bar one monitor up |
 | SUPER + I | Toggle bar visibility |
 | SUPER + Tab | Cycle through windows |
+| SUPER + U | Toggle window decorations |
+| SUPER + 1 | Terminal scratchpad |
+| SUPER + 2 | Vim scratchpad |
