@@ -40,7 +40,7 @@ If you want to run Ragnar on your machine,
 clone this repo and install all dependencies
 
 ```console
-yay -S xorg xorg-dev xorg-xinit gcc make 
+yay -S xorg xorg-xinit gcc make 
 ```
 
 Then type this command to install the WM 
