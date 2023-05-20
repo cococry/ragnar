@@ -63,6 +63,11 @@ Then, in your ~/.xinitrc add:
 exec ragnar
 ```
 
+If you are using a session manager you need to add ragnar to your sessions:
+```console
+sudo cp ragnar.desktop /usr/share/xsessions/ragnar.desktop
+```
+
 ### IMPORTANT
 
 In the [config.h](https://github.com/cococry/Ragnar/blob/main/config.h) file specify your monitor
