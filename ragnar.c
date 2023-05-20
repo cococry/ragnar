@@ -162,7 +162,7 @@ static uint32_t     draw_text_icon_color(const char* icon, const char* text, Vec
 
 XWM xwm_init() {
     XWM wm;
-
+    system("ragnarstart");
     wm.display = XOpenDisplay(NULL);
     if(!wm.display) {
         printf("Failed to open X Display.\n");

@@ -21,7 +21,7 @@ is still aestetic and usable.
 - [x] Status Bar
 - [x] Scratchpads
 - [x] Window decorations
-- [ ] Auto Start Commands
+- [x] Auto Start Commands
 
 ## Installation
 

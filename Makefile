@@ -29,6 +29,7 @@ ragnar: ${OBJ}
 install:
 	cp -f ragnar /usr/bin
 	cp -f ragnar.desktop /usr/share/applications
+	cp -f ragnarstart /usr/bin
 	chmod 755 /usr/bin/ragnar
 
 clean:
