@@ -831,7 +831,7 @@ void handle_key_press(XKeyEvent e) {
     }
 }
 void handle_key_release(XKeyEvent e) {
-    (void)e;
+    (void)e; 
 }
 
 int32_t get_client_index_window(Window win) {
@@ -1061,7 +1061,7 @@ void redraw_client_decoration(Client* client) {
         x_offset += DECORATION_CLOSE_ICON_SIZE;
         XClearWindow(wm.display, client->decoration.closebutton);
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, client->decoration.closebutton_font.font, (FcChar8*)DECORATION_CLOSE_ICON, strlen(DECORATION_CLOSE_ICON), &extents);
+        XftTextExtents16(wm.display, client->decoration.closebutton_font.font, (FcChar16*)DECORATION_CLOSE_ICON, strlen(DECORATION_CLOSE_ICON), &extents);
         draw_str(DECORATION_CLOSE_ICON, client->decoration.closebutton_font,
                  (DECORATION_CLOSE_ICON_SIZE / 2.0f) - (extents.xOff / 2.0f), (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f)); 
     }
@@ -1069,7 +1069,7 @@ void redraw_client_decoration(Client* client) {
         x_offset += DECORATION_MAXIMIZE_ICON_SIZE;
         XClearWindow(wm.display, client->decoration.maximize_button);
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, client->decoration.maximize_button_font.font, (FcChar8*)DECORATION_MAXIMIZE_ICON, strlen(DECORATION_MAXIMIZE_ICON), &extents);
+        XftTextExtents16(wm.display, client->decoration.maximize_button_font.font, (FcChar16*)DECORATION_MAXIMIZE_ICON, strlen(DECORATION_MAXIMIZE_ICON), &extents);
         draw_str(DECORATION_MAXIMIZE_ICON, client->decoration.maximize_button_font,
                  (DECORATION_MAXIMIZE_ICON_SIZE / 2.0f) - (extents.xOff / 2.0f), (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f)); 
     }
@@ -1078,7 +1078,7 @@ void redraw_client_decoration(Client* client) {
     XFetchName(wm.display, client->win, &window_name);
     if(window_name != NULL) {
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, client->decoration.titlebar_font.font, (FcChar8*)window_name, strlen(window_name), &extents);
+        XftTextExtents16(wm.display, client->decoration.titlebar_font.font, (FcChar16*)window_name, strlen(window_name), &extents);
         XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), DECORATION_TITLE_COLOR);
         XFillRectangle(wm.display, client->decoration.titlebar, DefaultGC(wm.display, wm.screen), 0, 0, extents.xOff, DECORATION_TITLEBAR_SIZE);
         draw_str(window_name, client->decoration.titlebar_font, 0, 20);
@@ -1277,7 +1277,7 @@ void create_bar() {
     uint32_t xoffset = 0;
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
+        XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
 
         BarButtons[i].win = XCreateSimpleWindow(wm.display, wm.root, get_monitor_start_x(wm.bar_monitor) + BarButtonLabelPos[wm.bar_monitor] + xoffset, 0, extents.xOff, 
                                                 BAR_SIZE, WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, BAR_BUTTON_LABEL_COLOR);
@@ -1313,7 +1313,7 @@ void unhide_bar() {
         XMapWindow(wm.display, BarButtons[i].win);
         XClearWindow(wm.display, BarButtons[i].win);
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
+        XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
 
         draw_text_icon_color(BarButtons[i].icon, "", (Vec2){0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, BarButtons[i].font, BAR_BUTTON_LABEL_COLOR, 0, BarButtons[i].win, BAR_SIZE);
         draw_str(BarButtons[i].icon, BarButtons[i].font, 0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
@@ -1331,7 +1331,7 @@ static void change_bar_monitor(int32_t monitor) {
     int32_t offset = 0;
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
+        XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
         XMoveWindow(wm.display, BarButtons[i].win, get_monitor_start_x(monitor) + BarButtonLabelPos[wm.bar_monitor] + offset, 0);
         offset += extents.xOff + 20;
     }
@@ -1381,7 +1381,7 @@ void draw_bar() {
                 BarCommands[i].timer = 0.0f;
             }
             XGlyphInfo extents;
-            XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)BarCommands[i].text, strlen(BarCommands[i].text), &extents);
+            XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)BarCommands[i].text, strlen(BarCommands[i].text), &extents);
             XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BAR_MAIN_LABEL_COLOR);
             XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), xoffset, 0, extents.xOff, BAR_SIZE);
             draw_str(BarCommands[i].text, wm.bar.font, xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
@@ -1464,7 +1464,7 @@ void draw_bar() {
         const char* text = "RagnarWM v"VERSION;
         uint32_t monitor_width = Monitors[wm.bar_monitor].width - 6;
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)text, strlen(text), &extents);
+        XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)text, strlen(text), &extents);
         XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BAR_VERSION_LABEL_COLOR);
         XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), 
                         monitor_width - extents.xOff, 0, extents.xOff, BAR_SIZE);
@@ -1501,9 +1501,9 @@ void draw_triangle(Window win, Vec2 p1, Vec2 p2, Vec2 p3, uint32_t color) {
 }
 uint32_t draw_text_icon_color(const char* icon, const char* text, Vec2 pos, FontStruct font, uint32_t color, uint32_t rect_x_add, Window win, uint32_t height) {
         XGlyphInfo extents;
-        XftTextExtents8(wm.display, font.font, (FcChar8*)text, strlen(text), &extents);
+        XftTextExtents16(wm.display, font.font, (FcChar16*)text, strlen(text), &extents);
         XGlyphInfo extents_icon;
-        XftTextExtents8(wm.display, font.font, (FcChar8*)icon, strlen(icon), &extents_icon);
+        XftTextExtents16(wm.display, font.font, (FcChar16*)icon, strlen(icon), &extents_icon);
 
         XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), color);
         XFillRectangle(wm.display, win, DefaultGC(wm.display, wm.screen), pos.x, 0, extents.xOff + extents_icon.xOff + rect_x_add, height);

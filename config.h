@@ -1,7 +1,7 @@
 #pragma once
 #include <X11/X.h>
-#include <stdint.h>
 #include <X11/Xft/Xft.h>
+#include <stdint.h>
 
 // INTERNAL -- IGNORE
 typedef struct {
@@ -35,27 +35,24 @@ typedef struct {
     Window win, frame;
 } ScratchpadDef;
 
-
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
-#define WEB_BROWSER_CMD "chromium &"
+#define WEB_BROWSER_CMD "brave &"
 #define APPLICATION_LAUNCHER_CMD "dmenu_run &"
 
-#define WM_REFRESH_SPEED 1.0 // In seconds
-
-/* Font */
+#define WM_REFRESH_SPEED 1.0f // In seconds
+/* Font*/
 /*
  * IMPORTANT:
  * Unicode characters often need some tweaking with positioning.
  * If you use a unicode character as an icon and it is not correctly centered,
  * just add spaces to the back or front of the icon to center it. */
-
-#define FONT "monospace:size=11"
-#define FONT_SIZE 11
+#define FONT "JetBrains Mono Nerd Font:size=15:style=bold"
+#define FONT_SIZE 15
 #define FONT_COLOR "#ffffff"
 
 /* Keybindings */
-#define MASTER_KEY Mod4Mask
+#define MASTER_KEY Mod4Mask 
 
 #define TERMINAL_OPEN_KEY XK_Return
 #define WEB_BROWSER_OPEN_KEY XK_W
@@ -80,7 +77,7 @@ typedef struct {
 #define WINDOW_GAP_INCREASE_KEY XK_plus
 #define WINDOW_GAP_DECREASE_KEY XK_minus
 
-#define BAR_TOGGLE_KEY XK_I
+#define BAR_TOGGLE_KEY XK_I 
 #define BAR_CYCLE_MONITOR_UP_KEY XK_N
 #define BAR_CYCLE_MONITOR_DOWN_KEY XK_B
 
@@ -94,28 +91,28 @@ typedef struct {
 #define DESKTOP_COUNT 10
 
 /* Window properties */
-#define WINDOW_BG_COLOR 0x32302f
+#define WINDOW_BG_COLOR 0x32302f 
 #define WINDOW_BORDER_WIDTH 3 // In pixles
-#define WINDOW_BORDER_COLOR 0x242424
-#define WINDOW_BORDER_COLOR_ACTIVE 0x454545
+#define WINDOW_BORDER_COLOR 0x282828
+#define WINDOW_BORDER_COLOR_ACTIVE 0x7c6f64
 #define WINDOW_MIN_SIZE_Y_LAYOUT 100 // In pixels
 #define WINDOW_MAX_GAP 400 // In pixels
 
 /* Window decoration */
 #define SHOW_DECORATION true
-#define DECORATION_TITLEBAR_SIZE 30
-#define DECORATION_COLOR 0x2d2d2d // #2d2d2d
-#define DECORATION_TITLE_COLOR 0x212121 // #212121
+#define DECORATION_TITLEBAR_SIZE 40
+#define DECORATION_COLOR 0x1d2021 
+#define DECORATION_TITLE_COLOR 0x32302f 
 #define DECORATION_TRIANGLES true
 
 #define DECORATION_SHOW_CLOSE_ICON true
-#define DECORATION_CLOSE_ICON "X"
-#define DECORATION_CLOSE_ICON_COLOR 0x212121 // #212121
+#define DECORATION_CLOSE_ICON ""
+#define DECORATION_CLOSE_ICON_COLOR 0x32302f 
 #define DECORATION_CLOSE_ICON_SIZE 50
 
 #define DECORATION_SHOW_MAXIMIZE_ICON true
-#define DECORATION_MAXIMIZE_ICON "Max"
-#define DECORATION_MAXIMIZE_ICON_COLOR 0x212121 // #212121
+#define DECORATION_MAXIMIZE_ICON " "
+#define DECORATION_MAXIMIZE_ICON_COLOR 0x32302f 
 #define DECORATION_MAXIMIZE_ICON_SIZE 50
 
 /* Bar */
@@ -136,42 +133,54 @@ typedef struct {
 #define BAR_SHOW_INFO_LABEL true
 #define BAR_SHOW_VERSION_LABEL true
 
-#define BAR_SIZE 20 // In pixels
+#define BAR_SIZE 45 // In pixels
 #define BAR_START_MONITOR 1 // Monitor on which the bar is on. (0 is most left)
-#define BAR_COLOR 0x202020
+#define BAR_REFRESH_SPEED 1.0 // In seconds
+#define BAR_COLOR 0x1d2021 
 #define BAR_LABEL_PADDING 100 // In pixels
+                            
+#define BAR_MAIN_LABEL_COLOR 0x32302f
+#define BAR_INFO_LABEL_COLOR 0x32302f
+#define BAR_BUTTON_LABEL_COLOR 0x32302f 
+#define BAR_VERSION_LABEL_COLOR 0x32302f 
 
-#define BAR_MAIN_LABEL_COLOR 0x1e404f
-#define BAR_INFO_LABEL_COLOR 0x1e404f
-#define BAR_BUTTON_LABEL_COLOR 0x1e404f
-#define BAR_VERSION_LABEL_COLOR 0x1e404f
+#define BAR_INFO_PROGRAM_ICON ""
+#define BAR_INFO_MONITOR_ICON "󰍹"
+#define BAR_INFO_DESKTOP_ICON ""
+#define BAR_INFO_WINDOW_LAYOUT_ICON ""
 
-#define BAR_INFO_PROGRAM_ICON "Program: "
-#define BAR_INFO_MONITOR_ICON "Monitor: "
-#define BAR_INFO_DESKTOP_ICON "Desktop: "
-#define BAR_INFO_WINDOW_LAYOUT_ICON "Layout: "
+#define BAR_SLICES_COUNT 4
+#define BAR_BUTTON_COUNT 5
 
-#define BAR_SLICES_COUNT 1
-#define BAR_BUTTON_COUNT 3
-
-static BarCommand  BarCommands[BAR_SLICES_COUNT] =
-{
-    (BarCommand){.cmd = "echo \"$(date +%R)  \"", .refresh_time = 1.0f},
+static BarCommand  BarCommands[BAR_SLICES_COUNT] = 
+{ 
+    (BarCommand){.cmd = "echo \"  󰣇\"", .refresh_time = 300.0f},
+    (BarCommand){.cmd = "echo \"  $(date +%R) \"", .refresh_time = 1.0f},
+    (BarCommand){.cmd = "ram-ragbar", .refresh_time = 1.0f,},
+    //(BarCommand){.cmd = "kernel-ragbar", .refresh_time = 300.0f},
+    (BarCommand){.cmd = "uptime-ragbar", .refresh_time = 1.0f},
+    //(BarCommand){.cmd = "packages-ragbar", .refresh_time = 60.0f},
+    //(BarCommand){.cmd = "updates-ragbar", .refresh_time = 120.0f},
 };
 
 static BarButton BarButtons[BAR_BUTTON_COUNT] =
 {
-    (BarButton){.cmd = APPLICATION_LAUNCHER_CMD, .icon = "Search"},
-    (BarButton){.cmd = TERMINAL_CMD, .icon = "Terminal"},
-    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = "Browser"},
+    (BarButton){.cmd = APPLICATION_LAUNCHER_CMD, .icon = " "},
+    (BarButton){.cmd = TERMINAL_CMD, .icon = " "},
+    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = " "},
+    (BarButton){.cmd = "qtfm &", .icon = " "},
+    (BarButton){.cmd = "nitrogen &", .icon = " "},
 };
 
 /* Scratchpads */
-#define SCRATCH_PAD_COUNT 2
-static ScratchpadDef ScratchpadDefs[SCRATCH_PAD_COUNT] =
+#define SCRATCH_PAD_COUNT 5
+static ScratchpadDef ScratchpadDefs[SCRATCH_PAD_COUNT] = 
 {
     (ScratchpadDef){.cmd = "alacritty &", .key = XK_1},
-    (ScratchpadDef){.cmd = "alacritty -e vim &", .key = XK_2},
+    (ScratchpadDef){.cmd = "alacritty -e mocp &", .key = XK_2},
+    (ScratchpadDef){.cmd = "alacritty -o \"window.dimensions.lines=9\" -o \"window.dimensions.columns=37\" -e tty-clock -C 3 &", .key = XK_3},
+    (ScratchpadDef){.cmd = "alacritty -e cava &", .key = XK_4},
+    (ScratchpadDef){.cmd = "alacritty -e nvim ~/dev/Ragnar/config.h &", .key = XK_5}
 };
 
 /* Monitors */
