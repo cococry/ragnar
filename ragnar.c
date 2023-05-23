@@ -1,9 +1,11 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/Xft/Xft.h>
 #include <X11/Xcursor/Xcursor.h>
 #include <X11/extensions/Xrender.h>
+#include <X11/extensions/Xcomposite.h>
 #include <sys/time.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -46,7 +48,7 @@ typedef struct {
     Window closebutton;
     Window maximize_button;
     FontStruct closebutton_font, 
-        titlebar_font, maximize_button_font;
+    titlebar_font, maximize_button_font;
 } Decoration;
 
 typedef struct {
@@ -84,8 +86,8 @@ typedef struct {
     int8_t focused_desktop[MONITOR_COUNT];
 
     Vec2 cursor_start_pos, 
-        cursor_start_frame_pos, 
-        cursor_start_frame_size;
+    cursor_start_frame_pos, 
+    cursor_start_frame_size;
 
     WindowLayout current_layout;
     uint32_t layout_master_size_x[MONITOR_COUNT][DESKTOP_COUNT];
@@ -182,15 +184,32 @@ void xwm_window_frame(Window win) {
 
     XWindowAttributes attribs;
     XGetWindowAttributes(wm.display, win, &attribs);
-    
+
     // Creating the X Window frame
     int32_t win_x = get_focused_monitor_window_center_x(attribs.width / 2);
-    Window win_frame = XCreateSimpleWindow(wm.display, wm.root, 
-        win_x, 
-        (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
-        WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
-    
+
+
+    /* Invisible helper window for window decoration */
+    Window win_decoration = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
+                                                WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
+    XUnmapWindow(wm.display, win_decoration);
+
+    /* Frame window */
+    XVisualInfo vinfo;
+    XSetWindowAttributes attribs_set;
+    XMatchVisualInfo(wm.display, DefaultScreen(wm.display), 32, TrueColor, &vinfo);
+    attribs_set.background_pixel = 0;
+    attribs_set.border_pixel = WINDOW_BORDER_COLOR;
+    attribs_set.colormap = XCreateColormap(wm.display, wm.root, vinfo.visual, AllocNone);
+    attribs_set.event_mask = StructureNotifyMask | ExposureMask;
+
+    Window win_frame = XCreateWindow(wm.display, wm.root, 
+                                     win_x, 
+                                     (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
+                                     WINDOW_BORDER_WIDTH,vinfo.depth, InputOutput, vinfo.visual, CWBackPixel | CWBorderPixel | CWColormap | CWEventMask, &attribs_set);
+    XCompositeRedirectWindow(wm.display, win_frame, CompositeRedirectAutomatic);
     XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
+
     XReparentWindow(wm.display, win, win_frame, 0, ((SHOW_DECORATION && !wm.decoration_hidden && !wm.spawning_scratchpad) ? DECORATION_TITLEBAR_SIZE : 0));
     if(!wm.spawning_scratchpad)
         XResizeWindow(wm.display, win, attribs.width,attribs.height - DECORATION_TITLEBAR_SIZE);
@@ -220,7 +239,7 @@ void xwm_window_frame(Window win) {
         .in_layout = true,
         .layout_y_size_offset = 0,
         .ignore_unmap = false};
-    
+
     // Adding the window to the clients 
     wm.client_windows[wm.clients_count++] = client; 
     wm.focused_client = wm.clients_count - 2;
@@ -231,31 +250,33 @@ void xwm_window_frame(Window win) {
 
         XWindowAttributes attribs_frame;
         XGetWindowAttributes(wm.display, win_frame, &attribs_frame);
-        
+
         /* Titlebar */
-        wm.client_windows[client_index].decoration.titlebar = XCreateSimpleWindow(wm.display, win_frame, 0, 0, attribs_frame.width, DECORATION_TITLEBAR_SIZE,0,0, DECORATION_COLOR);
+        wm.client_windows[client_index].decoration.titlebar = XCreateSimpleWindow(wm.display, win_decoration, 0, 0, attribs_frame.width, DECORATION_TITLEBAR_SIZE,0,0, DECORATION_COLOR);
         XSelectInput(wm.display, wm.client_windows[client_index].decoration.titlebar, SubstructureRedirectMask | SubstructureNotifyMask); 
         XMapWindow(wm.display, wm.client_windows[client_index].decoration.titlebar);
         XReparentWindow(wm.display, wm.client_windows[client_index].decoration.titlebar, win_frame, 0, 0);
-       
+
         /* Close button */
         uint32_t x_offset = 0;
         if(DECORATION_SHOW_CLOSE_ICON) {
             x_offset += DECORATION_CLOSE_ICON_SIZE;
-            wm.client_windows[client_index].decoration.closebutton = XCreateSimpleWindow(wm.display, win_frame, attribs_frame.width - x_offset, 0, 
-                                                    DECORATION_CLOSE_ICON_SIZE, DECORATION_TITLEBAR_SIZE, 0,  WINDOW_BORDER_COLOR, DECORATION_CLOSE_ICON_COLOR);
+            wm.client_windows[client_index].decoration.closebutton = XCreateSimpleWindow(wm.display, win_decoration, attribs_frame.width - x_offset, 0, 
+                                                                                         DECORATION_CLOSE_ICON_SIZE, DECORATION_TITLEBAR_SIZE, 0,  WINDOW_BORDER_COLOR, DECORATION_CLOSE_ICON_COLOR);
             XSelectInput(wm.display,wm.client_windows[client_index].decoration.closebutton, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
             XMapWindow(wm.display, wm.client_windows[client_index].decoration.closebutton);
             XRaiseWindow(wm.display, wm.client_windows[client_index].decoration.closebutton);
+            XReparentWindow(wm.display, wm.client_windows[client_index].decoration.closebutton, win_frame, attribs_frame.width - x_offset, 0);
         }
         /* Fullscreen button */
         if(DECORATION_SHOW_MAXIMIZE_ICON) {
             x_offset += DECORATION_MAXIMIZE_ICON_SIZE;
-            wm.client_windows[client_index].decoration.maximize_button = XCreateSimpleWindow(wm.display, win_frame, attribs_frame.width - x_offset, 0, 
-                                                    DECORATION_MAXIMIZE_ICON_SIZE, DECORATION_TITLEBAR_SIZE, 0,  WINDOW_BORDER_COLOR, DECORATION_MAXIMIZE_ICON_COLOR);
+            wm.client_windows[client_index].decoration.maximize_button = XCreateSimpleWindow(wm.display, win_decoration, attribs_frame.width - x_offset, 0, 
+                                                                                             DECORATION_MAXIMIZE_ICON_SIZE, DECORATION_TITLEBAR_SIZE, 0,  WINDOW_BORDER_COLOR, DECORATION_MAXIMIZE_ICON_COLOR);
             XSelectInput(wm.display,wm.client_windows[client_index].decoration.maximize_button, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
             XMapWindow(wm.display, wm.client_windows[client_index].decoration.maximize_button);
             XRaiseWindow(wm.display, wm.client_windows[client_index].decoration.maximize_button);
+            XReparentWindow(wm.display, wm.client_windows[client_index].decoration.maximize_button, win_frame, attribs_frame.width - x_offset, 0);
         }
 
         /* Creating fonts & drawing decoration */
@@ -310,7 +331,7 @@ void xwm_window_unframe(Window win) {
     }
     memset(&wm.client_windows[wm.clients_count - 1], 0, sizeof(Client));
     wm.clients_count--;
-    
+
     if(wm.clients_count != 0) {
         wm.client_windows[wm.clients_count - 1].layout_y_size_offset = 0;
     }
@@ -350,7 +371,7 @@ void xwm_run() {
 
     XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
     grab_global_input();
-    
+
     if(SHOW_BAR)
         create_bar();
 
@@ -436,7 +457,7 @@ Window get_frame_window(Window win) {
     return 0;
 }
 void handle_create_notify(XCreateWindowEvent e) {
-  (void)e;
+    (void)e;
 }
 void handle_configure_request(XConfigureRequestEvent e) {
     // Window 
@@ -472,7 +493,7 @@ void handle_motion_notify(XMotionEvent e) {
 
     Vec2 drag_pos = (Vec2){.x = (float)e.x_root, .y = (float)e.y_root};
     Vec2 delta_drag = (Vec2){.x = drag_pos.x - wm.cursor_start_pos.x, .y = drag_pos.y - wm.cursor_start_pos.y};
-    
+
     Client* client = &wm.client_windows[get_client_index_window(e.window)];
 
     // If left click
@@ -500,12 +521,12 @@ void handle_motion_notify(XMotionEvent e) {
         } else {
             XMoveWindow(wm.display, ScratchpadDefs[get_scratchpad_index_window(e.window)].frame, drag_dest.x, drag_dest.y);
         }
-    // If right click
+        // If right click
     } else if(e.state & Button3Mask) {
         Vec2 resize_delta = (Vec2){.x = MAX(delta_drag.x, -wm.cursor_start_frame_size.x),
-                                    .y = MAX(delta_drag.y, -wm.cursor_start_frame_size.y)};
+            .y = MAX(delta_drag.y, -wm.cursor_start_frame_size.y)};
         Vec2 resize_dest = (Vec2){.x = wm.cursor_start_frame_size.x + resize_delta.x, 
-                                    .y = wm.cursor_start_frame_size.y + resize_delta.y};
+            .y = wm.cursor_start_frame_size.y + resize_delta.y};
         if(get_scratchpad_index_window(e.window) == -1) {
             resize_client(client, resize_dest);
             // Remove the client from the layout
@@ -548,7 +569,7 @@ void handle_destroy_notify(XDestroyWindowEvent e) {
     (void)e;
 }
 void handle_map_notify(XMapEvent e) {
-	(void)e;
+    (void)e;
 }
 void handle_unmap_notify(XUnmapEvent e) {
     if(get_client_index_window(e.window) != -1) {
@@ -825,7 +846,7 @@ void handle_key_press(XKeyEvent e) {
                     XSetInputFocus(wm.display, ScratchpadDefs[i].win, RevertToPointerRoot, CurrentTime);
                     ScratchpadDefs[i].hidden = false;
                 }
-            break;
+                break;
             }        
         }
     }
@@ -917,7 +938,7 @@ Vec2 get_cursor_position() {
     int win_x_return, win_y_return, root_x_return, root_y_return; 
     uint32_t mask_return;
     XQueryPointer(wm.display, wm.root, &root_return, &child_return, &root_x_return, &root_y_return, 
-        &win_x_return, &win_y_return, &mask_return);
+                  &win_x_return, &win_y_return, &mask_return);
     return (Vec2){.x = root_x_return, .y = root_y_return};  
 }
 
@@ -995,7 +1016,7 @@ void resize_client(Client* client, Vec2 size) {
         XWindowAttributes attribs;
         XGetWindowAttributes(wm.display, client->win, &attribs);
         client->fullscreen_revert_size = (Vec2){.x = attribs.width, .y = attribs.height};
-                client->fullscreen = true;
+        client->fullscreen = true;
     }
     if(!wm.decoration_hidden && SHOW_DECORATION) {
         XMoveWindow(wm.display, client->win, 0, DECORATION_TITLEBAR_SIZE);
@@ -1033,7 +1054,7 @@ void hide_client_decoration(Client* client) {
     XMoveWindow(wm.display, client->win, 0, 0);
     XResizeWindow(wm.display, client->win, attribs.width, attribs.height + DECORATION_TITLEBAR_SIZE);
     client->decoration.hidden = true;
-    
+
 }
 
 void unhide_client_decoration(Client* client) {
@@ -1085,19 +1106,19 @@ void redraw_client_decoration(Client* client) {
         XFree(window_name);
         if(DECORATION_TRIANGLES) {
             draw_triangle(client->decoration.titlebar, 
-                      (Vec2){extents.xOff + 20, DECORATION_TITLEBAR_SIZE}, 
-                      (Vec2){extents.xOff, DECORATION_TITLEBAR_SIZE}, 
-                      (Vec2){extents.xOff, 0}, DECORATION_TITLE_COLOR);
+                          (Vec2){extents.xOff + 20, DECORATION_TITLEBAR_SIZE}, 
+                          (Vec2){extents.xOff, DECORATION_TITLEBAR_SIZE}, 
+                          (Vec2){extents.xOff, 0}, DECORATION_TITLE_COLOR);
         }
     }
-    
+
     if(DECORATION_TRIANGLES) {
-    XWindowAttributes attribs;
-    XGetWindowAttributes(wm.display, client->frame, &attribs);
-    draw_triangle(client->decoration.titlebar, 
-                  (Vec2){attribs.width - x_offset - 20, DECORATION_TITLEBAR_SIZE}, 
-                  (Vec2){attribs.width - x_offset, DECORATION_TITLEBAR_SIZE}, 
-                  (Vec2){attribs.width - x_offset, 0}, DECORATION_MAXIMIZE_ICON_COLOR);
+        XWindowAttributes attribs;
+        XGetWindowAttributes(wm.display, client->frame, &attribs);
+        draw_triangle(client->decoration.titlebar, 
+                      (Vec2){attribs.width - x_offset - 20, DECORATION_TITLEBAR_SIZE}, 
+                      (Vec2){attribs.width - x_offset, DECORATION_TITLEBAR_SIZE}, 
+                      (Vec2){attribs.width - x_offset, 0}, DECORATION_MAXIMIZE_ICON_COLOR);
     }
 }
 
@@ -1133,7 +1154,7 @@ void establish_window_layout() {
             XSetWindowBorderWidth(wm.display, master->frame, WINDOW_BORDER_WIDTH);
             return;
         }
-        
+
         // set master
         move_client(master, (Vec2){get_monitor_start_x(wm.focused_monitor) + wm.window_gap, wm.window_gap + offset_bar_master});
         resize_client(master, (Vec2){
@@ -1214,7 +1235,7 @@ void cycle_client_layout_up(Client* client) {
     if(new_index >= client_count) {
         new_index = 0;
     }
-   
+
     // swap the clients
     Client tmp = *clients[client_index];
     *clients[client_index] = *clients[new_index];
@@ -1354,7 +1375,7 @@ FontStruct font_create(const char* fontname, const char* fontcolor, Window win) 
     XftDraw* xft_draw = XftDrawCreate(wm.display, win, DefaultVisual(wm.display, wm.screen), DefaultColormap(wm.display, wm.screen)); 
     XftColor xft_font_color;
     XftColorAllocName(wm.display,DefaultVisual(wm.display,0),DefaultColormap(wm.display,0),fontcolor, &xft_font_color);
-    
+
     fs.font = xft_font;
     fs.draw = xft_draw;
     fs.color = xft_font_color;
@@ -1396,7 +1417,7 @@ void draw_bar() {
         xoffset += 20;
     }
 
-    
+
     // Info Label
     if(BAR_SHOW_INFO_LABEL)
     {
@@ -1416,7 +1437,7 @@ void draw_bar() {
 
         if(focused_window) {
             uint32_t program_label_offset = draw_text_icon_color(BAR_INFO_PROGRAM_ICON, window_name, 
-                                                                (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)},
+                                                                 (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)},
                                                                  wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
             xoffset += program_label_offset;
         }
@@ -1424,9 +1445,9 @@ void draw_bar() {
         sprintf(monitor_index_str, "%i", wm.focused_monitor);
         uint32_t monitor_label_offset = draw_text_icon_color(BAR_INFO_MONITOR_ICON, monitor_index_str, 
                                                              (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, 
-                                                              wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
+                                                             wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
         xoffset += monitor_label_offset;
-        
+
         char desktop_index_str[8];
         sprintf(desktop_index_str, "%hhd", wm.focused_desktop[wm.focused_monitor]);
         uint32_t desktop_label_offset = draw_text_icon_color(BAR_INFO_DESKTOP_ICON, desktop_index_str, 
@@ -1445,8 +1466,8 @@ void draw_bar() {
                 break;
         }
         uint32_t window_layout_label_offset = draw_text_icon_color(BAR_INFO_WINDOW_LAYOUT_ICON, current_layout_str, 
-                                                             (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, 
-                                                             wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
+                                                                   (Vec2){xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, 
+                                                                   wm.bar.font, BAR_INFO_LABEL_COLOR, 20, wm.bar.win, BAR_SIZE);
         xoffset += window_layout_label_offset;
 
         XFree(window_name);
@@ -1467,15 +1488,15 @@ void draw_bar() {
         XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)text, strlen(text), &extents);
         XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BAR_VERSION_LABEL_COLOR);
         XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), 
-                        monitor_width - extents.xOff, 0, extents.xOff, BAR_SIZE);
+                       monitor_width - extents.xOff, 0, extents.xOff, BAR_SIZE);
 
         draw_str(text, wm.bar.font, monitor_width - extents.xOff, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
 
         draw_triangle(wm.bar.win, 
-                (Vec2){.x = monitor_width - extents.xOff - 20, .y = BAR_SIZE}, 
-                  (Vec2){.x = monitor_width - extents.xOff, .y = BAR_SIZE}, 
-                  (Vec2){.x = monitor_width - extents.xOff, .y = 0}, 
-                  BAR_INFO_LABEL_COLOR);
+                      (Vec2){.x = monitor_width - extents.xOff - 20, .y = BAR_SIZE}, 
+                      (Vec2){.x = monitor_width - extents.xOff, .y = BAR_SIZE}, 
+                      (Vec2){.x = monitor_width - extents.xOff, .y = 0}, 
+                      BAR_INFO_LABEL_COLOR);
     }
 } 
 
@@ -1500,18 +1521,18 @@ void draw_triangle(Window win, Vec2 p1, Vec2 p2, Vec2 p3, uint32_t color) {
 
 }
 uint32_t draw_text_icon_color(const char* icon, const char* text, Vec2 pos, FontStruct font, uint32_t color, uint32_t rect_x_add, Window win, uint32_t height) {
-        XGlyphInfo extents;
-        XftTextExtents16(wm.display, font.font, (FcChar16*)text, strlen(text), &extents);
-        XGlyphInfo extents_icon;
-        XftTextExtents16(wm.display, font.font, (FcChar16*)icon, strlen(icon), &extents_icon);
+    XGlyphInfo extents;
+    XftTextExtents16(wm.display, font.font, (FcChar16*)text, strlen(text), &extents);
+    XGlyphInfo extents_icon;
+    XftTextExtents16(wm.display, font.font, (FcChar16*)icon, strlen(icon), &extents_icon);
 
-        XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), color);
-        XFillRectangle(wm.display, win, DefaultGC(wm.display, wm.screen), pos.x, 0, extents.xOff + extents_icon.xOff + rect_x_add, height);
+    XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), color);
+    XFillRectangle(wm.display, win, DefaultGC(wm.display, wm.screen), pos.x, 0, extents.xOff + extents_icon.xOff + rect_x_add, height);
 
-        draw_str(icon, font, pos.x, pos.y);
-        draw_str(text, font, pos.x + extents_icon.xOff, pos.y);
-        
-        return extents.xOff + extents_icon.xOff + rect_x_add;
+    draw_str(icon, font, pos.x, pos.y);
+    draw_str(text, font, pos.x + extents_icon.xOff, pos.y);
+
+    return extents.xOff + extents_icon.xOff + rect_x_add;
 }
 
 int main(void) {
