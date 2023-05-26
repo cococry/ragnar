@@ -190,11 +190,10 @@ void xwm_window_frame(Window win) {
 
 
     /* Invisible helper window for window decoration */
-    Window win_decoration = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
-                                                WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
-    XUnmapWindow(wm.display, win_decoration);
 
     /* Frame window */
+    Window win_frame;
+    if(WINDOW_TRANSPARENT_FRAME) {
     XVisualInfo vinfo;
     XSetWindowAttributes attribs_set;
     XMatchVisualInfo(wm.display, DefaultScreen(wm.display), 32, TrueColor, &vinfo);
@@ -203,16 +202,21 @@ void xwm_window_frame(Window win) {
     attribs_set.colormap = XCreateColormap(wm.display, wm.root, vinfo.visual, AllocNone);
     attribs_set.event_mask = StructureNotifyMask | ExposureMask;
 
-    Window win_frame = XCreateWindow(wm.display, wm.root, 
+    win_frame = XCreateWindow(wm.display, wm.root, 
                                      win_x, 
                                      (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
-                                     WINDOW_BORDER_WIDTH,vinfo.depth, InputOutput, vinfo.visual, CWBackPixel | CWBorderPixel | CWColormap | CWEventMask, &attribs_set);
+                                    WINDOW_BORDER_WIDTH,vinfo.depth, InputOutput, vinfo.visual, CWBackPixel | CWBorderPixel | CWColormap | CWEventMask, &attribs_set);
     XCompositeRedirectWindow(wm.display, win_frame, CompositeRedirectAutomatic);
+    } else {
+        win_frame = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2),
+                                        attribs.width, attribs.height, WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
+    }
     XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
-
     XReparentWindow(wm.display, win, win_frame, 0, ((SHOW_DECORATION && !wm.decoration_hidden && !wm.spawning_scratchpad) ? DECORATION_TITLEBAR_SIZE : 0));
-    if(!wm.spawning_scratchpad)
+    if(!wm.spawning_scratchpad && SHOW_DECORATION && !wm.decoration_hidden) {
         XResizeWindow(wm.display, win, attribs.width,attribs.height - DECORATION_TITLEBAR_SIZE);
+        XMoveWindow(wm.display, win, 0, DECORATION_TITLEBAR_SIZE);
+    }
     XMapWindow(wm.display, win_frame);
     grab_window_input(win);
     XRaiseWindow(wm.display, win_frame);
@@ -246,6 +250,11 @@ void xwm_window_frame(Window win) {
 
     establish_window_layout();
     if (SHOW_DECORATION) { 
+        Window win_decoration = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
+                                                    WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
+        XUnmapWindow(wm.display, win_decoration);
+
+
         int32_t client_index = get_client_index_window(win);
 
         XWindowAttributes attribs_frame;
@@ -674,6 +683,10 @@ void handle_key_press(XKeyEvent e) {
         }
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_ADD_TO_LAYOUT_KEY)) {
         wm.client_windows[client_index].in_layout = true;
+        if(wm.client_windows[client_index].fullscreen) {
+            unhide_bar();
+            unset_fullscreen(wm.client_windows[client_index].frame);
+        }
         establish_window_layout();
     } else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, DESKTOP_CLIENT_CYCLE_DOWN_KEY)) {
         int32_t desktop = wm.focused_desktop[wm.focused_monitor] - 1;
@@ -1146,7 +1159,7 @@ void establish_window_layout() {
 
         // set master "fullscreen" if no slaves
 
-        int32_t offset_bar_master =  (master->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? BAR_SIZE : 0;
+        int32_t offset_bar_master = (master->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? BAR_SIZE + BAR_PADDING_Y : 0;
         if(client_count == 1) {
             resize_client(master, (Vec2){.x = Monitors[wm.focused_monitor].width - wm.window_gap * 2.3f, .y = (Monitors[wm.focused_monitor].height - wm.window_gap * 2.3f) - offset_bar_master});
             move_client(master, (Vec2){get_monitor_start_x(wm.focused_monitor) + wm.window_gap, wm.window_gap + offset_bar_master});
@@ -1167,7 +1180,7 @@ void establish_window_layout() {
         int32_t last_y_offset = 0;
         for(uint32_t i = 1; i < client_count; i++) {
             if(clients[i]->monitor_index != wm.focused_monitor) continue;
-            int32_t offset_bar = ((clients[i]->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? ((i == client_count - 1) ? BAR_SIZE : 0 ) : 0);
+            int32_t offset_bar = ((clients[i]->monitor_index == wm.bar_monitor && SHOW_BAR && !wm.bar.hidden) ? ((i == client_count - 1) ? BAR_SIZE + BAR_PADDING_Y : 0 ) : 0);
             resize_client(clients[i], (Vec2){
                 (Monitors[wm.focused_monitor].width 
                 - wm.layout_master_size_x[wm.focused_monitor][wm.focused_desktop[wm.focused_monitor]]) 
@@ -1288,9 +1301,9 @@ void change_desktop(int8_t desktop_index) {
 void create_bar() {
     if(!SHOW_BAR) return;
     wm.bar.win = XCreateSimpleWindow(wm.display, 
-                                     wm.root, get_monitor_start_x(wm.bar_monitor), 0, 
-                                     Monitors[wm.bar_monitor].width - 6, BAR_SIZE, 
-                                     WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, BAR_COLOR);
+                                     wm.root, get_monitor_start_x(wm.bar_monitor) + BAR_PADDING_Y, BAR_PADDING_Y, 
+                                     Monitors[wm.bar_monitor].width - 6 - (BAR_PADDING_X * 2.3f), BAR_SIZE, 
+                                     WINDOW_BORDER_WIDTH,  BAR_BORDER_COLOR, BAR_COLOR);
     XSelectInput(wm.display, wm.bar.win, SubstructureRedirectMask | SubstructureNotifyMask); 
     XSetStandardProperties(wm.display, wm.bar.win, "RagnarBar", "RagnarBar", None, NULL, 0, NULL);
     XMapWindow(wm.display, wm.bar.win);
@@ -1300,14 +1313,13 @@ void create_bar() {
         XGlyphInfo extents;
         XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
 
-        BarButtons[i].win = XCreateSimpleWindow(wm.display, wm.root, get_monitor_start_x(wm.bar_monitor) + BarButtonLabelPos[wm.bar_monitor] + xoffset, 0, extents.xOff, 
-                                                BAR_SIZE, WINDOW_BORDER_WIDTH,  WINDOW_BORDER_COLOR, BAR_BUTTON_LABEL_COLOR);
+        BarButtons[i].win = XCreateSimpleWindow(wm.display, wm.root, get_monitor_start_x(wm.bar_monitor) + BarButtonLabelPos[wm.bar_monitor] + xoffset, BAR_PADDING_Y + WINDOW_BORDER_WIDTH, extents.xOff, 
+                                                BAR_SIZE, 0,  0xffffff, BAR_BUTTON_LABEL_COLOR);
         XSelectInput(wm.display, BarButtons[i].win, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
         XMapWindow(wm.display, BarButtons[i].win);
         XRaiseWindow(wm.display, BarButtons[i].win);
         BarButtons[i].font = font_create(FONT, FONT_COLOR, BarButtons[i].win);
         draw_text_icon_color(BarButtons[i].icon, "", (Vec2){0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, BarButtons[i].font, BAR_BUTTON_LABEL_COLOR, 0, BarButtons[i].win, BAR_SIZE);
-        draw_str(BarButtons[i].icon, BarButtons[i].font, 0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
         xoffset += extents.xOff + 20;
     }
     wm.bar.hidden = false;
@@ -1337,7 +1349,6 @@ void unhide_bar() {
         XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)BarButtons[i].icon, strlen(BarButtons[i].icon), &extents);
 
         draw_text_icon_color(BarButtons[i].icon, "", (Vec2){0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f)}, BarButtons[i].font, BAR_BUTTON_LABEL_COLOR, 0, BarButtons[i].win, BAR_SIZE);
-        draw_str(BarButtons[i].icon, BarButtons[i].font, 0, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
         xoffset += extents.xOff + 20;
     } 
     wm.bar.hidden = false;
@@ -1347,7 +1358,7 @@ void unhide_bar() {
 
 static void change_bar_monitor(int32_t monitor) {
     XMoveWindow(wm.display, wm.bar.win, get_monitor_start_x(monitor), 0);
-    XResizeWindow(wm.display, wm.bar.win, Monitors[wm.bar_monitor].width - 6, BAR_SIZE);
+    XResizeWindow(wm.display, wm.bar.win, Monitors[wm.bar_monitor].width - 6 - (BAR_PADDING_X * 2.3f), BAR_SIZE);
 
     int32_t offset = 0;
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
@@ -1386,6 +1397,61 @@ void draw_str(const char* str, FontStruct font, int x, int y) {
     XftDrawStringUtf8(font.draw, &font.color, font.font, x, y, (XftChar8 *)str, strlen(str));
 }
 
+static void draw_bar_label_design(int32_t xpos, BarLabelDesign design) {
+    switch (design) {
+            case BAR_LABEL_DESIGN_SHARP_DOWN: {
+                draw_triangle(wm.bar.win, 
+                      (Vec2){.x = xpos, .y = 0}, 
+                      (Vec2){.x = xpos + 20, .y = BAR_SIZE}, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE}, 
+                      BAR_MAIN_LABEL_COLOR);
+                break;
+            }
+            case BAR_LABEL_DESIGN_SHARP_UP: {
+                draw_triangle(wm.bar.win, 
+                      (Vec2){.x = xpos, .y = 0}, 
+                      (Vec2){.x = xpos - 20, .y = BAR_SIZE}, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE}, 
+                      BAR_MAIN_LABEL_COLOR);
+                break;
+            }
+            case BAR_LABEL_DESIGN_ARROW_LEFT: {
+                draw_triangle(wm.bar.win, 
+                      (Vec2){.x = xpos, .y = 0}, 
+                      (Vec2){.x = xpos - 20, .y = BAR_SIZE / 2.0f}, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE / 2.0f}, 
+                      BAR_MAIN_LABEL_COLOR);
+                draw_triangle(wm.bar.win, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE / 2.0f}, 
+                      (Vec2){.x = xpos - 20, .y = BAR_SIZE / 2.0f}, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE}, 
+                      BAR_MAIN_LABEL_COLOR);
+                break;
+            }
+            case BAR_LABEL_DESIGN_ARROW_RIGHT: {
+                draw_triangle(wm.bar.win, 
+                      (Vec2){.x = xpos, .y = 0}, 
+                      (Vec2){.x = xpos + 20, .y = BAR_SIZE / 2.0f}, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE / 2.0f}, 
+                      BAR_MAIN_LABEL_COLOR);
+                draw_triangle(wm.bar.win, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE / 2.0f}, 
+                      (Vec2){.x = xpos + 20, .y = BAR_SIZE / 2.0f}, 
+                      (Vec2){.x = xpos, .y = BAR_SIZE}, 
+                      BAR_MAIN_LABEL_COLOR);
+                break;
+            }
+            case BAR_LABEL_DESIGN_ROUND_LEFT: {
+                break;
+            }
+            case BAR_LABEL_DESIGN_ROUND_RIGHT: {
+                break;
+            }
+            case BAR_LABEL_DESIGN_STRAIGHT: {
+                break;
+            }
+        }
+}
 void draw_bar() {
     if(!SHOW_BAR) return;
     // Main Label
@@ -1408,12 +1474,7 @@ void draw_bar() {
             draw_str(BarCommands[i].text, wm.bar.font, xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
             xoffset += extents.xOff;
         }
-
-        draw_triangle(wm.bar.win, 
-                      (Vec2){.x = xoffset, .y = 0}, 
-                      (Vec2){.x = xoffset + 20, .y = BAR_SIZE}, 
-                      (Vec2){.x = xoffset, .y = BAR_SIZE}, 
-                      BAR_MAIN_LABEL_COLOR);
+        draw_bar_label_design(xoffset, BAR_MAIN_LABEL_DESIGN);
         xoffset += 20;
     }
 
@@ -1427,13 +1488,9 @@ void draw_bar() {
         char* window_name = NULL;
         XFetchName(wm.display, focused, &window_name);
         bool focused_window = (window_name != NULL);
-        draw_triangle(wm.bar.win, 
-                      (Vec2){.x = xoffset + BAR_LABEL_PADDING, .y = 0}, 
-                      (Vec2){.x = xoffset + BAR_LABEL_PADDING + 20, .y = BAR_SIZE}, 
-                      (Vec2){.x = xoffset + BAR_LABEL_PADDING + 20, .y = 0}, 
-                      BAR_INFO_LABEL_COLOR);
         xoffset += 20;
         xoffset += BAR_LABEL_PADDING;
+        draw_bar_label_design(xoffset, BAR_INFO_LABEL_DESIGN_FRONT);
 
         if(focused_window) {
             uint32_t program_label_offset = draw_text_icon_color(BAR_INFO_PROGRAM_ICON, window_name, 
@@ -1472,18 +1529,14 @@ void draw_bar() {
 
         XFree(window_name);
 
-        draw_triangle(wm.bar.win, 
-                      (Vec2){.x = xoffset, .y = 0}, 
-                      (Vec2){.x = xoffset + 20, .y = BAR_SIZE}, 
-                      (Vec2){.x = xoffset, .y = BAR_SIZE}, 
-                      BAR_INFO_LABEL_COLOR);
+        draw_bar_label_design(xoffset, BAR_INFO_LABEL_DESIGN_BACK);
         xoffset += 20;
     }
     // Version label
     if(BAR_SHOW_VERSION_LABEL)
     {
         const char* text = "RagnarWM v"VERSION;
-        uint32_t monitor_width = Monitors[wm.bar_monitor].width - 6;
+        uint32_t monitor_width = Monitors[wm.bar_monitor].width - 6 - (BAR_PADDING_X * 2.3f);
         XGlyphInfo extents;
         XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)text, strlen(text), &extents);
         XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BAR_VERSION_LABEL_COLOR);
@@ -1492,11 +1545,7 @@ void draw_bar() {
 
         draw_str(text, wm.bar.font, monitor_width - extents.xOff, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
 
-        draw_triangle(wm.bar.win, 
-                      (Vec2){.x = monitor_width - extents.xOff - 20, .y = BAR_SIZE}, 
-                      (Vec2){.x = monitor_width - extents.xOff, .y = BAR_SIZE}, 
-                      (Vec2){.x = monitor_width - extents.xOff, .y = 0}, 
-                      BAR_INFO_LABEL_COLOR);
+        draw_bar_label_design(monitor_width - extents.xOff, BAR_VERSION_LABEL_DESIGN);
     }
 } 
 

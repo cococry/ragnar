@@ -35,6 +35,15 @@ typedef struct {
     Window win, frame;
 } ScratchpadDef;
 
+typedef enum {
+    BAR_LABEL_DESIGN_STRAIGHT = 0,
+    BAR_LABEL_DESIGN_SHARP_UP,
+    BAR_LABEL_DESIGN_SHARP_DOWN,
+    BAR_LABEL_DESIGN_ARROW_LEFT,
+    BAR_LABEL_DESIGN_ARROW_RIGHT,
+    BAR_LABEL_DESIGN_ROUND_LEFT,
+    BAR_LABEL_DESIGN_ROUND_RIGHT,
+} BarLabelDesign;
 
 /* Commands */
 #define TERMINAL_CMD "alacritty &"
@@ -100,6 +109,7 @@ typedef struct {
 #define WINDOW_BORDER_COLOR_ACTIVE 0x454545
 #define WINDOW_MIN_SIZE_Y_LAYOUT 100 // In pixels
 #define WINDOW_MAX_GAP 400 // In pixels
+#define WINDOW_TRANSPARENT_FRAME true
 
 /* Window decoration */
 #define SHOW_DECORATION true
@@ -137,9 +147,17 @@ typedef struct {
 #define BAR_SHOW_VERSION_LABEL true
 
 #define BAR_SIZE 20 // In pixels
+#define BAR_PADDING_Y 10
+#define BAR_PADDING_X 10
 #define BAR_START_MONITOR 1 // Monitor on which the bar is on. (0 is most left)
 #define BAR_COLOR 0x202020
+#define BAR_BORDER_COLOR 0x303030
 #define BAR_LABEL_PADDING 100 // In pixels
+                              
+#define BAR_MAIN_LABEL_DESIGN         BAR_LABEL_DESIGN_ARROW_RIGHT
+#define BAR_INFO_LABEL_DESIGN_FRONT   BAR_LABEL_DESIGN_ARROW_LEFT
+#define BAR_INFO_LABEL_DESIGN_BACK    BAR_LABEL_DESIGN_ARROW_RIGHT
+#define BAR_VERSION_LABEL_DESIGN      BAR_LABEL_DESIGN_ARROW_LEFT
 
 #define BAR_MAIN_LABEL_COLOR 0x1e404f
 #define BAR_INFO_LABEL_COLOR 0x1e404f
