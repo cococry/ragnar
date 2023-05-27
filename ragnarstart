@@ -3,4 +3,4 @@ nitrogen --restore &
 picom -b --experimental-backends &
 pipewire &
 pipewire-pulse &
-wireplumber &
+    wireplumber &
