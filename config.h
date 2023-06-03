@@ -57,12 +57,18 @@
 #define WINDOW_ADD_TO_LAYOUT_KEY                XK_space
 #define WINDOW_LAYOUT_CYCLE_UP_KEY              XK_Up
 #define WINDOW_LAYOUT_CYCLE_DOWN_KEY            XK_Down
-#define WINDOW_LAYOUT_INCREASE_MASTER_X_KEY     XK_L
-#define WINDOW_LAYOUT_DECREASE_MASTER_X_KEY     XK_H
-#define WINDOW_LAYOUT_INCREASE_SLAVE_Y_KEY      XK_K
-#define WINDOW_LAYOUT_DECREASE_SLAVE_Y_KEY      XK_J
+#define WINDOW_LAYOUT_INCREASE_MASTER_KEY       XK_L
+#define WINDOW_LAYOUT_DECREASE_MASTER_KEY       XK_H
+#define WINDOW_LAYOUT_INCREASE_SLAVE_KEY        XK_K
+#define WINDOW_LAYOUT_DECREASE_SLAVE_KEY        XK_J
 #define WINDOW_LAYOUT_FLOATING_KEY              XK_R
 #define WINDOW_LAYOUT_TILED_MASTER_KEY          XK_T
+
+
+#define WINDOW_LAYOUT_TILED_MASTER_KEY          XK_T
+#define WINDOW_LAYOUT_HORIZONTAL_MASTER_KEY     XK_V
+#define WINDOW_LAYOUT_HORIZONTAL_STRIPES_KEY    XK_X
+#define WINDOW_LAYOUT_VERTICAL_STRIPES_KEY      XK_M
 
 /* Window-Gap keybinds */
 #define WINDOW_GAP_INCREASE_KEY                 XK_plus
@@ -92,7 +98,9 @@
 #define WINDOW_BORDER_WIDTH                     3 
 #define WINDOW_BORDER_COLOR                     0x242424 // Color of window border for inactive windows
 #define WINDOW_BORDER_COLOR_ACTIVE              0x454545 // Color of window border for active windows
-#define WINDOW_MIN_SIZE_Y_LAYOUT                100 // Minimum height of a window in a layout 
+#define WINDOW_MIN_SIZE_LAYOUT_VERTICAL         300 // Minimum height of a window in a layout 
+#define WINDOW_MIN_SIZE_LAYOUT_HORIZONTAL       100 // Minimum width of a window in a layout 
+#define WINDOW_MAX_COUNT_LAYOUT                 5 // Maximum number of windows in a layout
 #define WINDOW_MAX_GAP                          400 // Maximum amount of pixel-gap between windows in layout
 #define WINDOW_TRANSPARENT_FRAME                true // If transparency with a compositer is used, enable this
 

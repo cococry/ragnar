@@ -1,6 +1,6 @@
 setxkbmap de &
 nitrogen --restore &
-picom -b --experimental-backends &
+picom -b &
 pipewire &
 pipewire-pulse &
-    wireplumber &
+pipewire-media-session &
