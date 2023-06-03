@@ -114,6 +114,7 @@ had a really nice time using it.
 | SUPER + Shift + X | Set horizontal stripes layout |
 | SUPER + Shift + M | Set vertical stripes layout |
 | SUPER + Shift + V | Set horizontal master layout |
+| SUPER + Shift + R | Set floating layout |
 | SUPER + A | Cycle desktop down |
 | SUPER + D | Cycle desktop up |
 | SUPER + O | Cycle window one desktop down |
