@@ -111,7 +111,9 @@ had a really nice time using it.
 | SUPER + Minus | Decrease gap size of windows |
 | SUPER + F | Fullscreen selected window |
 | SUPER + Shift + T | Set tiled master layout |
-| SUPER + Shift + R | Set floating layout |
+| SUPER + Shift + X | Set horizontal stripes layout |
+| SUPER + Shift + M | Set vertical stripes layout |
+| SUPER + Shift + V | Set horizontal master layout |
 | SUPER + A | Cycle desktop down |
 | SUPER + D | Cycle desktop up |
 | SUPER + O | Cycle window one desktop down |
