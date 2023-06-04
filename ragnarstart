@@ -3,4 +3,4 @@ nitrogen --restore &
 picom -b &
 pipewire &
 pipewire-pulse &
-pipewire-media-session &
+wireplumber &
