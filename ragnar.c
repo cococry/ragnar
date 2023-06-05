@@ -750,6 +750,7 @@ void handle_key_press(XKeyEvent e) {
                 wm.client_windows[i].layout.in = true;
                 if(wm.client_windows[i].fullscreen) {
                     unset_fullscreen(wm.client_windows[i].frame);
+                    unhide_client_decoration(&wm.client_windows[i]);
                 }
                 wm.client_windows[i].layout.change = 0;
             }
@@ -768,6 +769,7 @@ void handle_key_press(XKeyEvent e) {
                 wm.client_windows[i].layout.in = true;
                 if(wm.client_windows[i].fullscreen) {
                     unset_fullscreen(wm.client_windows[i].frame);
+                    unhide_client_decoration(&wm.client_windows[i]);
                 }
                 wm.client_windows[i].layout.change = 0;
             }
@@ -786,6 +788,7 @@ void handle_key_press(XKeyEvent e) {
                 wm.client_windows[i].layout.in = true;
                 if(wm.client_windows[i].fullscreen) {
                     unset_fullscreen(wm.client_windows[i].frame);
+                    unhide_client_decoration(&wm.client_windows[i]);
                 }
                 wm.client_windows[i].layout.change = 0;
             }
@@ -804,6 +807,7 @@ void handle_key_press(XKeyEvent e) {
                 wm.client_windows[i].layout.in = true;
                 if(wm.client_windows[i].fullscreen) {
                     unset_fullscreen(wm.client_windows[i].frame);
+                    unhide_client_decoration(&wm.client_windows[i]);
                 }
                 wm.client_windows[i].layout.change = 0;
             }
@@ -1280,6 +1284,10 @@ void establish_window_layout() {
     uint32_t client_count = 0;
     bool full = false;
     for(uint32_t i = 0; i < wm.clients_count; i++) {
+        if(wm.client_windows[i].fullscreen) {
+            unhide_bar();
+            unhide_client_decoration(&wm.client_windows[i]);
+        }
         if(client_count >= WINDOW_MAX_COUNT_LAYOUT) {
             full = true;
             wm.layout_full = true;
