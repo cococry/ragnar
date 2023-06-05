@@ -45,6 +45,7 @@ clone this repo and install all dependencies with your package manager.
 - make
 - gcc
 - xorg
+- xorg-xinit
 
 Clone the repo
 ```console
