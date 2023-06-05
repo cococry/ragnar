@@ -38,14 +38,22 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/cococry/Ragnar/main/instal
 ```
 
 If you want to run Ragnar on your machine, 
-clone this repo and install all dependencies
+clone this repo and install all dependencies with your package manager.
 
+### Install Dependencies
+- git
+- make
+- gcc
+- xorg
+
+Clone the repo
 ```console
-yay -S xorg xorg-xinit gcc make 
+git clone https://github.com/cococry/Ragnar
 ```
 
-Then type this command to install the WM 
+Installing the WM is as easy as
 ```console
+cd Ragnar/
 sudo make ragnar install
 ```
 
@@ -69,7 +77,7 @@ setup in order for the WM to work as intended. Also, for configuration of the WM
 For the best experience, i suggest to use a X compositer like picom. I am using [picom pijulius](https://github.com/pijulius/picom)
 because i think it has very clean animation support. You can find my picom config [here](https://github.com/cococry/dotfiles/blob/main/picom/picom.conf)
 
-This project is in early stage and not finished. So if you find bugs or have any problems, feel free to [submit an issue](https://github.com/cococry/Ragnar/issues). 
+If you find bugs or have any problems with Ragnar, feel free to [submit an issue](https://github.com/cococry/Ragnar/issues). 
 
 
 ## Inspiration
@@ -89,6 +97,21 @@ had a really nice time using it.
 
 
 ## Usage
+
+### Configuratien
+Configuring Ragnar is a similar process as configuring
+ [dwm](https://dwm.suckless.org). There is a config.h file
+with macros you can change and lists you can change to
+your liking. The config is written in a way, so that people
+without any experience in C can read it and change it.
+
+If you changed your configuration, just use:
+```console
+sudo make clean ragnar install
+```
+
+And Press Super + C to shutdown the WM.
+Then, in the tty use *startx* to restart the WM.
 
 ### Default Keybindings
 
