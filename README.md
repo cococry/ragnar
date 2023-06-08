@@ -22,7 +22,7 @@ is still aesthetic and usable.
 - [x] Scratchpads
 - [x] Window decorations
 - [x] Auto Start Commands
-- [ ] Multiple Layouts
+- [x] Multiple Layouts
 
 ## Installation
 
