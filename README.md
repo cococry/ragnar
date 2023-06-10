@@ -23,6 +23,7 @@ is still aesthetic and usable.
 - [x] Window decorations
 - [x] Auto Start Commands
 - [x] Multiple Layouts
+- [x] Full compositor Support
 
 ## Installation
 
