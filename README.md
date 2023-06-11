@@ -24,6 +24,9 @@ is still aesthetic and usable.
 - [x] Auto Start Commands
 - [x] Multiple Layouts
 - [x] Full compositor Support
+- [ ] Fully Featured/Configurable Bar UI
+- [ ] Hover to select windows
+- [ ] Sys-Trais for bar
 
 ## Installation
 
@@ -100,7 +103,7 @@ had a really nice time using it.
 
 ## Usage
 
-### Configuratien
+### Configuration
 Configuring Ragnar is a similar process as configuring
  [dwm](https://dwm.suckless.org). There is a config.h file
 with macros you can change and lists you can change to
