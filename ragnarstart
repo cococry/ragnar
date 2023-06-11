@@ -1,6 +1,5 @@
 setxkbmap de &
 nitrogen --restore &
-picom -b &
 pipewire &
 pipewire-pulse &
-wireplumber &
+pipewire-media-session &
