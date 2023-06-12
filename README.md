@@ -24,8 +24,8 @@ is still aesthetic and usable.
 - [x] Auto Start Commands
 - [x] Multiple Layouts
 - [x] Full compositor Support
-- [ ] Fully Featured/Configurable Bar UI
-- [ ] Hover to select windows
+- [x] Fully Featured/Configurable Bar UI
+- [x] Hover to select windows
 - [ ] Sys-Trais for bar
 
 ## Installation
