@@ -338,6 +338,9 @@ void xwm_window_unframe(Window win) {
     if(wm.clients_count != 0) {
         wm.client_windows[wm.clients_count - 1].layout.change = 0;
     }
+    if(wm.hard_focused_window_index == client_index) {
+        wm.hard_focused_window_index = -1;
+    }
     establish_window_layout();
     unhide_bar();
 }
@@ -356,6 +359,7 @@ void xwm_run() {
     wm.spawning_scratchpad = false;
     wm.layout_full = false;
     wm.spawned_scratchpad_index = 0;
+    wm.hard_focused_window_index = -1;
     wm.focused_client = -1;
     memset(wm.focused_desktop, 0, sizeof(wm.focused_desktop));
     memset(wm.layout_master_size, 0, sizeof(wm.layout_master_size));
