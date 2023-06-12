@@ -46,6 +46,7 @@ clone this repo and install all dependencies with your package manager.
 
 ### Install Dependencies
 - git
+- sudo
 - make
 - gcc
 - xorg
