@@ -95,6 +95,7 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 #define WINDOW_MIN_SIZE_LAYOUT_VERTICAL         100 // In pixels
 #define WINDOW_MAX_GAP                          100 // In pixels
 #define WINDOW_TRANSPARENT_FRAME                true
+#define WINDOW_SELECT_HOVERED                   true
 #define WINDOW_LAYOUT_DEFAULT                   WINDOW_LAYOUT_TILED_MASTER
 
 /* Window decoration */

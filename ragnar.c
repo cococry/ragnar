@@ -54,7 +54,7 @@ typedef struct {
     int8_t desktop_index;
 
     LayoutProps layout;
-    bool ignore_unmap, ignore_cycle;
+    bool ignore_unmap, ignore_enter;
 
     Decoration decoration;
 } Client;
@@ -199,7 +199,10 @@ void xwm_window_frame(Window win) {
         win_frame = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2),
                                         attribs.width, attribs.height, WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
     }
-    XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask | EnterWindowMask); 
+    if(WINDOW_SELECT_HOVERED)
+        XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask | EnterWindowMask); 
+    else
+        XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
     XReparentWindow(wm.display, win, win_frame, 0, ((SHOW_DECORATION && !wm.decoration_hidden && !wm.spawning_scratchpad) ? DECORATION_TITLEBAR_SIZE : 0));
     if(!wm.spawning_scratchpad && SHOW_DECORATION && !wm.decoration_hidden) {
         XResizeWindow(wm.display, win, attribs.width,attribs.height - DECORATION_TITLEBAR_SIZE);
@@ -403,10 +406,11 @@ void xwm_run() {
                     break;
                 }
                 case EnterNotify: {
+                    if(!WINDOW_SELECT_HOVERED) break;
                     int32_t client_index = get_client_index_window(e.xcrossing.window);
                     if(client_index == -1) break;
-                    if(wm.client_windows[client_index].ignore_cycle) {
-                        wm.client_windows[client_index].ignore_cycle = false;
+                    if(wm.client_windows[client_index].ignore_enter) {
+                        wm.client_windows[client_index].ignore_enter = false;
                         break;
                     }
                     wm.focused_client = client_index;
@@ -1548,7 +1552,7 @@ void cycle_client_layout_up(Client* client) {
     Client tmp = *clients[client_index];
     *clients[client_index] = *clients[new_index];
     *clients[new_index] = tmp;
-    clients[client_index]->ignore_cycle = true;
+    clients[client_index]->ignore_enter = true;
     establish_window_layout();
 }
 
@@ -1577,7 +1581,7 @@ void cycle_client_layout_down(Client* client) {
     Client tmp = *clients[client_index];
     *clients[client_index] = *clients[new_index];
     *clients[new_index] = tmp;
-    clients[client_index]->ignore_cycle = true;
+    clients[client_index]->ignore_enter = true;
     establish_window_layout();
 }
 
