@@ -62,7 +62,6 @@ typedef struct {
 typedef struct {
     Display* display;
     Window root;
-    GC gc;
     int screen;
 
     bool running;
@@ -74,6 +73,7 @@ typedef struct {
     int32_t bar_monitor;
     int32_t focused_client;
     int8_t focused_desktop[MONITOR_COUNT];
+    int32_t hard_focused_window_index;
 
     Vec2 cursor_start_pos, 
     cursor_start_frame_pos, 
@@ -199,10 +199,11 @@ void xwm_window_frame(Window win) {
         win_frame = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2),
                                         attribs.width, attribs.height, WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
     }
-    if(WINDOW_SELECT_HOVERED)
+    if(WINDOW_SELECT_HOVERED) {
         XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask | EnterWindowMask); 
-    else
+    } else {
         XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
+    }
     XReparentWindow(wm.display, win, win_frame, 0, ((SHOW_DECORATION && !wm.decoration_hidden && !wm.spawning_scratchpad) ? DECORATION_TITLEBAR_SIZE : 0));
     if(!wm.spawning_scratchpad && SHOW_DECORATION && !wm.decoration_hidden) {
         XResizeWindow(wm.display, win, attribs.width,attribs.height - DECORATION_TITLEBAR_SIZE);
@@ -211,7 +212,6 @@ void xwm_window_frame(Window win) {
     XMapWindow(wm.display, win_frame);
     grab_window_input(win);
     XRaiseWindow(wm.display, win_frame);
-
     if(!wm.bar.spawned) {
         hide_bar();
         unhide_bar();
@@ -248,7 +248,6 @@ void xwm_window_frame(Window win) {
         Window win_decoration = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
                                                     WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
         XUnmapWindow(wm.display, win_decoration);
-
 
         int32_t client_index = get_client_index_window(win);
 
@@ -406,7 +405,7 @@ void xwm_run() {
                     break;
                 }
                 case EnterNotify: {
-                    if(!WINDOW_SELECT_HOVERED) break;
+                    if(!WINDOW_SELECT_HOVERED || wm.hard_focused_window_index != -1) break;
                     int32_t client_index = get_client_index_window(e.xcrossing.window);
                     if(client_index == -1) break;
                     if(wm.client_windows[client_index].ignore_enter) {
@@ -421,6 +420,7 @@ void xwm_run() {
                             XRaiseWindow(wm.display, wm.client_windows[i].frame);
                         } else {
                             XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR);
+                            XLowerWindow(wm.display, wm.client_windows[i].frame);
                         }
                     }
                     break;
@@ -597,10 +597,19 @@ void handle_button_press(XButtonEvent e) {
     XRaiseWindow(wm.display, frame);
 
     bool selected_client = false;
-    if(get_client_index_window(e.window) != -1) { 
-        XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
-        wm.focused_client = get_client_index_window(e.window);
-        selected_client = true;
+    int32_t client_index = get_client_index_window(e.window);
+    if(client_index != -1) { 
+        if(wm.hard_focused_window_index == client_index) {
+            XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
+            wm.focused_client = -1;
+            wm.hard_focused_window_index = -1;
+            XSetWindowBorder(wm.display, frame, WINDOW_BORDER_COLOR);
+        } else {
+            XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
+            wm.focused_client = client_index;
+            selected_client = true;
+            wm.hard_focused_window_index = client_index;
+        }
     } else if(get_scratchpad_index_window(e.window) != -1) {
         XSetInputFocus(wm.display, ScratchpadDefs[get_scratchpad_index_window(e.window)].win, RevertToPointerRoot, CurrentTime);
         return;
@@ -639,10 +648,12 @@ void handle_button_press(XButtonEvent e) {
                 break;
             }
         }
-        if(wm.client_windows[i].win != e.window) 
-            XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR);
-        else 
-            XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR_ACTIVE);
+        if(selected_client) {
+            if(wm.client_windows[i].win != e.window) 
+                XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR);
+            else 
+                XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR_ACTIVE);
+        }
     }   
     raise_bar();
 
@@ -837,9 +848,18 @@ void handle_key_press(XKeyEvent e) {
             if(wm.window_gap <= 0) wm.window_gap = 0;
             establish_window_layout();
         }
-    }  else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_SLAVE_KEY) && wm.clients_count > 2) {
-        if(wm.focused_client != -1) 
+    }  else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_SLAVE_KEY)) {
+        if(wm.focused_client != -1)  
             if(wm.client_windows[wm.focused_client].fullscreen) return;
+        int32_t client_count = 0;
+        for(uint32_t i = 0; i < wm.clients_count; i++) {
+            if(wm.client_windows[i].desktop_index == wm.focused_desktop[wm.focused_monitor] &&
+                wm.client_windows[i].monitor_index == wm.focused_monitor && wm.client_windows[i].layout.in) {
+                client_count++;
+            }
+            wm.client_windows[i].ignore_enter = true;
+        }
+        if(client_count <= 2) return;
         int32_t index, size;
         if(wm.focused_client == (int32_t)(wm.clients_count - 1)) 
             index = wm.focused_client - 1; 
@@ -870,6 +890,15 @@ void handle_key_press(XKeyEvent e) {
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_DECREASE_SLAVE_KEY) && wm.clients_count > 2) {
         if(wm.focused_client != -1) 
             if(wm.client_windows[wm.focused_client].fullscreen) return;
+        int32_t client_count = 0;
+        for(uint32_t i = 0; i < wm.clients_count; i++) {
+            if(wm.client_windows[i].desktop_index == wm.focused_desktop[wm.focused_monitor] &&
+                wm.client_windows[i].monitor_index == wm.focused_monitor && wm.client_windows[i].layout.in) {
+                client_count++;
+            }
+            wm.client_windows[i].ignore_enter = true;
+        }
+        if(client_count <= 2) return;
         XWindowAttributes attribs;
         XGetWindowAttributes(wm.display, wm.client_windows[wm.focused_client].frame, &attribs);
         int32_t size;
@@ -1900,7 +1929,6 @@ uint32_t draw_text_icon_color(const char* icon, const char* text, Vec2 pos, Font
 
     return extents.xOff + extents_icon.xOff + rect_x_add;
 }
-
 
 void draw_half_circle(Window win, Vec2 pos, int32_t radius, uint32_t color, bool to_left) {
     XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), color);
