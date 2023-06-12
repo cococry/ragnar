@@ -449,7 +449,7 @@ void xwm_run() {
         }    
         start_time = end_time;
         if(BAR_INSTANT_UPDATE) {
-            usleep(1000);
+            usleep(100);
         }
     }
 
@@ -995,6 +995,9 @@ void handle_key_press(XKeyEvent e) {
         XRaiseWindow(wm.display, clients[index]->frame);
         XSetWindowBorder(wm.display, clients[index]->frame, WINDOW_BORDER_COLOR_ACTIVE);
         wm.focused_client = index;
+        if(wm.hard_focused_window_index != -1) {
+            wm.hard_focused_window_index = index;
+        }
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, DECORATION_TOGGLE_KEY)) {
         if(!SHOW_DECORATION)
             return;
