@@ -123,7 +123,7 @@ Then, in the tty use *startx* to restart the WM.
 
 | Keybind         |  Action     |
 | ----------------|-------------|
-| SUPER + Left Mouse/Middle Mouse | Hard-Select Window 
+| SUPER + Middle Mouse | Hard-Select Window 
 | SUPER + Enter | Open terminal |
 | SUPER + W | Open Web-browser |
 | SUPER + S | Open Application Launcher |

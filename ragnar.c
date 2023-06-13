@@ -421,10 +421,8 @@ void xwm_run() {
                         if(i == (uint32_t)client_index) {
                             XSetInputFocus(wm.display, wm.client_windows[i].win, RevertToPointerRoot, CurrentTime);
                             XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR_ACTIVE);
-                            XRaiseWindow(wm.display, wm.client_windows[i].frame);
                         } else {
                             XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR);
-                            XLowerWindow(wm.display, wm.client_windows[i].frame);
                         }
                     }
                     break;
@@ -449,7 +447,7 @@ void xwm_run() {
         }    
         start_time = end_time;
         if(BAR_INSTANT_UPDATE) {
-            usleep(100);
+            usleep(WM_UPDATE_LAG);
         }
     }
 
@@ -602,21 +600,24 @@ void handle_button_press(XButtonEvent e) {
 
     bool selected_client = false;
     int32_t client_index = get_client_index_window(e.window);
-    if(client_index != -1) { 
-        if(wm.hard_focused_window_index == client_index) {
-            XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
-            wm.focused_client = -1;
-            wm.hard_focused_window_index = -1;
-            XSetWindowBorder(wm.display, frame, WINDOW_BORDER_COLOR);
-        } else {
-            XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
-            wm.focused_client = client_index;
-            selected_client = true;
-            wm.hard_focused_window_index = client_index;
+    if(e.button == Button2) {
+        if(client_index != -1) { 
+            if(wm.hard_focused_window_index == client_index) {
+                XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
+                wm.focused_client = -1;
+                wm.hard_focused_window_index = -1;
+                XSetWindowBorder(wm.display, frame, WINDOW_BORDER_COLOR);
+            } else {
+                XSetInputFocus(wm.display, e.window, RevertToPointerRoot, CurrentTime);
+                wm.focused_client = client_index;
+                selected_client = true;
+                wm.hard_focused_window_index = client_index;
+            }
+        } else if(get_scratchpad_index_window(e.window) != -1) {
+            XSetInputFocus(wm.display, ScratchpadDefs[get_scratchpad_index_window(e.window)].win, RevertToPointerRoot, CurrentTime);
+            XSetWindowBorder(wm.display, frame, WINDOW_BORDER_COLOR_ACTIVE);
+            return;
         }
-    } else if(get_scratchpad_index_window(e.window) != -1) {
-        XSetInputFocus(wm.display, ScratchpadDefs[get_scratchpad_index_window(e.window)].win, RevertToPointerRoot, CurrentTime);
-        return;
     }
 
     // Check if bar button was pressed
@@ -656,7 +657,8 @@ void handle_button_press(XButtonEvent e) {
             if(wm.client_windows[i].win != e.window) 
                 XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR);
             else 
-                XSetWindowBorder(wm.display, wm.client_windows[i].frame, WINDOW_BORDER_COLOR_ACTIVE);
+                XSetWindowBorder(wm.display, wm.client_windows[i].frame, ((int32_t)i == wm.hard_focused_window_index) ?  
+                                 WINDOW_BORDER_COLOR_HARD_SELECTED : WINDOW_BORDER_COLOR_ACTIVE);
         }
     }   
     raise_bar();
@@ -1013,7 +1015,29 @@ void handle_key_press(XKeyEvent e) {
             wm.decoration_hidden = true;
         }
         establish_window_layout();
+    } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_SET_MASTER_KEY)) {
+        if(!wm.client_windows[wm.focused_client].layout.in) return;
+        int32_t first_index = -1;
+        int32_t client_count = 0;
+        bool found_first = false;
+        for(uint32_t i = 0; i < wm.clients_count; i++) {
+            if(wm.client_windows[i].desktop_index == wm.focused_desktop[wm.focused_monitor] &&
+                wm.client_windows[i].monitor_index == wm.focused_monitor && wm.client_windows[i].layout.in) {
+                if(!found_first) {
+                    first_index = (int32_t)i;
+                    found_first = true;
+                }
+                client_count++;
+            }
+        }
+        if(first_index == -1 || client_count <= 1) return;
+
+        Client tmp = wm.client_windows[wm.focused_client];
+        wm.client_windows[wm.focused_client] = wm.client_windows[first_index];
+        wm.client_windows[first_index] = tmp;
+        establish_window_layout();
     }
+
     for(uint32_t i = 0; i < SCRATCH_PAD_COUNT; i++) {
         if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, ScratchpadDefs[i].key)) {
             if(!ScratchpadDefs[i].spawned) {
@@ -1078,6 +1102,7 @@ static void grab_global_input() {
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_MASTER_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_INCREASE_SLAVE_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_DECREASE_SLAVE_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
+    XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_SET_MASTER_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
     if(SHOW_BAR) {
         XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_TOGGLE_KEY), MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
         XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_UP_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
@@ -1169,7 +1194,7 @@ static void set_fullscreen(Window win, bool hide_decoration) {
     wm.client_windows[client_index].fullscreen = true;
 
     XSetWindowBorderWidth(wm.display, wm.client_windows[client_index].frame, 0);
-    XRaiseWindow(wm.display, win);
+    XRaiseWindow(wm.display, wm.client_windows[client_index].frame);
     raise_bar();
     if(wm.client_windows[client_index].monitor_index == wm.bar_monitor)
         hide_bar();
