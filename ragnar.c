@@ -295,6 +295,7 @@ void xwm_window_frame(Window win) {
             redraw_client_decoration(&wm.client_windows[client_index]);
         }
     }
+    draw_bar_buttons();
 }
 
 void xwm_window_unframe(Window win) {
@@ -327,7 +328,6 @@ void xwm_window_unframe(Window win) {
     XReparentWindow(wm.display, frame_win, wm.root, 0, 0);
     XUnmapWindow(wm.display, frame_win);
     XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
-
     // Removing the window from the clients
     for(uint32_t i = client_index; i < wm.clients_count - 1; i++) {
         wm.client_windows[i] = wm.client_windows[i + 1];
@@ -662,11 +662,7 @@ void handle_button_press(XButtonEvent e) {
         }
     }   
     raise_bar();
-
-    if(selected_client) {
-        draw_bar_buttons();
-    }  
-
+    draw_bar_buttons();
 }
 void handle_button_release(XButtonEvent e) {
     (void)e;
@@ -1334,7 +1330,6 @@ void redraw_client_decoration(Client* client) {
 
 void establish_window_layout() {
     if(wm.current_layout == WINDOW_LAYOUT_FLOATING) return;
-    draw_bar_buttons();
     // Retrieving the clients
     Client* clients[CLIENT_WINDOW_CAP]; 
     uint32_t client_count = 0;
@@ -1675,8 +1670,8 @@ void create_bar() {
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
 
         BarButtons[i].win = XCreateSimpleWindow(wm.display, wm.root, get_monitor_start_x(wm.bar_monitor) + BarButtonLabelPos[wm.bar_monitor] + xoffset, BAR_PADDING_Y + WINDOW_BORDER_WIDTH, BAR_BUTTON_SIZE, 
-                                                BAR_SIZE - WINDOW_BORDER_WIDTH, 0,  0xffffff, BarButtons[i].color);
-        XSelectInput(wm.display, BarButtons[i].win, SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask); 
+                                                BAR_SIZE - WINDOW_BORDER_WIDTH, 0,  0x000000, BarButtons[i].color);
+        XSelectInput(wm.display, BarButtons[i].win, ButtonPressMask); 
         XMapWindow(wm.display, BarButtons[i].win);
         XRaiseWindow(wm.display, BarButtons[i].win);
         xoffset += BAR_BUTTON_SIZE + BAR_BUTTON_PADDING;
@@ -1701,9 +1696,13 @@ void unhide_bar() {
     if(!SHOW_BAR) return;
     if(!wm.bar.hidden) return;
     XMapWindow(wm.display, wm.bar.win);
-    draw_bar_buttons();
+    for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
+        XMapWindow(wm.display, BarButtons[i].win);
+    }
+    raise_bar();
     wm.bar.hidden = false;
     draw_bar();
+    draw_bar_buttons();
 }
 
 
@@ -1922,8 +1921,7 @@ void draw_bar_buttons() {
     if(!SHOW_BAR || wm.bar.hidden) return;
     uint32_t xoffset = 0;
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
-        XMapWindow(wm.display, BarButtons[i].win);
-        XRaiseWindow(wm.display, BarButtons[i].win);
+        //XRaiseWindow(wm.display, BarButtons[i].win);
         XClearWindow(wm.display, BarButtons[i].win);
         XGlyphInfo extents;
         if(str_unicode(BarButtons[i].icon)) {
