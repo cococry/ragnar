@@ -1,8 +1,8 @@
 #/bin/bash
 
-sudo pacman -S --needed xorg xorg-xinit gcc make git freetype2
+sudo pacman -S xorg xorg-xinit gcc make git freetype2
 git clone https://github.com/cococry/Ragnar.git 
-cd Ragnar
+cd ~/Ragnar
 sudo cp ragnar.desktop /usr/share/xsessions/ragnar.desktop
 sudo make ragnar install
 echo "! INSTALLED"

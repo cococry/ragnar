@@ -3,15 +3,6 @@
 #include <stdint.h>
 
 // INTERNAL -- IGNORE
-
-typedef enum {
-    WINDOW_LAYOUT_TILED_MASTER = 0,
-    WINDOW_LAYOUT_HORIZONTAL_MASTER,
-    WINDOW_LAYOUT_HORIZONTAL_STRIPES,
-    WINDOW_LAYOUT_VERTICAL_STRIPES,
-    WINDOW_LAYOUT_FLOATING
-} WindowLayout;
-
 typedef struct {
     XftFont* font;
     XftColor color;
