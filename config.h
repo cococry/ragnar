@@ -223,7 +223,7 @@ static ScratchpadDef ScratchpadDefs[SCRATCH_PAD_COUNT] =
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
-#define MONITOR_COUNT 2
-static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}, (Monitor){.width = 2560, .height = 1440}};
+#define MONITOR_COUNT 1
+static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}};
 
-static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 1350, 1700 };
+static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 1350 };
