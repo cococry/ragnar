@@ -39,7 +39,7 @@ typedef struct {
 
 typedef struct {
     bool in, skip;
-    int32_t change;
+    int32_t change  ;
 } LayoutProps;
 
 typedef struct {
@@ -354,7 +354,7 @@ void xwm_run() {
     wm.focused_monitor = MONITOR_COUNT - 1;
     wm.current_layout = WINDOW_LAYOUT_DEFAULT;
     wm.bar_monitor = BAR_START_MONITOR;
-    wm.window_gap = 30;
+    wm.window_gap = WINDOW_START_GAP;
     wm.decoration_hidden = !SHOW_DECORATION;
     wm.spawning_scratchpad = false;
     wm.layout_full = false;
