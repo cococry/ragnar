@@ -1,7 +1,7 @@
 # RagnarWM
 
 
-<img src="https://github.com/cococry/Ragnar/blob/main/branding/logo.png" width="200"  /> 
+<img src="https://github.com/cococry/Ragnar/blob/main/branding/logo.png" width="100"  /> 
 <img src="https://github.com/cococry/Ragnar/blob/main/branding/workflow.png" width="800"  /> 
 
 
