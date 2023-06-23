@@ -109,6 +109,7 @@ static const Monitor Monitors[MONITOR_COUNT] =  {(Monitor){.width = 1920, .heigh
 #define WINDOW_MIN_SIZE_LAYOUT_HORIZONTAL       100 // Minimum width of a window in a layout 
 #define WINDOW_MAX_COUNT_LAYOUT                 5 // Maximum number of windows in a layout
 #define WINDOW_MAX_GAP                          400 // Maximum amount of pixel-gap between windows in layout
+#define WINDOW_START_GAP                        16 // Initial amout of gap between windows in layout
 #define WINDOW_TRANSPARENT_FRAME                true // If transparency with a compositer is used, enable this
 #define WINDOW_LAYOUT_DEFAULT                   WINDOW_LAYOUT_TILED_MASTER 
 #define WINDOW_SELECT_HOVERED                   true
