@@ -177,6 +177,7 @@ static const Monitor Monitors[MONITOR_COUNT] =  {(Monitor){.width = 1920, .heigh
 #define BAR_START_MONITOR                       1 // Monitor on which the bar is on. (0 is most left)
 #define BAR_COLOR                               0x202020
 #define BAR_BORDER_COLOR                        0x303030
+#define BAR_BORDER_WIDTH                        0
 #define BAR_LABEL_PADDING                       100 // Space between bar main label and info label
 
 #define BAR_MAIN_LABEL_COLOR                    0x1e404f

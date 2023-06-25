@@ -1661,7 +1661,7 @@ void create_bar() {
     wm.bar.win = XCreateSimpleWindow(wm.display, 
                                      wm.root, get_monitor_start_x(wm.bar_monitor) + BAR_PADDING_X, BAR_PADDING_Y, 
                                      Monitors[wm.bar_monitor].width - 6 - (BAR_PADDING_X * 2.3f), BAR_SIZE, 
-                                     WINDOW_BORDER_WIDTH,  BAR_BORDER_COLOR, BAR_COLOR);
+                                     BAR_BORDER_WIDTH,  BAR_BORDER_COLOR, BAR_COLOR);
     XSelectInput(wm.display, wm.bar.win, SubstructureRedirectMask | SubstructureNotifyMask); 
     XSetStandardProperties(wm.display, wm.bar.win, "RagnarBar", "RagnarBar", None, NULL, 0, NULL);
     XMapWindow(wm.display, wm.bar.win);
