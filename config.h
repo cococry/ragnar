@@ -261,4 +261,3 @@ static ScratchpadDef ScratchpadDefs[SCRATCH_PAD_COUNT] =
                                                 (ScratchpadDef){.cmd = "alacritty &", .key = XK_1},
                                                 (ScratchpadDef){.cmd = "alacritty -e vim &", .key = XK_2},
 };
-

@@ -304,6 +304,7 @@ void xwm_window_unframe(Window win) {
     if(client_index == -1) {
         return;
     }
+    bool fullscreen = wm.client_windows[client_index].fullscreen;
     // If the unframe happend through a changed desktop, keep the client in ram & return
     if(wm.client_windows[client_index].ignore_unmap) {
         wm.client_windows[client_index].ignore_unmap = false;
@@ -341,8 +342,10 @@ void xwm_window_unframe(Window win) {
     if(wm.hard_focused_window_index == client_index) {
         wm.hard_focused_window_index = -1;
     }
+    if(fullscreen) {
+        unhide_bar();
+    }
     establish_window_layout();
-    unhide_bar();
 }
 void xwm_run() {
     // Setting variables to default state 
