@@ -39,7 +39,7 @@ typedef struct {
 
 typedef struct {
     bool in, skip;
-    int32_t change  ;
+    int32_t change;
 } LayoutProps;
 
 typedef struct {
