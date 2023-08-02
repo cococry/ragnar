@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include "config.h"
 
-#define VERSION "1.3"
+#define VERSION "1.3.1"
 
 #define CLIENT_WINDOW_CAP 256
 
@@ -24,7 +24,6 @@ typedef struct {
     Window win;
     bool hidden;
     FontStruct font;
-    bool spawned;
     int32_t info_label_x;
 } Bar;
 
@@ -176,9 +175,6 @@ void xwm_window_frame(Window win) {
     // Creating the X Window frame
     int32_t win_x = get_focused_monitor_window_center_x(attribs.width / 2);
 
-
-    /* Invisible helper window for window decoration */
-
     /* Frame window */
     Window win_frame;
     if(WINDOW_TRANSPARENT_FRAME) {
@@ -212,11 +208,6 @@ void xwm_window_frame(Window win) {
     XMapWindow(wm.display, win_frame);
     grab_window_input(win);
     XRaiseWindow(wm.display, win_frame);
-    if(!wm.bar.spawned) {
-        hide_bar();
-        unhide_bar();
-        wm.bar.spawned = true;
-    }
     raise_bar();
 
     if(wm.spawning_scratchpad) {
@@ -297,7 +288,6 @@ void xwm_window_frame(Window win) {
     }
     draw_bar_buttons();
 }
-
 void xwm_window_unframe(Window win) {
     // If the window was not framed, return
     int32_t client_index = get_client_index_window(win);
@@ -309,6 +299,9 @@ void xwm_window_unframe(Window win) {
     if(wm.client_windows[client_index].ignore_unmap) {
         wm.client_windows[client_index].ignore_unmap = false;
         return;
+    }
+    if(wm.client_windows[client_index].fullscreen) {
+        unhide_bar();
     }
     Window frame_win = wm.client_windows[client_index].frame;
 
@@ -342,6 +335,7 @@ void xwm_window_unframe(Window win) {
     if(wm.hard_focused_window_index == client_index) {
         wm.hard_focused_window_index = -1;
     }
+    draw_bar_buttons();
     if(fullscreen) {
         unhide_bar();
     }
@@ -357,6 +351,7 @@ void xwm_run() {
     wm.focused_monitor = MONITOR_COUNT - 1;
     wm.current_layout = WINDOW_LAYOUT_DEFAULT;
     wm.bar_monitor = BAR_START_MONITOR;
+    wm.window_gap = WINDOW_INITIAL_GAP;
     wm.window_gap = WINDOW_START_GAP;
     wm.decoration_hidden = !SHOW_DECORATION;
     wm.spawning_scratchpad = false;
@@ -378,9 +373,10 @@ void xwm_run() {
     XSetInputFocus(wm.display, wm.root, RevertToPointerRoot, CurrentTime);
     grab_global_input();
 
-    if(SHOW_BAR)
+    if(SHOW_BAR) {
         create_bar();
-
+        draw_bar_buttons();
+    }
     double refresh_timer = WM_REFRESH_SPEED;
     struct timespec start_time = { 0 }, end_time = { 0 };
 
@@ -390,6 +386,7 @@ void xwm_run() {
         wm.delta_time = (end_time.tv_sec - start_time.tv_sec) + (double)(end_time.tv_sec - start_time.tv_sec) / 1e9;
         if((BAR_INSTANT_UPDATE && XPending(wm.display)) || (!BAR_INSTANT_UPDATE)) {
             XNextEvent(wm.display, &e);
+            draw_bar();
             select_focused_monitor(get_cursor_position().x);
             switch (e.type) {
                 case UnmapNotify:
@@ -1681,7 +1678,6 @@ void create_bar() {
     }
     draw_bar_buttons();
     wm.bar.hidden = false;
-    wm.bar.spawned = false;
 }
 
 void hide_bar() {
@@ -1826,7 +1822,7 @@ void draw_design(Window win, int32_t xpos, BarLabelDesign design, uint32_t color
     }
 }
 void draw_bar() {
-    if(!SHOW_BAR) return;
+    if(!SHOW_BAR || wm.bar.hidden) return;
     // Main Label
     XClearWindow(wm.display, wm.bar.win);
     uint32_t xoffset = 0;
@@ -1924,7 +1920,7 @@ void draw_bar_buttons() {
     if(!SHOW_BAR || wm.bar.hidden) return;
     uint32_t xoffset = 0;
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
-        //XRaiseWindow(wm.display, BarButtons[i].win);
+        XRaiseWindow(wm.display, BarButtons[i].win);
         XClearWindow(wm.display, BarButtons[i].win);
         XGlyphInfo extents;
         if(str_unicode(BarButtons[i].icon)) {
