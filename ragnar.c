@@ -386,14 +386,15 @@ void xwm_run() {
         wm.delta_time = (end_time.tv_sec - start_time.tv_sec) + (double)(end_time.tv_sec - start_time.tv_sec) / 1e9;
         if((BAR_INSTANT_UPDATE && XPending(wm.display)) || (!BAR_INSTANT_UPDATE)) {
             XNextEvent(wm.display, &e);
-            draw_bar();
             select_focused_monitor(get_cursor_position().x);
             switch (e.type) {
                 case UnmapNotify:
                     handle_unmap_notify(e.xunmap);
+                    draw_bar();
                     break;
                 case MapRequest:
                     handle_map_request(e.xmaprequest);
+                    draw_bar();
                     break;
                 case ConfigureRequest:
                     handle_configure_request(e.xconfigurerequest);
@@ -403,6 +404,7 @@ void xwm_run() {
                     break;
                 case KeyPress:
                     handle_key_press(e.xkey);
+                    draw_bar();
                     break;
                 case MotionNotify: {
                     handle_motion_notify(e.xmotion);
