@@ -294,6 +294,7 @@ void xwm_window_unframe(Window win) {
     if(client_index == -1) {
         return;
     }
+    bool fullscreen = wm.client_windows[client_index].fullscreen;
     // If the unframe happend through a changed desktop, keep the client in ram & return
     if(wm.client_windows[client_index].ignore_unmap) {
         wm.client_windows[client_index].ignore_unmap = false;
@@ -335,6 +336,9 @@ void xwm_window_unframe(Window win) {
         wm.hard_focused_window_index = -1;
     }
     draw_bar_buttons();
+    if(fullscreen) {
+        unhide_bar();
+    }
     establish_window_layout();
 }
 void xwm_run() {
@@ -348,6 +352,7 @@ void xwm_run() {
     wm.current_layout = WINDOW_LAYOUT_DEFAULT;
     wm.bar_monitor = BAR_START_MONITOR;
     wm.window_gap = WINDOW_INITIAL_GAP;
+    wm.window_gap = WINDOW_START_GAP;
     wm.decoration_hidden = !SHOW_DECORATION;
     wm.spawning_scratchpad = false;
     wm.layout_full = false;
@@ -1656,7 +1661,7 @@ void create_bar() {
     wm.bar.win = XCreateSimpleWindow(wm.display, 
                                      wm.root, get_monitor_start_x(wm.bar_monitor) + BAR_PADDING_X, BAR_PADDING_Y, 
                                      Monitors[wm.bar_monitor].width - 6 - (BAR_PADDING_X * 2.3f), BAR_SIZE, 
-                                     WINDOW_BORDER_WIDTH,  BAR_BORDER_COLOR, BAR_COLOR);
+                                     BAR_BORDER_WIDTH,  BAR_BORDER_COLOR, BAR_COLOR);
     XSelectInput(wm.display, wm.bar.win, SubstructureRedirectMask | SubstructureNotifyMask); 
     XSetStandardProperties(wm.display, wm.bar.win, "RagnarBar", "RagnarBar", None, NULL, 0, NULL);
     XMapWindow(wm.display, wm.bar.win);
