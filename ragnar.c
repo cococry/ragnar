@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include "config.h"
 
-#define VERSION "1.3"
+#define VERSION "1.3.1"
 
 #define CLIENT_WINDOW_CAP 256
 
