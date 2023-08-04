@@ -1,0 +1,6 @@
+setxkbmap de &
+nitrogen --restore &
+picom -b --experimental-backends &
+pipewire &
+pipewire-pulse &
+pipewire-media-session &
