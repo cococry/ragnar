@@ -128,7 +128,7 @@ Then, in the tty use *startx* to restart the WM.
 | SUPER + W | Open Web-browser |
 | SUPER + S | Open Application Launcher |
 | SUPER + Q | Quit Application |
-| SUPER + C | Quit WM |
+| SUPER + 6 | Quit WM |
 | SUPER + Space | Add window to layout |
 | SUPER + Up Arrow | Move window up in layout |
 | SUPER + Down Arrow | Move window down in layout |
