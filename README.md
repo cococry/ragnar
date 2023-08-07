@@ -26,7 +26,7 @@ is still aesthetic and usable.
 - [x] Full compositor Support
 - [x] Fully Featured/Configurable Bar UI
 - [x] Hover to select windows
-- [ ] Support Extended Window Manager Hints
+- [x] Support Extended Window Manager Hints
 - [ ] Sys-Trays for bar
 
 ## Installation
