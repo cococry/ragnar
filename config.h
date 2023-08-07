@@ -14,6 +14,13 @@
                      / ___/ __ \/ |/ / __/  _/ ___/
                     / /__/ /_/ /    / _/_/ // (_ /
                     \___/\____/_/|_/_/ /___/\___/   
+            __                                                  
+           / /_  __  __   _________  _________  ____________  __
+          / __ \/ / / /  / ___/ __ \/ ___/ __ \/ ___/ ___/ / / /
+         / /_/ / /_/ /  / /__/ /_/ / /__/ /_/ / /__/ /  / /_/ / 
+        /_.___/\__, /   \___/\____/\___/\____/\___/_/   \__, /  
+              /____/                                   /____/   
+*
 */
 #pragma once
 #include "structs.h"
@@ -25,13 +32,13 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 
 /* Commands */
 #define TERMINAL_CMD                            "alacritty &"
-#define WEB_BROWSER_CMD                         "firefox &"
-#define APPLICATION_LAUNCHER_CMD                "dmenu_run &"
+#define WEB_BROWSER_CMD                         "brave &"
+#define APPLICATION_LAUNCHER_CMD                "rofi-app-launcher &"
 
 #define WM_REFRESH_SPEED                        1.0f // In seconds
 #define WM_UPDATE_LAG                           100 
 /* Font*/
-#define FONT                                    "monnospace:size=12"
+#define FONT                                    "JetBrains Mono Nerd Font:size=12:style=bold"
 #define FONT_SIZE                               12
 #define FONT_COLOR                              "#ffffff"
 #define DECORATION_FONT_COLOR                   "#ffffff"
@@ -41,7 +48,7 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 #define TERMINAL_OPEN_KEY                       XK_Return 
 #define WEB_BROWSER_OPEN_KEY                    XK_W
 #define APPLICATION_LAUNCHER_OPEN_KEY           XK_S
-#define WM_TERMINATE_KEY                        XK_C
+#define WM_TERMINATE_KEY                        XK_6
 
 #define WINDOW_CLOSE_KEY                        XK_Q
 #define WINDOW_FULLSCREEN_KEY                   XK_F
@@ -88,9 +95,8 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 #define WINDOW_MIN_SIZE_LAYOUT_HORIZONTAL       300 
 #define WINDOW_MIN_SIZE_LAYOUT_VERTICAL         100 // In pixels
 #define WINDOW_MAX_GAP                          100 // In pixels
-#define WINDOW_INITIAL_GAP                      10 // In pixels
-#define WINDOW_START_GAP                        16 // In pixles
-#define WINDOW_TRANSPARENT_FRAME                false
+#define WINDOW_INITIAL_GAP                      10 // In pixles
+#define WINDOW_TRANSPARENT_FRAME                true
 #define WINDOW_SELECT_HOVERED                   true
 #define WINDOW_LAYOUT_DEFAULT                   WINDOW_LAYOUT_TILED_MASTER
 
@@ -101,12 +107,12 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 #define DECORATION_TITLE_COLOR                  0x1a1823  
 
 #define DECORATION_SHOW_CLOSE_ICON              true
-#define DECORATION_CLOSE_ICON                   "X"
+#define DECORATION_CLOSE_ICON                   ""
 #define DECORATION_CLOSE_ICON_COLOR             0x1a1823
 #define DECORATION_CLOSE_ICON_SIZE              50
 
 #define DECORATION_SHOW_MAXIMIZE_ICON           true
-#define DECORATION_MAXIMIZE_ICON                " |=|"
+#define DECORATION_MAXIMIZE_ICON                " "
 #define DECORATION_MAXIMIZE_ICON_COLOR          0x1a1823 
 #define DECORATION_MAXIMIZE_ICON_SIZE           50
 
@@ -182,26 +188,28 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 #define BAR_INFO_LABEL_SELECTED_COLOR       0x1e2326
 #define BAR_VERSION_LABEL_COLOR             0x2e383c 
 
-#define BAR_SLICES_COUNT                    2
+#define BAR_SLICES_COUNT                    4
 
 #define BAR_INFO_LABEL_DESKTOP_ICON_SIZE    50
-static const char* BarInfoLabelDesktopIcons[DESKTOP_COUNT] = { "1", "2", "3", "4", "5", "6" };
-static const uint32_t BarInfoLabelPos[MONITOR_COUNT] = {810};
+static const char* BarInfoLabelDesktopIcons[DESKTOP_COUNT] = { " ", " ", " ", " ", " ", " " };
+static const uint32_t BarInfoLabelPos[MONITOR_COUNT] = {815};
 static BarCommand  BarCommands[BAR_SLICES_COUNT] = 
 { 
-    (BarCommand){.cmd = "echo \"  RGNR\"", .refresh_time = 300.0f},
-    (BarCommand){.cmd = "echo \" | $(date +%R) \"", .refresh_time = 1.0f},
+    (BarCommand){.cmd = "echo \"  󰣇\"", .refresh_time = 300.0f},
+    (BarCommand){.cmd = "echo \"  $(date +%R) \"", .refresh_time = 1.0f},
+    (BarCommand){.cmd = "ram-ragbar", .refresh_time = 1.0f,},
+    (BarCommand){.cmd = "uptime-ragbar", .refresh_time = 1.0f},
 };
 
 #define BAR_BUTTON_PADDING                  20
-#define BAR_BUTTON_SIZE                     120
+#define BAR_BUTTON_SIZE                     100
 #define BAR_BUTTON_COUNT                    3
-static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 1300 };
+static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 1350 };
 static BarButton BarButtons[BAR_BUTTON_COUNT] =
 {
     (BarButton){.cmd = APPLICATION_LAUNCHER_CMD, .icon = "Search", .color = 0x2e383c},
     (BarButton){.cmd = TERMINAL_CMD, .icon = "Terminal", .color = 0x2e383c},
-    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = "Web", .color = 0x2e383c},
+    (BarButton){.cmd = WEB_BROWSER_CMD, .icon = "Browse", .color = 0x2e383c},
 };
 
 
@@ -213,9 +221,9 @@ static ScratchpadDef ScratchpadDefs[SCRATCH_PAD_COUNT] =
     (ScratchpadDef){.cmd = "alacritty -e mocp &", .key = XK_2},
 };
 
-/* Custom Keybinds */
 #define CUSTOM_KEYBIND_COUNT 1 
-static Keybind CustomKeybinds[CUSTOM_KEYBIND_COUNT] = 
+
+static Keybind CustomKeybinds[CUSTOM_KEYBIND_COUNT] =
 {
     (Keybind){.cmd = "flameshot gui &", .key = XK_E}
-};
+}; 
