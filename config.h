@@ -213,9 +213,3 @@ static ScratchpadDef ScratchpadDefs[SCRATCH_PAD_COUNT] =
     (ScratchpadDef){.cmd = "alacritty -e mocp &", .key = XK_2},
 };
 
-/* Custom Keybinds */
-#define CUSTOM_KEYBIND_COUNT 1 
-static Keybind CustomKeybinds[CUSTOM_KEYBIND_COUNT] = 
-{
-    (Keybind){.cmd = "flameshot gui &", .key = XK_E}
-};
