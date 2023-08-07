@@ -55,3 +55,8 @@ typedef struct {
     bool spawned, hidden;
     Window win, frame;
 } ScratchpadDef;
+
+typedef struct {
+    const char* cmd; 
+    uint32_t key;
+} Keybind;
