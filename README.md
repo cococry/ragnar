@@ -49,7 +49,7 @@ clone this repo and install all dependencies with your package manager.
 - git
 - sudo
 - make
-- gcc
+- cc
 - xorg
 - xorg-xinit
 
