@@ -27,6 +27,7 @@ is still aesthetic and usable.
 - [x] Fully Featured/Configurable Bar UI
 - [x] Hover to select windows
 - [x] Support Extended Window Manager Hints
+- [X] Custom Keybindings for Commands
 - [ ] Sys-Trays for bar
 
 ## Installation
