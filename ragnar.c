@@ -91,9 +91,6 @@ typedef struct {
     int32_t spawned_scratchpad_index;
 
     double delta_time;
-    
-    Atom atom_net_supported;
-    Atom atom_net_wm_name;
 } XWM;
 
 
@@ -381,23 +378,7 @@ void xwm_run() {
     }
     double refresh_timer = WM_REFRESH_SPEED;
     struct timespec start_time = { 0 }, end_time = { 0 };
-
-    wm.atom_net_supported = XInternAtom(wm.display, "_NET_SUPPORTED", False);
-    wm.atom_net_wm_name = XInternAtom(wm.display, "_NET_WM_NAME", False);
-    Atom atom_net_supporting_wm_check = XInternAtom(wm.display, "_NET_SUPPORTING_WM_CHECK", False);
-
-    Window wm_supporting_window = XCreateSimpleWindow(wm.display, wm.root, 0, 0, 1, 1, 0, 0, 0);
-    XStoreName(wm.display, wm_supporting_window, "WM_SUPPORTING_WINDOW");
-
-    Atom supported_atoms[] = {
-        wm.atom_net_supported,
-        wm.atom_net_wm_name,
-        atom_net_supporting_wm_check
-    };
-    XChangeProperty(wm.display, wm.root, wm.atom_net_supported, XA_ATOM, 32, PropModeReplace, (unsigned char *)&supported_atoms, sizeof(supported_atoms) / sizeof(Atom)); 
-    XChangeProperty(wm.display, wm.root, atom_net_supporting_wm_check, XA_WINDOW, 32, PropModeReplace, (unsigned char *)&wm_supporting_window, 1);
-    XChangeProperty(wm.display, wm_supporting_window, wm.atom_net_wm_name, XA_STRING, 8, PropModeReplace, (unsigned char *)"Ragnar", strlen("Ragnar"));
-
+	
     XEvent e;
     while(wm.running) {
         clock_gettime(CLOCK_MONOTONIC, &end_time);
