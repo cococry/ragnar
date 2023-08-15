@@ -93,8 +93,7 @@ typedef struct {
     bool spawning_scratchpad;
     int32_t spawned_scratchpad_index;
 
-} RagnarWM;
-
+} RagnarWM; 
 
 static RagnarWM wm;
 
