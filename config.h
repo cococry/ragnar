@@ -23,13 +23,12 @@
 #define MONITOR_COUNT 1
 static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}};
 
+#define UI_REFRESH_RATE                         1.0f // In seconds
 /* Commands */
 #define TERMINAL_CMD                            "alacritty &"
 #define WEB_BROWSER_CMD                         "firefox &"
 #define APPLICATION_LAUNCHER_CMD                "dmenu_run &"
 
-#define WM_REFRESH_SPEED                        1.0f // In seconds
-#define WM_UPDATE_LAG                           100 
 /* Font*/
 #define FONT                                    "monnospace:size=12"
 #define FONT_SIZE                               12
