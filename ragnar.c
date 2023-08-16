@@ -1,9 +1,11 @@
 #include <X11/X.h>
 #include <X11/Xcursor/Xcursor.h>
+#include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/Xatom.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -26,7 +28,7 @@ typedef struct {
     Window win;
     bool hidden;
     FontStruct font;
-    int32_t info_label_x;
+    int32_t DESKTOP_LABEL_x;
     bool init;
 } Bar;
 
@@ -138,13 +140,13 @@ static void         unhide_bar();
 static void         draw_bar();
 static void         change_bar_monitor(int32_t monitor);
 static void         raise_bar();
-static int32_t      draw_bar_info_label();
+static int32_t      draw_bar_desktop_label();
 static void         draw_bar_buttons();
 static void         get_cmd_output(const char* cmd, char* dst);
 static bool         str_unicode(const char* str);
 static FontStruct   font_create(const char* fontname, const char* fontcolor, Window win);
 
-static void         draw_str(const char* str, FontStruct font, int x, int y);
+static void         draw_str(const char* str, FontStruct font, XftColor* color, int x, int y);
 static void         draw_triangle(Window win, Vec2 p1, Vec2 p2, Vec2 p3, uint32_t color);
 static uint32_t     draw_text_icon_color(const char* icon, const char* text, Vec2 pos, FontStruct font, uint32_t color, uint32_t rect_x_add, Window win, uint32_t height);
 static void         draw_half_circle(Window win, Vec2 pos, int32_t radius, uint32_t color, bool to_left);
@@ -195,6 +197,14 @@ void ragnar_init() {
 
 void ragnar_terminate() {
     XUnmapWindow(wm.display, wm.bar.win);
+
+    // Free all the allocated colors 
+    for(uint32_t i = 0; i < BAR_COMMANDS_COUNT; i++) {
+        XftColorFree(wm.display, DefaultVisual(wm.display, wm.screen), DefaultColormap(wm.display, wm.screen), &BarCommands[i]._xcolor); 
+    }
+    for(uint32_t i = 0; i < DESKTOP_COUNT; i++) {
+        XftColorFree(wm.display, DefaultVisual(wm.display, wm.screen), DefaultColormap(wm.display, wm.screen), &DesktopIcons[i]._xcolor); 
+    }
     XCloseDisplay(wm.display);
 }
 
@@ -689,7 +699,7 @@ void handle_key_press(XKeyEvent e) {
         wm.client_windows[client_index].ignore_unmap = true;
         XUnmapWindow(wm.display, wm.client_windows[client_index].frame);
         establish_window_layout();
-        draw_bar_info_label();
+        draw_bar_desktop_label();
     }  else if(e.state & MASTER_KEY && e.keycode == XKeysymToKeycode(wm.display, WINDOW_LAYOUT_CYCLE_UP_KEY)) {
         if(wm.client_windows[wm.focused_client].fullscreen) return;
         cycle_client_layout_up(&wm.client_windows[client_index]);
@@ -888,7 +898,7 @@ void handle_key_press(XKeyEvent e) {
         change_desktop(desktop);
         wm.focused_desktop[wm.focused_monitor] = desktop;
         establish_window_layout();
-        draw_bar_info_label();
+        draw_bar_desktop_label();
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, DESKTOP_CYCLE_DOWN_KEY)) {
         int32_t desktop = wm.focused_desktop[wm.focused_monitor] - 1;
         if(desktop < 0) {
@@ -897,7 +907,7 @@ void handle_key_press(XKeyEvent e) {
         change_desktop(desktop);
         wm.focused_desktop[wm.focused_monitor] = desktop;
         establish_window_layout();
-        draw_bar_info_label();
+        draw_bar_desktop_label();
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, APPLICATION_LAUNCHER_OPEN_KEY)) {
         system(APPLICATION_LAUNCHER_CMD);   
     } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, BAR_TOGGLE_KEY)) {
@@ -1262,7 +1272,7 @@ void redraw_client_decoration(Client* client) {
         XClearWindow(wm.display, client->decoration.closebutton);
         XGlyphInfo extents;
         XftTextExtents16(wm.display, client->decoration.closebutton_font.font, (FcChar16*)DECORATION_CLOSE_ICON, strlen(DECORATION_CLOSE_ICON), &extents);
-        draw_str(DECORATION_CLOSE_ICON, client->decoration.closebutton_font,
+        draw_str(DECORATION_CLOSE_ICON, client->decoration.closebutton_font, NULL,
                  (DECORATION_CLOSE_ICON_SIZE / 2.0f) - (extents.xOff / 2.0f), (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f)); 
     }
     if(DECORATION_SHOW_MAXIMIZE_ICON) {
@@ -1270,7 +1280,7 @@ void redraw_client_decoration(Client* client) {
         XClearWindow(wm.display, client->decoration.maximize_button);
         XGlyphInfo extents;
         XftTextExtents16(wm.display, client->decoration.maximize_button_font.font, (FcChar16*)DECORATION_MAXIMIZE_ICON, strlen(DECORATION_MAXIMIZE_ICON), &extents);
-        draw_str(DECORATION_MAXIMIZE_ICON, client->decoration.maximize_button_font,
+        draw_str(DECORATION_MAXIMIZE_ICON, client->decoration.maximize_button_font, NULL,
                  (DECORATION_MAXIMIZE_ICON_SIZE / 2.0f) - (extents.xOff / 2.0f), (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f)); 
     }
     XClearWindow(wm.display, client->decoration.titlebar);
@@ -1281,7 +1291,7 @@ void redraw_client_decoration(Client* client) {
         XftTextExtents16(wm.display, client->decoration.titlebar_font.font, (FcChar16*)window_name, strlen(window_name), &extents);
         XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), DECORATION_TITLE_COLOR);
         XFillRectangle(wm.display, client->decoration.titlebar, DefaultGC(wm.display, wm.screen), 0, 0, extents.xOff, DECORATION_TITLEBAR_SIZE);
-        draw_str(window_name, client->decoration.titlebar_font, 0, (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f));
+        draw_str(window_name, client->decoration.titlebar_font, NULL, 0, (DECORATION_TITLEBAR_SIZE / 2.0f) + (extents.height / 2.0f));
         XFree(window_name);
         draw_design(client->decoration.titlebar, extents.xOff, DECORATION_TITLE_LABEL_DESIGN, DECORATION_TITLE_COLOR, DECORATION_DESIGN_WIDTH, DECORATION_TITLEBAR_SIZE);
     }
@@ -1630,13 +1640,22 @@ void create_bar() {
     wm.bar.font = font_create(FONT, FONT_COLOR, wm.bar.win);
     uint32_t xoffset = 0;
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
-
+        
         BarButtons[i].win = XCreateSimpleWindow(wm.display, wm.root, get_monitor_start_x(wm.bar_monitor) + BarButtonLabelPos[wm.bar_monitor] + xoffset, BAR_PADDING_Y + WINDOW_BORDER_WIDTH, BAR_BUTTON_SIZE, 
                                                 BAR_SIZE - WINDOW_BORDER_WIDTH, 0, 0x000000, BarButtons[i].color);
         XSelectInput(wm.display, BarButtons[i].win, ButtonPressMask); 
         XMapWindow(wm.display, BarButtons[i].win);
         XRaiseWindow(wm.display, BarButtons[i].win);
         xoffset += BAR_BUTTON_SIZE + BAR_BUTTON_PADDING;
+    }
+
+    // Allocate the colors of the bar commands
+    for(uint32_t i = 0; i < BAR_COMMANDS_COUNT; i++) {
+        XftColorAllocName(wm.display,DefaultVisual(wm.display,0),DefaultColormap(wm.display, 0), BarCommands[i].color, &BarCommands[i]._xcolor);
+    }
+    // Allocate the colors of the bar desktop icons
+    for(uint32_t i = 0; i < DESKTOP_COUNT; i++) {
+        XftColorAllocName(wm.display,DefaultVisual(wm.display,0),DefaultColormap(wm.display, 0), DesktopIcons[i].color, &DesktopIcons[i]._xcolor);
     }
     draw_bar_buttons();
     wm.bar.init = true;
@@ -1704,8 +1723,8 @@ FontStruct font_create(const char* fontname, const char* fontcolor, Window win) 
 
     return fs;
 }
-void draw_str(const char* str, FontStruct font, int x, int y) {
-    XftDrawStringUtf8(font.draw, &font.color, font.font, x, y, (XftChar8 *)str, strlen(str));
+void draw_str(const char* str, FontStruct font, XftColor* color, int x, int y) {
+    XftDrawStringUtf8(font.draw, color ? color : &font.color, font.font, x, y, (XftChar8 *)str, strlen(str));
 }
 
 void draw_design(Window win, int32_t xpos, BarLabelDesign design, uint32_t color, uint32_t design_width, uint32_t design_height) {
@@ -1780,8 +1799,8 @@ void draw_design(Window win, int32_t xpos, BarLabelDesign design, uint32_t color
             XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), color);
             XFillRectangle(wm.display, win, DefaultGC(wm.display, wm.screen), xpos, 0, design_width, design_height);
             break;
-        }
-    }
+        } 
+    }   
 }
 void* update_ui() {
     while(true) { 
@@ -1801,18 +1820,58 @@ void draw_bar() {
     if(!SHOW_BAR || wm.bar.hidden || !wm.bar.init) return;
     // Main Label
     XClearWindow(wm.display, wm.bar.win);
-    XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BAR_MAIN_LABEL_COLOR);
-    XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), 0, 0, 300, BAR_SIZE);
     uint32_t xoffset = 0;
     {
-        for(uint32_t i = 0; i < BAR_SLICES_COUNT; i++) {
-            get_cmd_output(BarCommands[i].cmd, BarCommands[i].text);
-            XGlyphInfo extents;
-            XftTextExtents16(wm.display, wm.bar.font.font, (FcChar16*)BarCommands[i].text, strlen(BarCommands[i].text), &extents);
-            XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BAR_MAIN_LABEL_COLOR);
-            XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), xoffset, 0, extents.xOff, BAR_SIZE);
-            draw_str(BarCommands[i].text, wm.bar.font, xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
-            xoffset += extents.xOff;
+        for(uint32_t i = 0; i < BAR_COMMANDS_COUNT; i++) {
+            // Passing the output of the given bar command to the text 
+            get_cmd_output(BarCommands[i].cmd, BarCommands[i]._text);
+
+            // Getting the  text with seperator
+            char text[516] = {0};
+            memcpy(text, BarCommands[i]._text, sizeof(text));
+            if(strlen(BAR_COMMAND_SEPERATOR) != 0 && i != BAR_COMMANDS_COUNT - 1)
+                strcat(text, " "BAR_COMMAND_SEPERATOR);
+
+            // Insert a leading space
+            int length = strlen(text);
+            for (int i = length; i >= 0; i--) {
+                text[i + 1] = text[i];
+            }
+            text[0] = ' ';
+
+            // Getting the offset of the string (supports unicode)
+            int32_t xoff = 0;
+            bool is_unicode = false;
+            for(uint32_t i = 0; i < strlen(text); i++) {
+                XGlyphInfo extents;
+                char str[2];
+                str[0] = text[i];
+                str[1] = '\0';
+                if(str_unicode(str)) {
+                    XftTextExtentsUtf16(wm.display, wm.bar.font.font, (FcChar8*)str, FcEndianBig, strlen(str), &extents);
+                    is_unicode = true;
+                } else {
+                    XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)str, strlen(str), &extents);
+                }
+                xoff += extents.xOff;
+            }
+            // Adding the offset of the seperator to if the string is unicode
+            if(is_unicode) {
+                XGlyphInfo extents;
+                if(str_unicode(BAR_COMMAND_SEPERATOR)) {
+                    XftTextExtentsUtf16(wm.display, wm.bar.font.font, (FcChar8*)BAR_COMMAND_SEPERATOR, FcEndianBig, strlen(BAR_COMMAND_SEPERATOR), &extents);
+                } else {
+                    XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)BAR_COMMAND_SEPERATOR, strlen(BAR_COMMAND_SEPERATOR), &extents);
+                }
+                xoff += extents.xOff;
+            }
+            // Drawing the background of the command
+            XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BarCommands[i].bg_color == -1 ? BAR_MAIN_LABEL_COLOR : BarCommands[i].bg_color);
+            XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), xoffset, 0, xoff, BAR_SIZE);
+            
+            // Drawing the output of the command
+            draw_str(text, wm.bar.font, &BarCommands[i]._xcolor, xoffset, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
+            xoffset += xoff;
         }
         draw_design(wm.bar.win, xoffset, BAR_MAIN_LABEL_DESIGN, BAR_MAIN_LABEL_COLOR, BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
         xoffset += BAR_LABEL_DESIGN_WIDTH;
@@ -1820,8 +1879,8 @@ void draw_bar() {
 
 
     // Info Label
-    wm.bar.info_label_x = xoffset;
-    xoffset = draw_bar_info_label();
+    wm.bar.DESKTOP_LABEL_x = xoffset;
+    xoffset = draw_bar_desktop_label();
 
     // Version label
     if(BAR_SHOW_VERSION_LABEL)
@@ -1834,9 +1893,9 @@ void draw_bar() {
         XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), 
                        monitor_width - extents.xOff - BAR_LABEL_DESIGN_WIDTH, 0, extents.xOff + BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
 
-        draw_str(text, wm.bar.font, monitor_width - extents.xOff - BAR_LABEL_DESIGN_WIDTH, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
+        draw_str(text, wm.bar.font, NULL, monitor_width - extents.xOff - BAR_LABEL_DESIGN_WIDTH, (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
 
-        draw_design(wm.bar.win, monitor_width - extents.xOff - BAR_LABEL_DESIGN_WIDTH, BAR_VERSION_LABEL_DESIGN, BAR_INFO_LABEL_COLOR, BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
+        draw_design(wm.bar.win, monitor_width - extents.xOff - BAR_LABEL_DESIGN_WIDTH, BAR_VERSION_LABEL_DESIGN, BAR_DESKTOP_LABEL_COLOR, BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
     }
 } 
 
@@ -1849,31 +1908,31 @@ void raise_bar() {
     }
 }
 
-int32_t draw_bar_info_label() {
-    if(!BAR_SHOW_INFO_LABEL) return 0;
+int32_t draw_bar_desktop_label() {
+    if(!BAR_SHOW_DESKTOP_LABEL) return 0;
 
-    uint32_t xoffset = BarInfoLabelPos[wm.focused_monitor];
+    uint32_t xoffset = BarInfoLabelPos[wm.bar_monitor];
 
     XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), BAR_COLOR);
-    XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), xoffset, 0, BAR_INFO_LABEL_DESKTOP_ICON_SIZE * DESKTOP_COUNT, BAR_SIZE);
+    XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), xoffset, 0, BAR_DESKTOP_LABEL_ICON_SIZE * DESKTOP_COUNT, BAR_SIZE);
 
-    draw_design(wm.bar.win, xoffset, BAR_INFO_LABEL_DESIGN_FRONT, BAR_INFO_LABEL_COLOR, BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
+    draw_design(wm.bar.win, xoffset, BAR_DESKTOP_LABEL_DESIGN_FRONT, BAR_DESKTOP_LABEL_COLOR, BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
 
     for(uint32_t i = 0; i < DESKTOP_COUNT; i++) {
-        XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), ((int32_t)i == wm.focused_desktop[wm.focused_monitor]) ? BAR_INFO_LABEL_SELECTED_COLOR : BAR_INFO_LABEL_COLOR);
-        XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), xoffset, 0, BAR_INFO_LABEL_DESKTOP_ICON_SIZE, BAR_SIZE);
+        XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), ((int32_t)i == wm.focused_desktop[wm.focused_monitor]) ? BAR_DESKTOP_LABEL_SELECTED_COLOR : BAR_DESKTOP_LABEL_COLOR);
+        XFillRectangle(wm.display, wm.bar.win, DefaultGC(wm.display, wm.screen), xoffset, 0, BAR_DESKTOP_LABEL_ICON_SIZE, BAR_SIZE);
 
         XGlyphInfo extents;
-        if(str_unicode(BarInfoLabelDesktopIcons[i])) {
-            XftTextExtentsUtf16(wm.display, wm.bar.font.font, (FcChar8*)BarInfoLabelDesktopIcons[i], FcEndianBig, strlen(BarInfoLabelDesktopIcons[i]), &extents);
+        if(str_unicode(DesktopIcons[i].icon)) {
+            XftTextExtentsUtf16(wm.display, wm.bar.font.font, (FcChar8*)DesktopIcons[i].icon, FcEndianBig, strlen(DesktopIcons[i].icon), &extents);
         } else {
-            XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)BarInfoLabelDesktopIcons[i], strlen(BarInfoLabelDesktopIcons[i]), &extents);
+            XftTextExtents8(wm.display, wm.bar.font.font, (FcChar8*)DesktopIcons[i].icon, strlen(DesktopIcons[i].icon), &extents);
         }
-        draw_str(BarInfoLabelDesktopIcons[i], wm.bar.font, xoffset + ((BAR_INFO_LABEL_DESKTOP_ICON_SIZE / 2.0f) - (
-                 ((str_unicode(BarInfoLabelDesktopIcons[i]) ? extents.width : extents.width / 2.0f)))), (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
-        xoffset += BAR_INFO_LABEL_DESKTOP_ICON_SIZE;
+        draw_str(DesktopIcons[i].icon, wm.bar.font, &DesktopIcons[i]._xcolor, xoffset + ((BAR_DESKTOP_LABEL_ICON_SIZE / 2.0f) - (
+                 ((str_unicode(DesktopIcons[i].icon) ? extents.width : extents.width / 2.0f)))), (BAR_SIZE / 2.0f) + (FONT_SIZE / 2.0f));
+        xoffset += BAR_DESKTOP_LABEL_ICON_SIZE;
     }
-    draw_design(wm.bar.win, xoffset, BAR_INFO_LABEL_DESIGN_BACK, BAR_INFO_LABEL_COLOR, BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
+    draw_design(wm.bar.win, xoffset, BAR_DESKTOP_LABEL_DESIGN_BACK, BAR_DESKTOP_LABEL_COLOR, BAR_LABEL_DESIGN_WIDTH, BAR_SIZE);
     return xoffset;
 }
 
@@ -1924,8 +1983,8 @@ uint32_t draw_text_icon_color(const char* icon, const char* text, Vec2 pos, Font
     XSetForeground(wm.display, DefaultGC(wm.display, wm.screen), color);
     XFillRectangle(wm.display, win, DefaultGC(wm.display, wm.screen), pos.x, 0, extents.xOff + extents_icon.xOff + rect_x_add, height);
 
-    draw_str(icon, font, pos.x, pos.y);
-    draw_str(text, font, pos.x + extents_icon.xOff, pos.y);
+    draw_str(icon, font, NULL, pos.x, pos.y);
+    draw_str(text, font, NULL, pos.x + extents_icon.xOff, pos.y);
 
     return extents.xOff + extents_icon.xOff + rect_x_add;
 }
@@ -1952,10 +2011,8 @@ int main(void) {
 
     pthread_t ui_thread;
     pthread_create(&ui_thread, NULL, update_ui, NULL);
-    XMoveWindow(wm.display, wm.bar.win, get_monitor_start_x(wm.bar_monitor) + BAR_PADDING_X, BAR_PADDING_Y);
-    XResizeWindow(wm.display, wm.bar.win, Monitors[wm.bar_monitor].width - 6 - (BAR_PADDING_X * 2.3f), BAR_SIZE);
+    
     draw_bar();
-
     ragnar_run();
     ragnar_terminate();
 }

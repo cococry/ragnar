@@ -23,10 +23,10 @@ typedef struct {
 } Monitor;
 typedef struct {
     const char* cmd;
-    float refresh_time;
-    float timer;
-    char text[512];
-    bool init;
+    const char* color;
+    int32_t bg_color;
+    XftColor _xcolor;
+    char _text[512];
 } BarCommand;
 
 typedef struct {
@@ -36,6 +36,12 @@ typedef struct {
     FontStruct font;
     uint32_t color;
 } BarButton;
+
+typedef struct {
+    const char* icon;
+    const char* color;
+    XftColor _xcolor;
+} BarDesktopIcon;
 
 typedef enum {
     DESIGN_STRAIGHT = 0,
