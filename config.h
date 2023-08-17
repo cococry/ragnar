@@ -126,20 +126,20 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
  *    the BarCommands                   about the WM like the current    clicked execute      Ragnar WM that is running
  *                                      monitor or the current program.  their given command.
  * */
-#define SHOW_BAR                            true
-#define BAR_INSTANT_UPDATE                  false // Turning this on leads to higher cpu usage
+#define SHOW_BAR                              true
+#define BAR_INSTANT_UPDATE                    false // Turning this on leads to higher cpu usage
 
-#define BAR_SHOW_INFO_LABEL                 true
-#define BAR_SHOW_VERSION_LABEL              true
+#define BAR_SHOW_DESKTOP_LABEL                true
+#define BAR_SHOW_VERSION_LABEL                true
 
-#define BAR_SIZE                            35 // In pixels
-#define BAR_PADDING_Y                       0
-#define BAR_PADDING_X                       0
-#define BAR_START_MONITOR                   0 // Monitor on which the bar is on startup. (0 is most left)
-#define BAR_REFRESH_SPEED                   1.0 // In seconds
-#define BAR_COLOR                           0x1e2326
-#define BAR_BORDER_COLOR                    0x4f5b58
-#define BAR_BORDER_WIDTH                    0
+#define BAR_SIZE                              35 // In pixels
+#define BAR_PADDING_Y                         0
+#define BAR_PADDING_X                         0
+#define BAR_START_MONITOR                     0 // Monitor on which the bar is on startup. (0 is most left)
+#define BAR_REFRESH_SPEED                     1.0 // In seconds
+#define BAR_COLOR                             0x1e2326
+#define BAR_BORDER_COLOR                      0x4f5b58
+#define BAR_BORDER_WIDTH                      0
 
 /* --- BAR DESIGNS --- */
 /* STAIGHT:
@@ -169,27 +169,40 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
  * ROUND_RIGHT
  *   |)
  */
-#define BAR_LABEL_DESIGN_WIDTH              20
-#define BAR_MAIN_LABEL_DESIGN               DESIGN_ROUND_RIGHT
-#define BAR_INFO_LABEL_DESIGN_FRONT         DESIGN_ROUND_LEFT
-#define BAR_INFO_LABEL_DESIGN_BACK          DESIGN_ROUND_RIGHT
-#define BAR_VERSION_LABEL_DESIGN            DESIGN_ROUND_LEFT
+#define BAR_LABEL_DESIGN_WIDTH                20
+#define BAR_MAIN_LABEL_DESIGN                 DESIGN_ROUND_RIGHT
+#define BAR_DESKTOP_LABEL_DESIGN_FRONT        DESIGN_ROUND_LEFT
+#define BAR_DESKTOP_LABEL_DESIGN_BACK         DESIGN_ROUND_RIGHT
+#define BAR_VERSION_LABEL_DESIGN              DESIGN_ROUND_LEFT
 
 
-#define BAR_MAIN_LABEL_COLOR                0x2e383c
-#define BAR_INFO_LABEL_COLOR                0x2e383c
-#define BAR_INFO_LABEL_SELECTED_COLOR       0x1e2326
-#define BAR_VERSION_LABEL_COLOR             0x2e383c 
+#define BAR_MAIN_LABEL_COLOR                  0x2e383c
+#define BAR_DESKTOP_LABEL_COLOR               0x2e383c
+#define BAR_DESKTOP_LABEL_SELECTED_COLOR      0x1e2326
+#define BAR_VERSION_LABEL_COLOR               0x2e383c 
 
-#define BAR_SLICES_COUNT                    2
+#define BAR_COMMANDS_COUNT                      2
 
-#define BAR_INFO_LABEL_DESKTOP_ICON_SIZE    50
-static const char* BarInfoLabelDesktopIcons[DESKTOP_COUNT] = { "1", "2", "3", "4", "5", "6" };
+#define BAR_DESKTOP_LABEL_ICON_SIZE           50
+
 static const uint32_t BarInfoLabelPos[MONITOR_COUNT] = {810};
-static BarCommand  BarCommands[BAR_SLICES_COUNT] = 
+
+#define BAR_COMMAND_SEPERATOR "|"
+
+static BarDesktopIcon DesktopIcons[DESKTOP_COUNT] = 
 { 
-    (BarCommand){.cmd = "echo \"  RGNR\"", .refresh_time = 300.0f},
-    (BarCommand){.cmd = "echo \" | $(date +%R) \"", .refresh_time = 1.0f},
+    (BarDesktopIcon){.icon = "1",  .color = "#f55151"  }, 
+    (BarDesktopIcon){.icon = "2",  .color = "#f0528b"  }, 
+    (BarDesktopIcon){.icon = "3",  .color = "#d267ba"  }, 
+    (BarDesktopIcon){.icon = "4",  .color = "#a07fd7"  }, 
+    (BarDesktopIcon){.icon = "5",  .color = "#6791dd"  }, 
+    (BarDesktopIcon){.icon = "6",  .color = "#379bd0"  }, 
+};
+
+static BarCommand  BarCommands[BAR_COMMANDS_COUNT] = 
+{ 
+    (BarCommand){.cmd = "echo \" RGNR\"", .color = "#ffffff", .bg_color = -1},
+    (BarCommand){.cmd = "echo \" $(date +%R)\"", .color ="#5eb5eb", .bg_color = -1},
 };
 
 #define BAR_BUTTON_PADDING                  20
