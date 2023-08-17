@@ -14,7 +14,7 @@
 #include "config.h"
 
 
-#define VERSION "1.3.2"
+#define VERSION "1.4"
 
 #define CLIENT_WINDOW_CAP 256
 
