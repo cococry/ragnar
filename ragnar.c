@@ -2,6 +2,7 @@
 #include <X11/Xcursor/Xcursor.h>
 #include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/Xatom.h>
 #include <stdint.h>
@@ -11,6 +12,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "config.h"
+
 
 #define VERSION "1.3.2"
 
@@ -180,12 +182,23 @@ void ragnar_init() {
     wm.root = DefaultRootWindow(wm.display);
     wm.screen = DefaultScreen(wm.display);
 
+    // Setting the window manager name
+    const char *name = "Ragnar";
+    XChangeProperty(wm.display, wm.root,
+                    XInternAtom(wm.display, "_NET_WM_NAME", False),
+                    XInternAtom(wm.display, "UTF8_STRING", False),
+                    8, PropModeReplace, (const unsigned char *)name, strlen(name));
+    XFlush(wm.display);
     XSelectInput(wm.display, wm.root, SubstructureRedirectMask | SubstructureNotifyMask); 
     XSync(wm.display, false);
 
     Cursor cursor = XcursorLibraryLoadCursor(wm.display, "arrow");
     XDefineCursor(wm.display, wm.root, cursor);
     XSetErrorHandler(handle_x_error);
+
+    XSetWindowAttributes attributes;
+    attributes.event_mask = ButtonPress | KeyPress | SubstructureRedirectMask | SubstructureNotifyMask | PropertyChangeMask;
+    XChangeWindowAttributes(wm.display, wm.root, CWEventMask, &attributes);
 
     grab_global_input();
     if(SHOW_BAR) {
@@ -243,6 +256,12 @@ void ragnar_window_frame(Window win) {
     } else {
         XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask); 
     }
+
+    XWMHints *sourceHints = XGetWMHints(wm.display, win);
+    if(sourceHints) {
+        XSetWMHints(wm.display, win_frame, sourceHints);
+        XFree(sourceHints);
+    }
     XReparentWindow(wm.display, win, win_frame, 0, ((SHOW_DECORATION && !wm.decoration_hidden && !wm.spawning_scratchpad) ? DECORATION_TITLEBAR_SIZE : 0));
     if(!wm.spawning_scratchpad && SHOW_DECORATION && !wm.decoration_hidden) {
         XResizeWindow(wm.display, win, attribs.width,attribs.height - DECORATION_TITLEBAR_SIZE);
@@ -262,13 +281,30 @@ void ragnar_window_frame(Window win) {
     for(uint32_t i = 0; i < wm.clients_count; i++) {
         wm.client_windows[i].layout.change = 0;
     }
+  
+    Atom type;
+    int format;
+    unsigned long num_items, bytes_after;
+    unsigned char *prop_value = NULL;
+    bool tile = false;
+    if (XGetWindowProperty(wm.display, win, XInternAtom(wm.display, "_NET_WM_WINDOW_TYPE", False), 0, 1, False, XA_ATOM, &type, &format, &num_items, &bytes_after, &prop_value) == Success) {
+        if (num_items > 0) {
+            Atom hint = ((Atom *)prop_value)[0];
+
+            if (hint == XInternAtom(wm.display, "_NET_WM_WINDOW_TYPE_NORMAL", False)) {
+                tile = true;
+            } else {
+                tile = false;
+            }
+        }
+    }
     Client client = (Client){
         .frame = win_frame, 
         .win =  win, 
         .fullscreen = attribs.width >= (int32_t)Monitors[wm.focused_monitor].width && attribs.height >= (int32_t)Monitors[wm.focused_monitor].height, 
         .monitor_index = wm.focused_monitor,
         .desktop_index = wm.focused_desktop[wm.focused_monitor],
-        .layout.in = true,
+        .layout.in = tile,
         .layout.change = 0,
         .layout.skip = false,
         .ignore_unmap = false};
@@ -919,7 +955,7 @@ void handle_key_press(XKeyEvent e) {
             hide_bar();
         }
         establish_window_layout();
-    } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_UP_KEY)) {
+    } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_UP_KEY) && MONITOR_COUNT > 1) {
         if(!SHOW_BAR)
             return;
         if(wm.bar_monitor >= MONITOR_COUNT - 1) {
@@ -929,7 +965,7 @@ void handle_key_press(XKeyEvent e) {
         }
         change_bar_monitor(wm.bar_monitor);
         establish_window_layout();
-    } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_DOWN_KEY)) {
+    } else if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_DOWN_KEY) && MONITOR_COUNT > 1) {
         if(!SHOW_BAR)
             return;
         if(wm.bar_monitor <= 0) {
@@ -1071,8 +1107,10 @@ static void grab_global_input() {
     XGrabKey(wm.display,XKeysymToKeycode(wm.display, WINDOW_LAYOUT_SET_MASTER_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
     if(SHOW_BAR) {
         XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_TOGGLE_KEY), MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
-        XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_UP_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
-        XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_DOWN_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
+        if(MONITOR_COUNT > 1) {
+            XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_UP_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
+            XGrabKey(wm.display,XKeysymToKeycode(wm.display, BAR_CYCLE_MONITOR_DOWN_KEY),MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
+        }
     }
     if(SHOW_DECORATION) {
         XGrabKey(wm.display,XKeysymToKeycode(wm.display, DECORATION_TOGGLE_KEY), MASTER_KEY,wm.root,false, GrabModeAsync,GrabModeAsync);
@@ -1637,6 +1675,14 @@ void create_bar() {
                                      BAR_BORDER_WIDTH,  BAR_BORDER_COLOR, BAR_COLOR);
     XSelectInput(wm.display, wm.bar.win, SubstructureRedirectMask | SubstructureNotifyMask); 
     XMapWindow(wm.display, wm.bar.win);
+
+    XClassHint classHint;
+    char* bar_name = "RagnarBar";
+    classHint.res_name = bar_name;
+    classHint.res_class = bar_name;
+    XSetClassHint(wm.display, wm.bar.win, &classHint);
+    XSetStandardProperties(wm.display, wm.bar.win, bar_name, bar_name, None, NULL, 0, NULL);
+
     wm.bar.font = font_create(FONT, FONT_COLOR, wm.bar.win);
     uint32_t xoffset = 0;
     for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
@@ -1683,6 +1729,7 @@ void unhide_bar() {
     raise_bar();
     wm.bar.hidden = false;
     draw_bar_buttons();
+    draw_bar();
 }
 
 
@@ -2008,11 +2055,9 @@ void draw_half_circle(Window win, Vec2 pos, int32_t radius, uint32_t color, bool
 
 int main(void) {
     ragnar_init();
-
     pthread_t ui_thread;
     pthread_create(&ui_thread, NULL, update_ui, NULL);
-    
-    draw_bar();
+
     ragnar_run();
     ragnar_terminate();
 }
