@@ -46,6 +46,9 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/cococry/Ragnar/main/instal
 If you want to run Ragnar on your machine, 
 clone this repo and install all dependencies with your package manager.
 
+For configuration, there is a [video guide on
+YouTube](https://youtu.be/uiArfZL0FFg) or go to 
+the [Ragnar wiki](https://ragnarwm.org/wiki/config)
 ### Install Dependencies
 - git
 - sudo
