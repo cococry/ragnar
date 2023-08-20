@@ -416,6 +416,7 @@ void ragnar_window_unframe(Window win) {
         wm.hard_focused_window_index = -1;
     }
     draw_bar_buttons();
+    draw_bar();
     if(fullscreen) {
         unhide_bar();
     }
