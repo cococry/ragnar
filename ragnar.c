@@ -426,7 +426,6 @@ void ragnar_run() {
     XEvent e;
     while(wm.running) {
         XNextEvent(wm.display, &e);
-        select_focused_monitor(get_cursor_position().x);
         switch (e.type) {
             case UnmapNotify:
                 handle_unmap_notify(e.xunmap);
@@ -444,6 +443,7 @@ void ragnar_run() {
                 handle_key_press(e.xkey);
                 break;
             case MotionNotify: {
+                select_focused_monitor(get_cursor_position().x);
                 handle_motion_notify(e.xmotion);
                 break;
             }
