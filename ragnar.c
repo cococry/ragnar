@@ -3,8 +3,11 @@
 #include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/XF86keysym.h>
 #include <X11/extensions/Xcomposite.h>
+#include <X11/extensions/Xrandr.h>
 #include <X11/Xatom.h>
+#include <X11/XKBlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
@@ -97,6 +100,7 @@ typedef struct {
     bool spawning_scratchpad;
     int32_t spawned_scratchpad_index;
 
+    double brightness;
 } RagnarWM; 
 
 static RagnarWM wm;
@@ -155,6 +159,8 @@ static void         draw_half_circle(Window win, Vec2 pos, int32_t radius, uint3
 static void         draw_design(Window win, int32_t xpos, BarLabelDesign design, uint32_t color, uint32_t design_width, uint32_t design_height);
 static void*        update_ui();
 
+void               set_brightness(Display *display, Window root, double brightness);
+
 void ragnar_init() {
     system("ragnarstart");
     wm.display = XOpenDisplay(NULL);
@@ -177,8 +183,10 @@ void ragnar_init() {
     wm.spawned_scratchpad_index = 0;
     wm.hard_focused_window_index = -1;
     wm.focused_client = -1;
+    wm.brightness = 1.0; 
     memset(wm.focused_desktop, 0, sizeof(wm.focused_desktop));
     memset(wm.layout_master_size, 0, sizeof(wm.layout_master_size));
+
     wm.root = DefaultRootWindow(wm.display);
     wm.screen = DefaultScreen(wm.display);
 
@@ -1043,7 +1051,8 @@ void handle_key_press(XKeyEvent e) {
                 wm.spawned_scratchpad_index = i;
                 system(ScratchpadDefs[i].cmd);
                 ScratchpadDefs[i].spawned = true;
-                ScratchpadDefs[i].hidden = false;
+                ScratchpadDefs[i]
+                    .hidden = false;
                 break;
             } else {
                 if(!ScratchpadDefs[i].hidden) {
@@ -1060,6 +1069,27 @@ void handle_key_press(XKeyEvent e) {
             }        
         }
     }
+
+    KeySym key;
+    char text[255];
+
+    XLookupString(&e, text, sizeof(text), &key, 0);
+
+    if (key == XF86XK_MonBrightnessUp) {
+        if(wm.brightness + BRIGHTNESS_CHANGE_STEP < 1.0) {
+            wm.brightness += BRIGHTNESS_CHANGE_STEP;
+            set_brightness(wm.display, wm.root, wm.brightness);
+        }
+    }
+
+    if (key == XF86XK_MonBrightnessDown) {
+        if(wm.brightness - BRIGHTNESS_CHANGE_STEP >= 0.1) {
+            wm.brightness -= BRIGHTNESS_CHANGE_STEP;
+            set_brightness(wm.display, wm.root, wm.brightness);
+        }
+    }
+
+
     for(uint32_t i = 0; i < CUSTOM_KEYBIND_COUNT; i++) {
         if(e.state & (MASTER_KEY) && e.keycode == XKeysymToKeycode(wm.display, CustomKeybinds[i].key)) {
             system(CustomKeybinds[i].cmd);
@@ -1864,6 +1894,31 @@ void* update_ui() {
     }
     return NULL;
 }
+
+void set_brightness(Display *display, Window root, double brightness) {
+    XRRScreenResources *resources = XRRGetScreenResources(display, root);
+    if (!resources) {
+        fprintf(stderr, "Failed to get screen resources.\n");
+        return;
+    }
+    for (int i = 0; i < resources->noutput; ++i) {
+        RROutput output = resources->outputs[i];
+        XRROutputInfo *outputInfo = XRRGetOutputInfo(display, resources, output);
+        if (!outputInfo) {
+            fprintf(stderr, "Failed to get output info.\n");
+            continue;
+        }
+
+        XRRCrtcGamma gamma;
+        gamma.red[0] = gamma.green[0] = gamma.blue[0] = brightness;
+
+        XRRSetCrtcGamma(display, outputInfo->crtc, &gamma);
+        XRRFreeOutputInfo(outputInfo);
+    }
+
+    XRRFreeScreenResources(resources);
+}
+
 void draw_bar() {
     if(!SHOW_BAR || wm.bar.hidden || !wm.bar.init) return;
     // Main Label
@@ -1948,7 +2003,7 @@ void draw_bar() {
 } 
 
 void raise_bar() {
-    if(SHOW_BAR) {
+    if(SHOW_BAR && !wm.bar.hidden) {
         XRaiseWindow(wm.display, wm.bar.win);
         for(uint32_t i = 0; i < BAR_BUTTON_COUNT; i++) {
             XRaiseWindow(wm.display, BarButtons[i].win);
