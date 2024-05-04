@@ -38,5 +38,6 @@ clean:
 uninstall:
 	rm -f /usr/bin/ragnar
 	rm -f /usr/share/applications/ragnar.desktop
+	rm -f /usr/bin/ragnarstart
 
 .PHONY: all print_options clean install uninstall freetype
