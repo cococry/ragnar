@@ -159,7 +159,10 @@ static void         draw_half_circle(Window win, Vec2 pos, int32_t radius, uint3
 static void         draw_design(Window win, int32_t xpos, BarLabelDesign design, uint32_t color, uint32_t design_width, uint32_t design_height);
 static void*        update_ui();
 
+static bool         has_decoration(Window win);
+
 void               set_brightness(Display *display, Window root, double brightness);
+
 
 void ragnar_init() {
     system("ragnarstart");
@@ -241,6 +244,7 @@ void ragnar_window_frame(Window win) {
 
     /* Frame window */
     Window win_frame;
+    bool border_width = has_decoration(win) ? WINDOW_BORDER_WIDTH : 0.0f;
     if(WINDOW_TRANSPARENT_FRAME) {
         XVisualInfo vinfo;
         XSetWindowAttributes attribs_set;
@@ -253,11 +257,11 @@ void ragnar_window_frame(Window win) {
         win_frame = XCreateWindow(wm.display, wm.root, 
                                   win_x, 
                                   (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
-                                  WINDOW_BORDER_WIDTH,vinfo.depth, InputOutput, vinfo.visual, CWBackPixel | CWBorderPixel | CWColormap | CWEventMask, &attribs_set);
+                                  border_width, vinfo.depth, InputOutput, vinfo.visual, CWBackPixel | CWBorderPixel | CWColormap | CWEventMask, &attribs_set);
         XCompositeRedirectWindow(wm.display, win_frame, CompositeRedirectAutomatic);
     } else {
         win_frame = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2),
-                                        attribs.width, attribs.height, WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
+                                        attribs.width, attribs.height, border_width, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
     }
     if(WINDOW_SELECT_HOVERED) {
         XSelectInput(wm.display, win_frame, SubstructureRedirectMask | SubstructureNotifyMask | EnterWindowMask); 
@@ -323,7 +327,7 @@ void ragnar_window_frame(Window win) {
     establish_window_layout();
 
     // Drawing decoration
-    if (SHOW_DECORATION) { 
+    if (SHOW_DECORATION && has_decoration(win)) { 
         Window win_decoration = XCreateSimpleWindow(wm.display, wm.root, win_x, (Monitors[wm.focused_monitor].height / 2) - (attribs.height / 2), attribs.width, attribs.height, 
                                                     WINDOW_BORDER_WIDTH, WINDOW_BORDER_COLOR, WINDOW_BG_COLOR);
         XUnmapWindow(wm.display, win_decoration);
@@ -397,7 +401,7 @@ void ragnar_window_unframe(Window win) {
     if(wm.client_windows[client_index].layout.in && get_client_index_window(win) == 0) {
         wm.layout_master_size[wm.focused_monitor][wm.focused_desktop[wm.focused_monitor]] = 0;
     }
-    if(SHOW_DECORATION) {
+    if(SHOW_DECORATION && has_decoration(win)) {
         /* Title bar */
         XftColorFree(wm.display, DefaultVisual(wm.display, 0), DefaultColormap(wm.display, wm.screen), &wm.client_windows[client_index].decoration.titlebar_font.color);
         XftFontClose(wm.display, wm.client_windows[client_index].decoration.titlebar_font.font);
@@ -1299,7 +1303,7 @@ void resize_client(Client* client, Vec2 size) {
 }
 
 void hide_client_decoration(Client* client) {
-    if(!SHOW_DECORATION) return;
+    if(!SHOW_DECORATION || !has_decoration(client->win)) return;
     if(client->decoration.hidden) return;
     if(DECORATION_SHOW_CLOSE_ICON)
         XUnmapWindow(wm.display, client->decoration.closebutton);
@@ -1316,7 +1320,7 @@ void hide_client_decoration(Client* client) {
 }
 
 void unhide_client_decoration(Client* client) {
-    if(!SHOW_DECORATION) return;
+    if(!SHOW_DECORATION || !has_decoration(client->win)) return;
     if(!client->decoration.hidden) return;
     if(DECORATION_SHOW_CLOSE_ICON)
         XMapWindow(wm.display, client->decoration.closebutton);
@@ -1334,7 +1338,7 @@ void unhide_client_decoration(Client* client) {
 
 
 void redraw_client_decoration(Client* client) {
-    if(!SHOW_DECORATION || (!DECORATION_SHOW_CLOSE_ICON && !DECORATION_SHOW_MAXIMIZE_ICON)) return;
+    if(!SHOW_DECORATION || (!DECORATION_SHOW_CLOSE_ICON && !DECORATION_SHOW_MAXIMIZE_ICON) || !has_decoration(client->win)) return;
     uint32_t x_offset = 0;
     if(DECORATION_SHOW_CLOSE_ICON) {
         x_offset += DECORATION_CLOSE_ICON_SIZE;
@@ -1895,6 +1899,15 @@ void* update_ui() {
     return NULL;
 }
 
+bool has_decoration(Window win) {
+    XWMHints *hints = XGetWMHints(wm.display, win);
+    if (hints == NULL) {
+        return true;
+    }
+    bool decorations = (hints->flags & (1 << 1)) == 0;
+    XFree(hints);
+    return decorations;
+}
 void set_brightness(Display *display, Window root, double brightness) {
     XRRScreenResources *resources = XRRGetScreenResources(display, root);
     if (!resources) {

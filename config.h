@@ -27,8 +27,8 @@
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
-#define MONITOR_COUNT 2
-static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}, (Monitor){.width = 1920, .height = 1080}};
+#define MONITOR_COUNT 1
+static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}};
 
 /* Commands */
 #define TERMINAL_CMD                            "alacritty &"
@@ -201,7 +201,7 @@ static BarDesktopIcon DesktopIcons[DESKTOP_COUNT] =
     (BarDesktopIcon){.icon = "5",  .color = "#fff"  }, 
     (BarDesktopIcon){.icon = "6",  .color = "#fff"  }, 
 };
-static const uint32_t BarInfoLabelPos[MONITOR_COUNT] = { 815, 815 };
+static const uint32_t BarInfoLabelPos[MONITOR_COUNT] = { 815 };
 
 #define BAR_COMMAND_SEPERATOR "|"
 
@@ -216,7 +216,7 @@ static BarCommand  BarCommands[BAR_COMMANDS_COUNT] =
 #define BAR_BUTTON_PADDING                  20
 #define BAR_BUTTON_SIZE                     100
 #define BAR_BUTTON_COUNT                    0
-static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 1350, 1350 };
+static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 1350 };
 static BarButton BarButtons[BAR_BUTTON_COUNT] =
 {
 };
