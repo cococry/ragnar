@@ -27,17 +27,17 @@
 
 /* Monitors */
 // Ordered From left to right (0 is most left)
-#define MONITOR_COUNT 1
-static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}};
+#define MONITOR_COUNT 2
+static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height = 1080}, (Monitor){.width = 2560, .height = 1440}};
 
 /* Commands */
 #define TERMINAL_CMD                            "alacritty &"
 #define WEB_BROWSER_CMD                         "brave &"
-#define APPLICATION_LAUNCHER_CMD                "rofi-app-launcher &"
+#define APPLICATION_LAUNCHER_CMD                "~/.config/rofi/launchers/type-3/launcher.sh &"
 
 #define UI_REFRESH_RATE                         1.0f // in seconds 
 /* Font*/
-#define FONT                                    "JetBrains Mono Nerd Font:size=12:style=bold"
+#define FONT                                    "VictorMono NerdFont:size=12:style=bold italic"
 #define FONT_SIZE                               12
 #define FONT_COLOR                              "#ffffff"
 #define DECORATION_FONT_COLOR                   "#ffffff"
@@ -87,15 +87,15 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 /* Window properties */
 #define WINDOW_BG_COLOR                         0x434343 
 #define WINDOW_BORDER_WIDTH                     2 // In pixles
-#define WINDOW_BORDER_COLOR                     0x121212
-#define WINDOW_BORDER_COLOR_ACTIVE              0x333333
+#define WINDOW_BORDER_COLOR                     0x656f82
+#define WINDOW_BORDER_COLOR_ACTIVE              0x8c98ad
 #define WINDOW_BORDER_COLOR_HARD_SELECTED       0xffffff
 #define WINDOW_MAX_COUNT_LAYOUT                 5    
 #define WINDOW_MIN_SIZE_LAYOUT_HORIZONTAL       300 
 #define WINDOW_MIN_SIZE_LAYOUT_VERTICAL         100 // In pixels
 #define WINDOW_MAX_GAP                          100 // In pixels
 #define WINDOW_INITIAL_GAP                      10 // In pixles
-#define WINDOW_TRANSPARENT_FRAME                true
+#define WINDOW_TRANSPARENT_FRAME                false 
 #define WINDOW_SELECT_HOVERED                   true
 #define WINDOW_LAYOUT_DEFAULT                   WINDOW_LAYOUT_TILED_MASTER
 
@@ -136,15 +136,15 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 #define BAR_INSTANT_UPDATE                  false // Turning this on leads to higher cpu usage
 
 #define BAR_SHOW_DESKTOP_LABEL              true
-#define BAR_SHOW_VERSION_LABEL              true
+#define BAR_SHOW_VERSION_LABEL              false 
 
 #define BAR_SIZE                            25 // In pixels
 #define BAR_PADDING_Y                       10
 #define BAR_PADDING_X                       12
-#define BAR_START_MONITOR                   0 // Monitor on which the bar is on startup. (0 is most left)
+#define BAR_START_MONITOR                   1 // Monitor on which the bar is on startup. (0 is most left)
 #define BAR_REFRESH_SPEED                   1.0 // In seconds
-#define BAR_COLOR                           0x000000
-#define BAR_BORDER_COLOR                    0x000000
+#define BAR_COLOR                           0x0f1117
+#define BAR_BORDER_COLOR                    0x13151a
 #define BAR_BORDER_WIDTH                    0
 
 /* --- BAR DESIGNS --- */
@@ -184,7 +184,7 @@ static const Monitor Monitors[MONITOR_COUNT] = {(Monitor){.width = 1920, .height
 
 #define BAR_MAIN_LABEL_COLOR                BAR_COLOR
 #define BAR_DESKTOP_LABEL_COLOR             BAR_COLOR
-#define BAR_DESKTOP_LABEL_SELECTED_COLOR    0x222222
+#define BAR_DESKTOP_LABEL_SELECTED_COLOR    0x232733
 #define BAR_VERSION_LABEL_COLOR             BAR_COLOR
 
 #define BAR_COMMANDS_COUNT                    4
@@ -201,7 +201,7 @@ static BarDesktopIcon DesktopIcons[DESKTOP_COUNT] =
     (BarDesktopIcon){.icon = "5",  .color = "#fff"  }, 
     (BarDesktopIcon){.icon = "6",  .color = "#fff"  }, 
 };
-static const uint32_t BarInfoLabelPos[MONITOR_COUNT] = { 815 };
+static const uint32_t BarInfoLabelPos[MONITOR_COUNT] = { 0, 0};
 
 #define BAR_COMMAND_SEPERATOR "|"
 
@@ -209,14 +209,14 @@ static BarCommand  BarCommands[BAR_COMMANDS_COUNT] =
 { 
     (BarCommand){.cmd = "echo \"󰣇\"", .color = "#fff", .bg_color = -1},
     (BarCommand){.cmd = "echo \"$(date +\"%a %d/%m %H:%M\")\"", .color = "#fff", .bg_color = -1},
-    (BarCommand){.cmd = "ram-ragbar", .color = "#fff", .bg_color = -1},
+    (BarCommand){.cmd = "echo -n \"  \"; free -h | awk 'NR==2 {print $3}'", .color = "#fff", .bg_color = -1},
     (BarCommand){.cmd = "uptime-ragbar", .color = "#fff", .bg_color = -1},
 };
 
 #define BAR_BUTTON_PADDING                  20
 #define BAR_BUTTON_SIZE                     100
 #define BAR_BUTTON_COUNT                    0
-static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 1350 };
+static const uint32_t BarButtonLabelPos[MONITOR_COUNT] = { 0, 0 };
 static BarButton BarButtons[BAR_BUTTON_COUNT] =
 {
 };
