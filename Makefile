@@ -1,43 +1,18 @@
 CC = cc
+MACROS = -DWLR_USE_UNSTABLE
+CFLAGS = -Wall -Wextra `pkg-config --cflags pixman-1 wlroots --libs wlroots`
+LIBS = -lwayland-server
+INCS = -Isrc
+SRC = ./src/*.c
+BIN_NAME = tica
 
-# includes and flags
-CFLAGS = -O3 -ffast-math -Wall -Wextra
-LIBS = -lXft -lX11 -lXcursor -lXft -lfontconfig -lXcomposite -lXrandr  
-FREETYPEINC = /usr/include/freetype2
-INCS = -I${FREETYPEINC}
+all: build
 
-SRC = ragnar.c
-OBJ = ${SRC:.c=.o}
-
-all: ragnar print_options 
-
-print_options:
-	@echo ragnar build options:
-	@echo "CFLAGS = ${CFLAGS}"
-	@echo "LIBS   = ${LIBS}"
-	@echo "INCS   = ${INCS}"
-	@echo "CC     = ${CC}"
-
-.c.o:
-	${CC} -c ${CFLAGS} ${LIBS} ${INCS} $<
-
-${OBJ}: config.h
-
-ragnar: ${OBJ}
-	${CC} -o $@ ${OBJ} ${LIBS} ${INCS}
-
-install:
-	cp -f ragnar /usr/bin
-	cp -f ragnar.desktop /usr/share/applications
-	cp -f ragnarstart /usr/bin
-	chmod 755 /usr/bin/ragnar
+build:
+	${CC} -o ${BIN_NAME} ${SRC} ${CFLAGS} ${MACROS} ${LIBS}  ${INCS}
 
 clean:
-	rm -f ragnar ${OBJ}
+		rm -f ${BIN_NAME}
 
-uninstall:
-	rm -f /usr/bin/ragnar
-	rm -f /usr/share/applications/ragnar.desktop
-	rm -f /usr/bin/ragnarstart
-
-.PHONY: all print_options clean install uninstall freetype
+install:
+	cp ${BIN_NAME} /usr/bin/
