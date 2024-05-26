@@ -1,11 +1,11 @@
 #include "core.h"
-#include "tc_def.h"
+#include "def.h"
 #include "listeners.h"
 #include <stdlib.h>
 #include <wayland-server-core.h>
 #include <wlr/util/log.h>
 
-static tc_server server;
+static rg_server server;
 
 void core_init() {
   wlr_log_init(WLR_DEBUG, NULL);
@@ -67,7 +67,7 @@ void core_init() {
     return;
   }
 
-  tc_assert_exec_msg(wlr_backend_start(server.backend), {
+  rg_assert_exec_msg(wlr_backend_start(server.backend), {
     wlr_backend_destroy(server.backend);
     wl_display_destroy(server.display);
   }, "Failed to start wlroots backend.");
@@ -91,20 +91,21 @@ void core_terminate() {
 	wl_display_destroy(server.display);
 }
 
-void core_reset_cursor_mode(tc_server* server) {
+void core_reset_cursor_mode(rg_server* server) {
   server->cursor_mode = CursorPassthrough;
   server->grabbed_client = NULL;
 }
 
-void core_process_cursor_move(tc_server* server, uint32_t time) {
-  tc_client* client = server->grabbed_client;
+void core_process_cursor_move(rg_server* server, uint32_t time) {
+  (void)time;
+  rg_client* client = server->grabbed_client;
   wlr_scene_node_set_position(&client->scene_tree->node, 
                               server->cursor->x - server->grab_x,
                               server->cursor->y - server->grab_y);
 }
 
-void core_interactive_operation(tc_client* client, tc_cursor_mode cursor_mode, uint32_t edges) {
-  tc_server* server = client->server;
+void core_interactive_operation(rg_client* client, rg_cursor_mode cursor_mode, uint32_t edges) {
+  rg_server* server = client->server;
   struct wlr_surface* focused_surface = server->seat->pointer_state.focused_surface;
   if(client->xdg_toplevel->base->surface != wlr_surface_get_root_surface(focused_surface)) {
     return;
@@ -112,10 +113,10 @@ void core_interactive_operation(tc_client* client, tc_cursor_mode cursor_mode, u
   server->grabbed_client = client;
   server->cursor_mode = cursor_mode;
 
-  if(mode == CursorMove) {
+  if(cursor_mode == CursorMove) {
     server->grab_x = server->cursor->x - client->scene_tree->node.x;
     server->grab_y = server->cursor->y - client->scene_tree->node.y;
-  } else if(mode == CursorResize) {
+  } else if(cursor_mode == CursorResize) {
     struct wlr_box geometry;
     wlr_xdg_surface_get_geometry(client->xdg_toplevel->base, &geometry);
 

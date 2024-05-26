@@ -26,7 +26,7 @@
  * Checks if a given condition is not met and executes a given codeblock before terminating the program if 
  * the condition is not met. 
 */
-#define tc_assert_exec_msg(cond, exec, msg) if(!cond) {                                               \
+#define rg_assert_exec_msg(cond, exec, msg) if(!cond) {                                               \
   exec_and_terminate({                                                                                \
       printf("[Assertion failed]: '%s' in file %s, line %i. | %s", #cond, __FILE__, __LINE__, msg);   \
       exec                                                                                            \
@@ -37,12 +37,12 @@
  * Checks if a given condition is not met. If the condition is not met, a given message is printed 
  * before exit(1) is called.
 */
-#define tc_assert_msg(cond, msg) tc_assert_exec_msg(cond {}, msg)
+#define rg_assert_msg(cond, msg) rg_assert_exec_msg(cond {}, msg)
 
 /**
  * Terminates the program if a given condition is not met.
 */
-#define tc_assert(cond) if(!cond) {                                                                   \
+#define rg_assert(cond) if(!cond) {                                                                   \
   terminate("Assertion failed: '%s' in file, line %i", #cond, __FILE__, __LINE__)                     \
 }                                                                                                     \
 
@@ -51,11 +51,11 @@ typedef enum {
   CursorPassthrough,
   CursorMove,
   CursorResize,
-} tc_cursor_mode;
+} rg_cursor_mode;
 
 /* --- STRUCTS --- */
 
-typedef struct tc_client tc_client;
+typedef struct rg_client rg_client;
 
 /** 
  * Defines the main state of the compositor. The structure contains core handles that are necassary for 
@@ -77,12 +77,12 @@ typedef struct {
   struct wl_list keyboards, monitors, clients;
 
   // Input 
-  tc_cursor_mode cursor_mode;
+  rg_cursor_mode cursor_mode;
   struct wlr_cursor *cursor;
   struct wlr_xcursor_manager *cursor_mgr;
 
   struct wlr_seat *seat;
-  struct tc_client *grabbed_client;
+  rg_client *grabbed_client;
   double grab_x, grab_y;
   struct wlr_box grab_geobox;
   uint32_t resize_edges;
@@ -100,7 +100,7 @@ typedef struct {
   struct wl_listener request_cursor_cb;
   struct wl_listener request_set_selection_cb;
   struct wl_listener new_monitor_cb;
-} tc_server;
+} rg_server;
 
 /**
  * Defines a monitor/output device with wayland/wlroots handles 
@@ -112,13 +112,13 @@ typedef struct {
   struct wl_listener request_state_cb;
   struct wl_listener destroy_cb;
 
-  tc_server *server;
-} tc_monitor;
+  rg_server *server;
+} rg_monitor;
 
 /**
  * Defines a xdg toplevel wayland window in the compositor (client window) 
 */
-typedef struct {
+struct rg_client {
   struct wl_list link;
   struct wlr_xdg_toplevel *xdg_toplevel;
   struct wlr_scene_tree *scene_tree;
@@ -131,8 +131,8 @@ typedef struct {
   struct wl_listener request_maximize_cb;
   struct wl_listener request_fullscreen_cb;
 
-  tc_server *server;
-} tc_client;
+  rg_server *server;
+};
 
 /**
  * Defines a wayland popup window 
@@ -141,7 +141,7 @@ typedef struct {
   struct wlr_xdg_popup *xdg_popup;
   struct wl_listener commit_cb;
   struct wl_listener destroy_cb;
-} tc_popup_window;
+} rg_popup_window;
 
 /**
  * Wrapper structure for wayland keyboard devices
@@ -154,8 +154,8 @@ typedef struct {
   struct wl_listener key_cb;
   struct wl_listener destroy_cb;
 
-  tc_server* server;
-} tc_keyboard;
+  rg_server* server;
+} rg_keyboard;
 
 /** 
  * Terminates the program by exiting with exit code 1 and logs a given message

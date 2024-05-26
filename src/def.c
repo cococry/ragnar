@@ -1,4 +1,4 @@
-#include "tc_def.h"
+#include "def.h"
 #include <stdlib.h>
 #include <wlr/util/log.h>
 

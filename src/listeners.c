@@ -1,7 +1,8 @@
 #include "listeners.h"
-#include "tc_def.h"
+#include "def.h"
 #include "core.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <wayland-util.h>
 
@@ -24,7 +25,7 @@ static void client_request_move_listener(struct wl_listener* listener, void* dat
 static void client_request_resize_listener(struct wl_listener* listener, void* data);
 static void client_request_fullscreen_listener(struct wl_listener* listener, void* data);
 static void client_request_maximize_listener(struct wl_listener* listener, void* data);
-static void client_focus(tc_client *client, struct wlr_surface *surface);
+static void client_focus(rg_client *client, struct wlr_surface *surface);
 
 /* XDG Popups | Event Listeners */
 static void xdg_popup_commit_listener(struct wl_listener* listener, void* data);
@@ -33,7 +34,7 @@ static void xdg_popup_destroy_listener(struct wl_listener* listener, void* data)
 
 /* ==== PUBLIC FUNCTION DEFINITIONS ==== */
 void new_monitor_listener(struct wl_listener* listener, void* data) {
-tc_server *server = wl_container_of(listener, server, new_monitor_cb);
+rg_server *server = wl_container_of(listener, server, new_monitor_cb);
   struct wlr_output* output = data;
 
   wlr_output_init_render(output, server->allocator, server->renderer);
@@ -49,7 +50,7 @@ tc_server *server = wl_container_of(listener, server, new_monitor_cb);
   wlr_output_commit_state(output, &state);
   wlr_output_state_finish(&state);
 
-  tc_monitor* monitor = malloc(sizeof(tc_monitor));
+  rg_monitor* monitor = malloc(sizeof(rg_monitor));
   monitor->output = output;
   monitor->server = server;
 
@@ -65,7 +66,7 @@ tc_server *server = wl_container_of(listener, server, new_monitor_cb);
 }
 
 void cursor_move_listener(struct wl_listener* listener, void* data) {
-  tc_server* server = wl_container_of(listener, server, cursor_move_cb);
+  rg_server* server = wl_container_of(listener, server, cursor_move_cb);
   struct wlr_pointer_motion_event* event = data;
   wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
   core_process_cursor_move(server, event->time_msec);
@@ -95,9 +96,9 @@ void cursor_frame_listener(struct wl_listener* listener, void* data) {
 }
 
 void new_xdg_client_listener(struct wl_listener* listener, void* data) {
-  tc_server* server = wl_container_of(listener, server, new_xdg_toplevel_cb);
+  rg_server* server = wl_container_of(listener, server, new_xdg_toplevel_cb);
   struct wlr_xdg_toplevel* xdg_toplevel = data;
-  tc_client *client = malloc(sizeof(*client));
+  rg_client *client = malloc(sizeof(*client));
   client->server = server;
   client->xdg_toplevel = xdg_toplevel;
   client->scene_tree = wlr_scene_xdg_surface_create(&client->server->scene->tree, xdg_toplevel->base);
@@ -114,8 +115,9 @@ void new_xdg_client_listener(struct wl_listener* listener, void* data) {
 }
 
 void new_xdg_popup_listener(struct wl_listener* listener, void* data) {
+  (void)listener;
   struct wlr_xdg_popup* xdg_popup_data = data;
-  tc_popup_window* popup = malloc(sizeof(*popup));
+  rg_popup_window* popup = malloc(sizeof(*popup));
   popup->xdg_popup = xdg_popup_data;
 
   struct wlr_xdg_surface* parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup_data->parent);
@@ -123,7 +125,7 @@ void new_xdg_popup_listener(struct wl_listener* listener, void* data) {
   assert(parent != NULL && "Trying to add popup without parent surface.");
 
   struct wlr_scene_tree* parent_tree = parent->data;
-  xdg_popup_data->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+  xdg_popup_data->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup_data->base);
 
   popup->commit_cb.notify = xdg_popup_commit_listener;
 
@@ -135,7 +137,7 @@ void new_xdg_popup_listener(struct wl_listener* listener, void* data) {
 
 void monitor_frame_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_monitor* monitor = wl_container_of(listener, monitor, frame_cb);
+  rg_monitor* monitor = wl_container_of(listener, monitor, frame_cb);
   struct wlr_scene* scene = monitor->server->scene;
   struct wlr_scene_output* scene_output = wlr_scene_get_scene_output(scene, monitor->output);
   wlr_scene_output_commit(scene_output, NULL);
@@ -146,14 +148,14 @@ void monitor_frame_listener(struct wl_listener* listener, void* data) {
 
 void monitor_request_state_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_monitor* monitor = wl_container_of(listener, monitor, request_state_cb);
+  rg_monitor* monitor = wl_container_of(listener, monitor, request_state_cb);
   const struct wlr_output_event_request_state *ev = data;
   wlr_output_commit_state(monitor->output, ev->state);
 }
 
 void monitor_destroy_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_monitor *monitor = wl_container_of(listener, monitor, destroy_cb);
+  rg_monitor *monitor = wl_container_of(listener, monitor, destroy_cb);
 
   wl_list_remove(&monitor->frame_cb.link);
   wl_list_remove(&monitor->request_state_cb.link);
@@ -162,15 +164,15 @@ void monitor_destroy_listener(struct wl_listener* listener, void* data) {
 }
 void client_map_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_client* client = wl_container_of(listener, client, map_cb);
+  rg_client* client = wl_container_of(listener, client, map_cb);
   wl_list_insert(&client->server->clients, &client->link);
   client_focus(client, client->xdg_toplevel->base->surface);
 }
 
 void client_unmap_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_client* client = wl_container_of(listener, client, unmap_cb);
-  tc_server* server = client->server;
+  rg_client* client = wl_container_of(listener, client, unmap_cb);
+  rg_server* server = client->server;
   if(client == server->grabbed_client) {
     core_reset_cursor_mode(server);
   }
@@ -180,7 +182,7 @@ void client_unmap_listener(struct wl_listener* listener, void* data) {
 
 void client_commit_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_client* client = wl_container_of(listener, client, commit_cb);
+  rg_client* client = wl_container_of(listener, client, commit_cb);
   if(client->xdg_toplevel->base->initial_commit) {
     wlr_xdg_toplevel_set_size(client->xdg_toplevel, 0, 0);
   }
@@ -188,7 +190,7 @@ void client_commit_listener(struct wl_listener* listener, void* data) {
 
 void client_destroy_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_client* client = wl_container_of(listener, client, destroy_cb);
+  rg_client* client = wl_container_of(listener, client, destroy_cb);
 
   wl_list_remove(&client->map_cb.link);
   wl_list_remove(&client->unmap_cb.link);
@@ -203,34 +205,35 @@ void client_destroy_listener(struct wl_listener* listener, void* data) {
 
 void client_request_move_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_client* client = wl_container_of(listener, client, request_move_cb);
+  rg_client* client = wl_container_of(listener, client, request_move_cb);
   core_interactive_operation(client, CursorMove, 0);
 }
 
 void client_request_resize_listener(struct wl_listener* listener, void* data) {
-  struct wlr_xdg_toplevel* event = data;
-  tc_client* client = wl_container_of(listener, client, request_resize_cb);
+  struct wlr_xdg_toplevel_resize_event* event = data;
+  rg_client* client = wl_container_of(listener, client, request_resize_cb);
   core_interactive_operation(client, CursorResize, event->edges);
 }
+
 void client_request_fullscreen_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_client* client = wl_container_of(listener, client, request_fullscreen_cb);
+  rg_client* client = wl_container_of(listener, client, request_fullscreen_cb);
   if(client->xdg_toplevel->base->initialized) {
     wlr_xdg_surface_schedule_configure(client->xdg_toplevel->base);
   }
 }
 void client_request_maximize_listener(struct wl_listener* listener, void* data) {
   (void)data;
-  tc_client* client = wl_container_of(listener, client, request_maximize_cb);
+  rg_client* client = wl_container_of(listener, client, request_maximize_cb);
   if(client->xdg_toplevel->base->initialized) {
     wlr_xdg_surface_schedule_configure(client->xdg_toplevel->base);
   }
 }
 
-void client_focus(tc_client *client, struct wlr_surface *surface) {
+void client_focus(rg_client *client, struct wlr_surface *surface) {
   if(!client) return;
 
-  tc_server *server = client->server;
+  rg_server *server = client->server;
   struct wlr_seat *seat = server->seat;
   struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
   if(prev_surface == surface) return;
@@ -256,7 +259,8 @@ void client_focus(tc_client *client, struct wlr_surface *surface) {
 }
 
 void xdg_popup_commit_listener(struct wl_listener* listener, void* data) {
-  tc_popup_window* popup = wl_container_of(listener, popup, commit_cb);
+  (void)data;
+  rg_popup_window* popup = wl_container_of(listener, popup, commit_cb);
 
   if(popup->xdg_popup->base->initial_commit) {
     wlr_xdg_surface_schedule_configure(popup->xdg_popup->base);
@@ -264,7 +268,8 @@ void xdg_popup_commit_listener(struct wl_listener* listener, void* data) {
 }
 
 void xdg_popup_destroy_listener(struct wl_listener* listener, void* data) {
-  tc_popup_window* popup = wl_container_of(listener, popup, destroy_cb);
+  (void)data;
+  rg_popup_window* popup = wl_container_of(listener, popup, destroy_cb);
 
   wl_list_remove(&popup->commit_cb.link);
   wl_list_remove(&popup->destroy_cb.link);
