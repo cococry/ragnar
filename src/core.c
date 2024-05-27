@@ -1,6 +1,8 @@
 #include "core.h"
 #include "def.h"
 #include "listeners.h"
+
+#include <unistd.h>
 #include <stdlib.h>
 #include <wayland-server-core.h>
 #include <wlr/util/log.h>
@@ -76,6 +78,9 @@ void core_init() {
   }, "Failed to start wlroots backend.");
 
   setenv("WAYLAND_DISPLAY", socket, true);
+  if (fork() == 0) {
+    execl("/bin/sh", "/bin/sh", "-c", "alacritty", (void *)NULL);
+  }
   wlr_log(WLR_INFO, "Running tica on WAYLAND_DISPLAY=%s", socket);
 }
 
