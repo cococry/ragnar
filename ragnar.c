@@ -763,7 +763,7 @@ int main(int argc, char *argv[]) {
 	setenv("WAYLAND_DISPLAY", socket, true);
 	if (startup_cmd) {
 		if (fork() == 0) {
-			execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
+			execl("/bin/sh", "/bin/sh", "-c", "alacritty", (void *)NULL);
 		}
 	}
 	wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s",
