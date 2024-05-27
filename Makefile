@@ -1,18 +1,16 @@
-CC = cc
-MACROS = -DWLR_USE_UNSTABLE
-CFLAGS = -Wall -Wextra `pkg-config --cflags pixman-1 wlroots --libs wlroots`
-LIBS = -lwayland-server -lxkbcommon -lm
-INCS = -Isrc
-SRC = ./src/*.c
-BIN_NAME = ragnar 
+WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
+WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
+LIBS=-lwayland-server `pkg-config --cflags --libs xkbcommon "wlroots >= 0.18.0-dev"`
 
-all: build
+xdg-shell-protocol.h:
+	$(WAYLAND_SCANNER) server-header \
+		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
 
-build:
-	${CC} -o ${BIN_NAME} ${SRC} ${LIBS} ${CFLAGS} ${MACROS} ${INCS}
+ragnar: ragnar.c xdg-shell-protocol.h
+	$(CC) $(CFLAGS) -g -Werror -I. -DWLR_USE_UNSTABLE -o $@ $< $(LIBS)
 
 clean:
-		rm -f ${BIN_NAME}
+	rm -f ragnar xdg-shell-protocol.h xdg-shell-protocol.c
 
-install:
-	cp ${BIN_NAME} /usr/bin/
+.DEFAULT_GOAL=ragnar
+.PHONY: clean
