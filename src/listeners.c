@@ -317,13 +317,13 @@ void client_focus(rg_client *client, struct wlr_surface *surface) {
     }
   }
 
+  struct wlr_keyboard *kb = wlr_seat_get_keyboard(seat);
   wlr_scene_node_raise_to_top(&client->scene_tree->node);
   wl_list_remove(&client->link);
   wl_list_insert(&server->clients, &client->link);
 
   wlr_xdg_toplevel_set_activated(client->xdg_toplevel, true);
 
-  struct wlr_keyboard *kb = wlr_seat_get_keyboard(seat);
   if(kb) {
     wlr_seat_keyboard_notify_enter(seat, client->xdg_toplevel->base->surface,
                                    kb->keycodes, kb->num_keycodes, &kb->modifiers);

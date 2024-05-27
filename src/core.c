@@ -40,7 +40,6 @@ void core_init() {
 
   wl_list_init(&g_server.clients);
   g_server.xdg_shell = wlr_xdg_shell_create(g_server.display, 3);
-
   bind_listen(new_xdg_client_listener, g_server.new_xdg_toplevel_cb, &g_server.xdg_shell->events.new_toplevel); 
   bind_listen(new_xdg_popup_listener, g_server.new_xdg_popup_cb, &g_server.xdg_shell->events.new_popup); 
 
@@ -50,8 +49,6 @@ void core_init() {
   g_server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
   
   g_server.cursor_mode = CursorPassthrough;
-  g_server.cursor_move_cb.notify = cursor_move_listener;
-
   bind_listen(cursor_move_listener, g_server.cursor_move_cb, &g_server.cursor->events.motion); 
   bind_listen(cursor_move_absolute_listener, g_server.cursor_move_absolute_cb, &g_server.cursor->events.motion_absolute); 
   bind_listen(cursor_button_listener, g_server.cursor_button_cb, &g_server.cursor->events.button); 
