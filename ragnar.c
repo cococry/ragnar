@@ -683,7 +683,28 @@ void popupnew(struct wl_listener *listener, void *data) {
 }
 
 void ragnar_init(wm_state* state) {
-	state->display = wl_display_create();
+
+}
+
+void ragnar_run(wm_state* state) {
+}
+
+void ragnar_terminate(wm_state* state) {
+	wl_display_destroy_clients(state->display);
+	wlr_scene_node_destroy(&state->scene->tree.node);
+	wlr_xcursor_manager_destroy(state->cursormgr);
+	wlr_cursor_destroy(state->cursor);
+	wlr_allocator_destroy(state->allocator);
+	wlr_renderer_destroy(state->renderer);
+	wlr_backend_destroy(state->backend);
+	wl_display_destroy(state->display);
+}
+
+int main(int argc, char *argv[]) {
+	wlr_log_init(WLR_DEBUG, NULL);
+
+	wm_state* state = malloc(sizeof(wm_state));
+  state->display = wl_display_create();
 	state->backend = wlr_backend_autocreate(wl_display_get_event_loop(state->display), NULL);
 	if (state->backend == NULL) {
 		wlr_log(WLR_ERROR, "Failed to create Failed wlr_backend");
@@ -736,9 +757,7 @@ void ragnar_init(wm_state* state) {
 
 	wl_list_init(&state->keyboards);
   bind_listen(inputnew, state->input_cb, &state->backend->events.new_input);
-
 	state->seat = wlr_seat_create(state->display, "seat0");
-
   bind_listen(seatreqcur, state->reqcur_cb, &state->seat->events.request_set_cursor);
   bind_listen(seatreqsetsel, state->reqsetsel_cb, &state->seat->events.request_set_selection);
 
@@ -756,35 +775,12 @@ void ragnar_init(wm_state* state) {
 
 	setenv("WAYLAND_DISPLAY", socket, true);
 	wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s", socket);
-}
-
-void ragnar_run(wm_state* state) {
-	wl_display_run(state->display);
-}
-
-void ragnar_terminate(wm_state* state) {
-	wl_display_destroy_clients(state->display);
-	wlr_scene_node_destroy(&state->scene->tree.node);
-	wlr_xcursor_manager_destroy(state->cursormgr);
-	wlr_cursor_destroy(state->cursor);
-	wlr_allocator_destroy(state->allocator);
-	wlr_renderer_destroy(state->renderer);
-	wlr_backend_destroy(state->backend);
-	wl_display_destroy(state->display);
-}
-
-int main(int argc, char *argv[]) {
-	wlr_log_init(WLR_DEBUG, NULL);
-
-	wm_state state = {0};
-  ragnar_init(&state);
 
   if (fork() == 0) {
     execl("/bin/sh", "/bin/sh", "-c", "alacritty", (void *)NULL);
   }
 
-  ragnar_run(&state);
-  ragnar_terminate(&state);
+	wl_display_run(state->display);
 	return 0;
 }
 
