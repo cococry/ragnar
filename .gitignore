@@ -3,3 +3,5 @@ ragnar.o
 ragnarstart
 config.h
 *.patch
+src/.cache
+src/compile_commands.json
