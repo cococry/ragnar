@@ -163,20 +163,6 @@ static void         clientdestroy(struct wl_listener *listener, void *data);
 
 static void         interactive(clientwin* client, cursor_mode mode, uint32_t edges);
 
-static void         clientreqmove(struct wl_listener *listener, void *data);
-static void         clientreqresize(struct wl_listener *listener, void *data);
-static void         clientreqmaximize(struct wl_listener *listener, void *data);
-static void         clientreqfullscreen(struct wl_listener *listener, void *data);
-static void         clientnew(struct wl_listener *listener, void *data);
-
-static void         popupcommit(struct wl_listener *listener, void *data);
-static void         popupdestroy(struct wl_listener *listener, void *data);
-static void         popupnew(struct wl_listener *listener, void *data);
-
-static void         ragnar_init(wm_state* state);
-static void         ragnar_run(wm_state* state);
-static void         ragnar_terminate(wm_state* state);
-
 void clientfocus(clientwin* client, struct wlr_surface *surface) {
 	if (!client) return;
 
@@ -208,7 +194,7 @@ void clientfocus(clientwin* client, struct wlr_surface *surface) {
 	}
 }
 
-void kbmods(struct wl_listener* listener, void *data) {
+static void kbmods(struct wl_listener* listener, void *data) {
 	keyboard_device* kb = wl_container_of(listener, kb, mod_cb);
   // Set the seats current keyboard
 	wlr_seat_set_keyboard(kb->state->seat, kb->wlrkb);
@@ -682,105 +668,116 @@ void popupnew(struct wl_listener *listener, void *data) {
   bind_listen(popupdestroy, popup->destroy_cb, &xdgpopup->events.destroy);
 }
 
-void ragnar_init(wm_state* state) {
-
-}
-
-void ragnar_run(wm_state* state) {
-}
-
-void ragnar_terminate(wm_state* state) {
-	wl_display_destroy_clients(state->display);
-	wlr_scene_node_destroy(&state->scene->tree.node);
-	wlr_xcursor_manager_destroy(state->cursormgr);
-	wlr_cursor_destroy(state->cursor);
-	wlr_allocator_destroy(state->allocator);
-	wlr_renderer_destroy(state->renderer);
-	wlr_backend_destroy(state->backend);
-	wl_display_destroy(state->display);
-}
-
 int main(int argc, char *argv[]) {
 	wlr_log_init(WLR_DEBUG, NULL);
+	char *startup_cmd = NULL;
 
-	wm_state* state = malloc(sizeof(wm_state));
-  state->display = wl_display_create();
-	state->backend = wlr_backend_autocreate(wl_display_get_event_loop(state->display), NULL);
-	if (state->backend == NULL) {
+	int c;
+	while ((c = getopt(argc, argv, "s:h")) != -1) {
+		switch (c) {
+		case 's':
+			startup_cmd = optarg;
+			break;
+		default:
+			printf("Usage: %s [-s startup command]\n", argv[0]);
+			return 0;
+		}
+	}
+	if (optind < argc) {
+		printf("Usage: %s [-s startup command]\n", argv[0]);
+		return 0;
+	}
+
+	wm_state state = {0};
+	state.display= wl_display_create();
+	state.backend = wlr_backend_autocreate(wl_display_get_event_loop(state.display), NULL);
+	if (state.backend == NULL) {
 		wlr_log(WLR_ERROR, "Failed to create Failed wlr_backend");
-    exit(1);
+		return 1;
 	}
 
-	state->renderer = wlr_renderer_autocreate(state->backend);
-	if (state->renderer == NULL) {
+	state.renderer = wlr_renderer_autocreate(state.backend);
+	if (state.renderer == NULL) {
 		wlr_log(WLR_ERROR, "Failed to create wlr_renderer");
-    exit(1);
+		return 1;
 	}
 
-	wlr_renderer_init_wl_display(state->renderer, state->display);
+	wlr_renderer_init_wl_display(state.renderer, state.display);
 
-	state->allocator = wlr_allocator_autocreate(state->backend, state->renderer);
-	if (state->allocator == NULL) {
+	state.allocator = wlr_allocator_autocreate(state.backend, state.renderer);
+	if (state.allocator == NULL) {
 		wlr_log(WLR_ERROR, "Failed to create wlr_allocator");
-		exit(1);
+		return 1;
 	}
-	wlr_compositor_create(state->display, 5, state->renderer);
-	wlr_subcompositor_create(state->display);
-	wlr_data_device_manager_create(state->display);
+	wlr_compositor_create(state.display, 5, state.renderer);
+	wlr_subcompositor_create(state.display);
+	wlr_data_device_manager_create(state.display);
 
-	state->monlayout = wlr_output_layout_create(state->display);
+	state.monlayout = wlr_output_layout_create(state.display);
 
-	wl_list_init(&state->mons);
-  bind_listen(monnew, state->mon_cb, &state->backend->events.new_output);
+	wl_list_init(&state.mons);
+  bind_listen(monnew, state.mon_cb, &state.backend->events.new_output);
 
-	state->scene = wlr_scene_create();
-	state->scenelayout = wlr_scene_attach_output_layout(state->scene, state->monlayout);
+	state.scene = wlr_scene_create();
+	state.scenelayout = wlr_scene_attach_output_layout(state.scene, state.monlayout);
 
-	wl_list_init(&state->clients);
-	state->xdgsh = wlr_xdg_shell_create(state->display, 3);
+	wl_list_init(&state.clients);
+	state.xdgsh = wlr_xdg_shell_create(state.display, 3);
 
-  bind_listen(clientnew, state->xdg_client_cb, &state->xdgsh->events.new_toplevel);
-  bind_listen(popupnew, state->xdg_popup_xb, &state->xdgsh->events.new_popup);
+  bind_listen(clientnew, state.xdg_client_cb, &state.xdgsh->events.new_toplevel);
+  bind_listen(popupnew, state.xdg_popup_xb, &state.xdgsh->events.new_popup);
 
-	state->cursor = wlr_cursor_create();
-	wlr_cursor_attach_output_layout(state->cursor, state->monlayout);
+	state.cursor = wlr_cursor_create();
+	wlr_cursor_attach_output_layout(state.cursor, state.monlayout);
 
-	state->cursormgr = wlr_xcursor_manager_create(NULL, 24);
+	state.cursormgr = wlr_xcursor_manager_create(NULL, 24);
 
-	state->curmode = CursorModeNone;
+	state.curmode = CursorModeNone;
   
-  bind_listen(curmove, state->curmove_cb, &state->cursor->events.motion);
-  bind_listen(curmoveabs, state->curmove_abs_cb, &state->cursor->events.motion_absolute);
-  bind_listen(curbtn, state->cur_btn_cb, &state->cursor->events.button);
-  bind_listen(curaxis, state->cur_axis_cb, &state->cursor->events.axis);
-  bind_listen(curframe, state->cur_frame_cb, &state->cursor->events.frame);
+  bind_listen(curmove, state.curmove_cb, &state.cursor->events.motion);
+  bind_listen(curmoveabs, state.curmove_abs_cb, &state.cursor->events.motion_absolute);
+  bind_listen(curbtn, state.cur_btn_cb, &state.cursor->events.button);
+  bind_listen(curaxis, state.cur_axis_cb, &state.cursor->events.axis);
+  bind_listen(curframe, state.cur_frame_cb, &state.cursor->events.frame);
 
-	wl_list_init(&state->keyboards);
-  bind_listen(inputnew, state->input_cb, &state->backend->events.new_input);
-	state->seat = wlr_seat_create(state->display, "seat0");
-  bind_listen(seatreqcur, state->reqcur_cb, &state->seat->events.request_set_cursor);
-  bind_listen(seatreqsetsel, state->reqsetsel_cb, &state->seat->events.request_set_selection);
+	wl_list_init(&state.keyboards);
+  bind_listen(inputnew, state.input_cb, &state.backend->events.new_input);
 
-	const char *socket = wl_display_add_socket_auto(state->display);
+	state.seat = wlr_seat_create(state.display, "seat0");
+
+  bind_listen(seatreqcur, state.reqcur_cb, &state.seat->events.request_set_cursor);
+  bind_listen(seatreqsetsel, state.reqsetsel_cb, &state.seat->events.request_set_selection);
+
+	const char *socket = wl_display_add_socket_auto(state.display);
 	if (!socket) {
-		wlr_backend_destroy(state->backend);
-		exit(1);
+		wlr_backend_destroy(state.backend);
+		return 1;
 	}
 
-	if (!wlr_backend_start(state->backend)) {
-		wlr_backend_destroy(state->backend);
-		wl_display_destroy(state->display);
-		exit(1);
+	if (!wlr_backend_start(state.backend)) {
+		wlr_backend_destroy(state.backend);
+		wl_display_destroy(state.display);
+		return 1;
 	}
 
 	setenv("WAYLAND_DISPLAY", socket, true);
-	wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s", socket);
+	if (startup_cmd) {
+		if (fork() == 0) {
+			execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
+		}
+	}
+	wlr_log(WLR_INFO, "Running Wayland compositor on WAYLAND_DISPLAY=%s",
+			socket);
+	wl_display_run(state.display);
 
-  if (fork() == 0) {
-    execl("/bin/sh", "/bin/sh", "-c", "alacritty", (void *)NULL);
-  }
-
-	wl_display_run(state->display);
+	/* Once wl_display_run returns, we destroy all clients then shut down the
+	 * server. */
+	wl_display_destroy_clients(state.display);
+	wlr_scene_node_destroy(&state.scene->tree.node);
+	wlr_xcursor_manager_destroy(state.cursormgr);
+	wlr_cursor_destroy(state.cursor);
+	wlr_allocator_destroy(state.allocator);
+	wl_display_destroy(state.display);
 	return 0;
 }
 
