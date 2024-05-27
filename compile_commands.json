@@ -1,0 +1,20 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-g",
+      "-Werror",
+      "-I.",
+      "-DWLR_USE_UNSTABLE",
+      "-I/usr/include/pixman-1",
+      "-I/usr/include/libdrm",
+      "-o",
+      "ragnar",
+      "ragnar.c"
+    ],
+    "directory": "/home/cococry/dev/ragnar-wayland",
+    "file": "/home/cococry/dev/ragnar-wayland/ragnar.c",
+    "output": "/home/cococry/dev/ragnar-wayland/ragnar"
+  }
+]
