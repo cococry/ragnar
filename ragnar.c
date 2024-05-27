@@ -525,7 +525,7 @@ void monnew(struct wl_listener *listener, void *data) {
 void clientmap(struct wl_listener *listener, void *data) {
 	clientwin* client = wl_container_of(listener, client, map_cb);
 	wl_list_insert(&client->state->clients, &client->link);
-	//clientfocus(client, client->xdgtoplevel->base->surface);
+	clientfocus(client, client->xdgtoplevel->base->surface);
 }
 
 void clientunmap(struct wl_listener *listener, void *data) {
@@ -632,7 +632,9 @@ void clientnew(struct wl_listener *listener, void *data) {
   bind_listen(clientmap, client->map_cb, &xdgtoplevel->base->surface->events.map);
   bind_listen(clientunmap, client->unmap_cb, &xdgtoplevel->base->surface->events.unmap);
   bind_listen(clientcommit, client->commit_cb, &xdgtoplevel->base->surface->events.commit);
-  bind_listen(clientdestroy, client->commit_cb, &xdgtoplevel->events.destroy);
+
+  bind_listen(clientdestroy, client->destroy_cb, &xdgtoplevel->events.destroy);
+
   bind_listen(clientreqmove, client->reqmove_cb, &xdgtoplevel->events.request_move);
   bind_listen(clientreqresize, client->reqresize_cb, &xdgtoplevel->events.request_resize);
   bind_listen(clientreqmaximize, client->reqmaximize_cb, &xdgtoplevel->events.request_maximize);
