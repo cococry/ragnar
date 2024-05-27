@@ -174,7 +174,7 @@ void clientfocus(clientwin* client, struct wlr_surface *surface) {
 
   // Deactive previous toplevel
 	if (prev) {
-		struct wlr_xdg_toplevel *prev_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(prev);
+		struct wlr_xdg_toplevel* prev_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(prev);
 		if (prev_toplevel) 
       wlr_xdg_toplevel_set_activated(prev_toplevel, false);
 	}
@@ -525,7 +525,7 @@ void monnew(struct wl_listener *listener, void *data) {
 void clientmap(struct wl_listener *listener, void *data) {
 	clientwin* client = wl_container_of(listener, client, map_cb);
 	wl_list_insert(&client->state->clients, &client->link);
-	clientfocus(client, client->xdgtoplevel->base->surface);
+	//clientfocus(client, client->xdgtoplevel->base->surface);
 }
 
 void clientunmap(struct wl_listener *listener, void *data) {
