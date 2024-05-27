@@ -50,3 +50,37 @@ void new_xdg_client_listener(struct wl_listener* listener, void* data);
  * server.
 */
 void new_xdg_popup_listener(struct wl_listener* listener, void* data);
+
+/**
+ * Listener function that fires when a new input devices is created on the wayland 
+ * server.
+*/
+void new_input_listener(struct wl_listener* listener, void* data);
+
+/*
+ * Listener function that fires when a modifier key (e.g alt, shift) is pressed
+ * on a keyboard
+ * */
+void keyboard_modifier_listener(struct wl_listener* listener, void* data);
+
+/*
+ * Listener function that fires when generic key is pressed on a keyboard
+ * */
+void keyboard_generic_key_listener(struct wl_listener* listener, void* data);
+
+/*
+ * Listener function that fires when a keyboard becomes unavailable on the wayland 
+ * display (e.g disconnect).
+ * */
+void keyboard_destroy_listener(struct wl_listener* listener, void* data);
+
+/*
+ * Listener function is fired by the seat when a client provides a cursor image 
+ * */
+void seat_request_cursor_listener(struct wl_listener* listener, void* data);
+
+/*
+ * Listener function is fired by the seat when a client wants to set the clipboard 
+ * selection
+ * */
+void seat_request_set_selection_listener(struct wl_listener* listener, void* data);

@@ -44,7 +44,12 @@
 */
 #define rg_assert(cond) if(!cond) {                                                                   \
   terminate("Assertion failed: '%s' in file, line %i", #cond, __FILE__, __LINE__)                     \
-}                                                                                                     \
+}
+\
+#define bind_listen(_cb, _to, _handle) {  \
+  _to.notify = _cb;                       \
+  wl_signal_add(_handle, &_to);           \
+}
 
 /* --- ENUMS --- */
 typedef enum {
