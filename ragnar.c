@@ -572,6 +572,9 @@ void clientcommit(struct wl_listener* listener, void* data) {
 
 	if (client->xdgtoplevel->base->initial_commit) {
 		wlr_xdg_toplevel_set_size(client->xdgtoplevel, 0, 0);
+    if(client->decoration) {
+      reqdecorationmode(&client->request_decoration_mode_cb, client->decoration);
+    }
 	}
 }
 
