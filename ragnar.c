@@ -621,11 +621,12 @@ void interactive(clientwin* client, cursor_mode mode, uint32_t edges) {
 void newdecoration(struct wl_listener* listener, void* data) {
   struct wlr_xdg_toplevel_decoration_v1* decoration = data;
   clientwin* client = decoration->toplevel->base->data;
+  client->decoration = decoration;
+
   bind_listen(reqdecorationmode, client->request_decoration_mode_cb, &decoration->events.request_mode)
   bind_listen(destroydecoration, client->destory_decoration_cb, &decoration->events.destroy);
 
-/*
-  reqdecorationmode(&client->request_decoration_mode_cb, decoration);*/
+  reqdecorationmode(&client->request_decoration_mode_cb, decoration);
 }
 
 void reqdecorationmode(struct wl_listener* listener, void* data) {
