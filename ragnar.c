@@ -7,6 +7,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
+#include <wayland-util.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
@@ -24,6 +25,8 @@
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
+#include <wlr/types/wlr_server_decoration.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <xkbcommon/xkbcommon.h>
 
 #define bind_listen(_cb, _to, _handle) {  \
@@ -44,6 +47,8 @@ typedef struct {
 
 	struct wlr_cursor* cursor;
 	struct wlr_xcursor_manager* cursormgr;
+  struct wlr_xdg_decoration_manager_v1* decorationmgr;
+
 
 	struct wlr_seat *seat;
 
@@ -70,6 +75,8 @@ typedef struct {
 	struct wl_listener reqcur_cb;
 	struct wl_listener reqsetsel_cb;
 
+  struct wl_listener decoration_cb;
+
 	struct wl_listener mon_cb;
 
   cursor_mode curmode;
@@ -94,6 +101,7 @@ struct clientwin {
 	struct wl_list link;
 	struct wlr_xdg_toplevel* xdgtoplevel;
 	struct wlr_scene_tree* scenetree;
+  struct wlr_xdg_toplevel_decoration_v1* decoration;
 
 	struct wl_listener map_cb;
 	struct wl_listener unmap_cb;
@@ -103,6 +111,8 @@ struct clientwin {
 	struct wl_listener reqresize_cb;
 	struct wl_listener reqmaximize_cb;
 	struct wl_listener reqfullscreen_cb;
+  struct wl_listener destory_decoration_cb;
+  struct wl_listener request_decoration_mode_cb;
 };
 
 typedef struct {
@@ -125,19 +135,19 @@ typedef struct {
 static void         clientfocus(clientwin* client, struct wlr_surface *surface);
 
 static bool         handlekeybind(comp_state* state, xkb_keysym_t key);
-static void         kbmods(struct wl_listener *listener, void *data);
-static void         kbkey(struct wl_listener *listener, void *data);
-static void         kbdestroy(struct wl_listener *listener, void *data);
-static void         kbnew(comp_state *state, struct wlr_input_device *device);
+static void         kbmods(struct wl_listener* listener, void* data);
+static void         kbkey(struct wl_listener* listener, void* data);
+static void         kbdestroy(struct wl_listener* listener, void* data);
+static void         kbnew(comp_state* state, struct wlr_input_device* device);
 
-static void         pointernew(comp_state* state, struct wlr_input_device *device);
+static void         pointernew(comp_state* state, struct wlr_input_device* device);
 
-static void         inputnew(struct wl_listener *listener, void *data);
+static void         inputnew(struct wl_listener* listener, void* data);
 
-static void         seatreqcur(struct wl_listener *listener, void *data);
-static void         seatreqsetsel(struct wl_listener *listener, void *data);
+static void         seatreqcur(struct wl_listener* listener, void* data);
+static void         seatreqsetsel(struct wl_listener* listener, void* data);
 
-static clientwin*   clientwinat(comp_state* state, double x, double y, struct wlr_surface **surface, double *retx, double *rety);
+static clientwin*   clientwinat(comp_state* state, double x, double y, struct wlr_surface** surface, double* retx, double* rety);
 
 static void         curmodereset(comp_state* state);
 
@@ -145,34 +155,38 @@ static void         movegrab(comp_state* state, uint32_t time);
 static void         resizegrab(comp_state* state, uint32_t time);
 static void         curmotion(comp_state* state, uint32_t time);
 
-static void         curmove(struct wl_listener *listener, void *data);
-static void         curmoveabs(struct wl_listener *listener, void *data);
-static void         curbtn(struct wl_listener *listener, void *data);
-static void         curaxis(struct wl_listener *listener, void *data);
-static void         curframe(struct wl_listener *listener, void *data);
+static void         curmove(struct wl_listener* listener, void* data);
+static void         curmoveabs(struct wl_listener* listener, void* data);
+static void         curbtn(struct wl_listener* listener, void* data);
+static void         curaxis(struct wl_listener* listener, void* data);
+static void         curframe(struct wl_listener* listener, void* data);
 
-static void         monframe(struct wl_listener *listener, void *data);
-static void         monreqstate(struct wl_listener *listener, void *data);
-static void         mondestroy(struct wl_listener *listener, void *data);
-static void         monnew(struct wl_listener *listener, void *data);
+static void         monframe(struct wl_listener* listener, void* data);
+static void         monreqstate(struct wl_listener* listener, void* data);
+static void         mondestroy(struct wl_listener* listener, void* data);
+static void         monnew(struct wl_listener* listener, void* data);
 
-static void         clientmap(struct wl_listener *listener, void *data);
-static void         clientunmap(struct wl_listener *listener, void *data);
-static void         clientcommit(struct wl_listener *listener, void *data);
-static void         clientdestroy(struct wl_listener *listener, void *data);
+static void         clientmap(struct wl_listener* listener, void* data);
+static void         clientunmap(struct wl_listener* listener, void* data);
+static void         clientcommit(struct wl_listener* listener, void* data);
+static void         clientdestroy(struct wl_listener* listener, void* data);
 
-static void         clientreqmove(struct wl_listener *listener, void *data);
-static void         clientreqresize(struct wl_listener *listener, void *data);
-static void         clientreqmaximize(struct wl_listener *listener, void *data);
-static void         clientreqfullscreen(struct wl_listener *listener, void *data);
+static void         clientreqmove(struct wl_listener* listener, void* data);
+static void         clientreqresize(struct wl_listener* listener, void* data);
+static void         clientreqmaximize(struct wl_listener* listener, void* data);
+static void         clientreqfullscreen(struct wl_listener* listener, void* data);
 
-static void         clientnew(struct wl_listener *listener, void *data);
+static void         clientnew(struct wl_listener* listener, void* data);
 
-static void         popupcommit(struct wl_listener *listener, void *data);
-static void         popupdestroy(struct wl_listener *listener, void *data);
-static void         popupnew(struct wl_listener *listener, void *data);
+static void         popupcommit(struct wl_listener* listener, void* data);
+static void         popupdestroy(struct wl_listener* listener, void* data);
+static void         popupnew(struct wl_listener* listener, void* data);
 
 static void         interactive(clientwin* client, cursor_mode mode, uint32_t edges);
+
+static void         newdecoration(struct wl_listener* listener, void* data);
+static void         reqdecorationmode(struct wl_listener* listener, void* data);
+static void         destroydecoration(struct wl_listener* listener, void* data);
 
 static void         comp_init(comp_state* state);
 static void         comp_run(comp_state* state);
@@ -209,7 +223,7 @@ void clientfocus(clientwin* client, struct wlr_surface *surface) {
 	}
 }
 
-static void kbmods(struct wl_listener* listener, void *data) {
+static void kbmods(struct wl_listener* listener, void* data) {
 	keyboard_device* kb = wl_container_of(listener, kb, mod_cb);
   // Set the seats current keyboard
 	wlr_seat_set_keyboard(kb->state->seat, kb->wlrkb);
@@ -236,7 +250,7 @@ bool handlekeybind(comp_state* state, xkb_keysym_t key) {
 	return true;
 }
 
-void kbkey(struct wl_listener *listener, void *data) {
+void kbkey(struct wl_listener* listener, void* data) {
 	keyboard_device* kb = wl_container_of(listener, kb, key_cb);
 	comp_state* state = kb->state;
 
@@ -266,7 +280,7 @@ void kbkey(struct wl_listener *listener, void *data) {
 	}
 }
 
-void kbdestroy(struct wl_listener *listener, void *data) {
+void kbdestroy(struct wl_listener* listener, void* data) {
 	keyboard_device* kb = wl_container_of(listener, kb, destroy_cb);
 	wl_list_remove(&kb->mod_cb.link);
 	wl_list_remove(&kb->key_cb.link);
@@ -310,7 +324,7 @@ void pointernew(comp_state* state, struct wlr_input_device *device) {
 	wlr_cursor_attach_input_device(state->cursor, device);
 }
 
-void inputnew(struct wl_listener *listener, void *data) {
+void inputnew(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, input_cb);
 	struct wlr_input_device *device = data;
 
@@ -334,7 +348,7 @@ void inputnew(struct wl_listener *listener, void *data) {
 	wlr_seat_set_capabilities(state->seat, caps);
 }
 
-void seatreqcur(struct wl_listener *listener, void *data) {
+void seatreqcur(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, reqcur_cb);
 	struct wlr_seat_pointer_request_set_cursor_event *event = data;
 	struct wlr_seat_client *focused_client = state->seat->pointer_state.focused_client;
@@ -343,7 +357,7 @@ void seatreqcur(struct wl_listener *listener, void *data) {
 	}
 }
 
-void seatreqsetsel(struct wl_listener *listener, void *data) {
+void seatreqsetsel(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, reqsetsel_cb);
 	struct wlr_seat_request_set_selection_event *event = data;
 	wlr_seat_set_selection(state->seat, event->source, event->serial);
@@ -424,21 +438,21 @@ void curmotion(comp_state* state, uint32_t time) {
 	}
 }
 
-static void curmove(struct wl_listener *listener, void *data) {
+static void curmove(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, curmove_cb);
 	struct wlr_pointer_motion_event* ev = data;
 	wlr_cursor_move(state->cursor, &ev->pointer->base, ev->delta_x, ev->delta_y);
 	curmotion(state, ev->time_msec);
 }
 
-void curmoveabs(struct wl_listener *listener, void *data) {
+void curmoveabs(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, curmove_abs_cb);
 	struct wlr_pointer_motion_absolute_event *event = data;
 	wlr_cursor_warp_absolute(state->cursor, &event->pointer->base, event->x, event->y);
 	curmotion(state, event->time_msec);
 }
 
-void curbtn(struct wl_listener *listener, void *data) {
+void curbtn(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, cur_btn_cb);
 	struct wlr_pointer_button_event *event = data;
 
@@ -458,19 +472,19 @@ void curbtn(struct wl_listener *listener, void *data) {
 	}
 }
 
-void curaxis(struct wl_listener *listener, void *data) {
+void curaxis(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, cur_axis_cb);
 	struct wlr_pointer_axis_event* ev = data;
 	wlr_seat_pointer_notify_axis(state->seat, ev->time_msec, ev->orientation, ev->delta, ev->delta_discrete, 
                               ev->source, ev->relative_direction);
 }
 
-void curframe(struct wl_listener *listener, void *data) {
+void curframe(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, cur_frame_cb);
 	wlr_seat_pointer_notify_frame(state->seat);
 }
 
-void monframe(struct wl_listener *listener, void *data) {
+void monframe(struct wl_listener* listener, void* data) {
 	monitor* mon = wl_container_of(listener, mon, frame_cb);
 	struct wlr_scene* scene = mon->state->scene;
 
@@ -482,13 +496,13 @@ void monframe(struct wl_listener *listener, void *data) {
 	wlr_scene_output_send_frame_done(scene_output, &now);
 }
 
-void monreqstate(struct wl_listener *listener, void *data) {
+void monreqstate(struct wl_listener* listener, void* data) {
 	monitor* mon = wl_container_of(listener, mon, reqstate_cb);
 	const struct wlr_output_event_request_state *ev = data;
 	wlr_output_commit_state(mon->wlroutput, ev->state);
 }
 
-void mondestroy(struct wl_listener *listener, void *data) {
+void mondestroy(struct wl_listener* listener, void* data) {
 	monitor* mon = wl_container_of(listener, mon, destroy_cb);
 	wl_list_remove(&mon->frame_cb.link);
 	wl_list_remove(&mon->reqstate_cb.link);
@@ -497,7 +511,7 @@ void mondestroy(struct wl_listener *listener, void *data) {
 	free(mon);
 }
 
-void monnew(struct wl_listener *listener, void *data) {
+void monnew(struct wl_listener* listener, void* data) {
 	comp_state* state = wl_container_of(listener, state, mon_cb);
 	struct wlr_output* wlroutput = data;
 
@@ -537,13 +551,13 @@ void monnew(struct wl_listener *listener, void *data) {
 	wlr_scene_output_layout_add_output(state->scenelayout, moninlayout, sceneoutput);
 }
 
-void clientmap(struct wl_listener *listener, void *data) {
+void clientmap(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, map_cb);
 	wl_list_insert(&client->state->clients, &client->link);
 	clientfocus(client, client->xdgtoplevel->base->surface);
 }
 
-void clientunmap(struct wl_listener *listener, void *data) {
+void clientunmap(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, unmap_cb);
 
 	if (client == client->state->grabclient) {
@@ -553,7 +567,7 @@ void clientunmap(struct wl_listener *listener, void *data) {
 	wl_list_remove(&client->link);
 }
 
-void clientcommit(struct wl_listener *listener, void *data) {
+void clientcommit(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, commit_cb);
 
 	if (client->xdgtoplevel->base->initial_commit) {
@@ -561,7 +575,7 @@ void clientcommit(struct wl_listener *listener, void *data) {
 	}
 }
 
-void clientdestroy(struct wl_listener *listener, void *data) {
+void clientdestroy(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, destroy_cb);
 	wl_list_remove(&client->map_cb.link);
 	wl_list_remove(&client->unmap_cb.link);
@@ -604,18 +618,40 @@ void interactive(clientwin* client, cursor_mode mode, uint32_t edges) {
 	}
 }
 
-void clientreqmove(struct wl_listener *listener, void *data) {
+void newdecoration(struct wl_listener* listener, void* data) {
+  struct wlr_xdg_toplevel_decoration_v1* decoration = data;
+  clientwin* client = decoration->toplevel->base->data;
+
+  bind_listen(reqdecorationmode, client->request_decoration_mode_cb, &decoration->events.request_mode)
+  bind_listen(destroydecoration, client->destory_decoration_cb, &decoration->events.destroy);
+
+  reqdecorationmode(&client->request_decoration_mode_cb, decoration);
+}
+
+void reqdecorationmode(struct wl_listener* listener, void* data) {
+  clientwin* client = wl_container_of(listener, client, request_decoration_mode_cb);
+	wlr_xdg_toplevel_decoration_v1_set_mode(client->decoration,
+			WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+
+void destroydecoration(struct wl_listener* listener, void* data) {
+  clientwin* client = wl_container_of(listener, client, destory_decoration_cb);
+  wl_list_remove(&client->destory_decoration_cb.link);
+  wl_list_remove(&client->request_decoration_mode_cb.link);
+}
+
+void clientreqmove(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, reqmove_cb);
 	interactive(client, CursorModeMove, 0);
 }
 
-void clientreqresize(struct wl_listener *listener, void *data) {
+void clientreqresize(struct wl_listener* listener, void* data) {
 	struct wlr_xdg_toplevel_resize_event *event = data;
 	clientwin* client = wl_container_of(listener, client, reqresize_cb);
 	interactive(client, CursorModeResize, event->edges);
 }
 
-void clientreqmaximize(struct wl_listener *listener, void *data) {
+void clientreqmaximize(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, reqmaximize_cb);
 	if (client->xdgtoplevel->base->initialized) {
     // Don't do anything
@@ -623,7 +659,7 @@ void clientreqmaximize(struct wl_listener *listener, void *data) {
 	}
 }
 
-void clientreqfullscreen(struct wl_listener *listener, void *data) {
+void clientreqfullscreen(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, reqfullscreen_cb);
 	if (client->xdgtoplevel->base->initialized) {
     // Don't do anything
@@ -631,7 +667,7 @@ void clientreqfullscreen(struct wl_listener *listener, void *data) {
 	}
 }
 
-void clientnew(struct wl_listener *listener, void *data) {
+void clientnew(struct wl_listener* listener, void* data) {
   comp_state* state = wl_container_of(listener, state, xdg_client_cb);
 	struct wlr_xdg_toplevel* xdgtoplevel = data;
 
@@ -655,21 +691,21 @@ void clientnew(struct wl_listener *listener, void *data) {
   bind_listen(clientreqfullscreen, client->reqfullscreen_cb, &xdgtoplevel->events.request_fullscreen);
 }
 
-void popupcommit(struct wl_listener *listener, void *data) {
+void popupcommit(struct wl_listener* listener, void* data) {
 	popupwin* popup = wl_container_of(listener, popup, commit_cb);
 	if (popup->xdg_popup->base->initial_commit) {
 		wlr_xdg_surface_schedule_configure(popup->xdg_popup->base);
 	}
 }
 
-void popupdestroy(struct wl_listener *listener, void *data) {
+void popupdestroy(struct wl_listener* listener, void* data) {
 	popupwin* popup = wl_container_of(listener, popup, destroy_cb);
 	wl_list_remove(&popup->commit_cb.link);
 	wl_list_remove(&popup->destroy_cb.link);
 	free(popup);
 }
 
-void popupnew(struct wl_listener *listener, void *data) {
+void popupnew(struct wl_listener* listener, void* data) {
 	struct wlr_xdg_popup* xdgpopup = data;
 
 	popupwin* popup = malloc(sizeof(popupwin));
@@ -743,6 +779,11 @@ void comp_init(comp_state* state) {
 
   bind_listen(seatreqcur, state->reqcur_cb, &state->seat->events.request_set_cursor);
   bind_listen(seatreqsetsel, state->reqsetsel_cb, &state->seat->events.request_set_selection);
+
+	wlr_server_decoration_manager_set_default_mode(wlr_server_decoration_manager_create(state->display),
+			WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
+	state->decorationmgr = wlr_xdg_decoration_manager_v1_create(state->display);
+	bind_listen(newdecoration, state->decoration_cb, &state->decorationmgr->events.new_toplevel_decoration);
 
 	const char *socket = wl_display_add_socket_auto(state->display);
 	if (!socket) {
