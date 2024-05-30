@@ -1,38 +1,69 @@
-
-#include <assert.h>
 #include <getopt.h>
-#include <stdbool.h>
-#include <stdlib.h>
+#include <libinput.h>
+#include <linux/input-event-codes.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
-#include <wayland-util.h>
 #include <wlr/backend.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
-#include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_alpha_modifier_v1.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_drm.h>
+#include <wlr/types/wlr_export_dmabuf_v1.h>
+#include <wlr/types/wlr_fractional_scale_v1.h>
+#include <wlr/types/wlr_gamma_control_v1.h>
+#include <wlr/types/wlr_idle_inhibit_v1.h>
+#include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_keyboard_group.h>
+#include <wlr/types/wlr_linux_dmabuf_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_output_management_v1.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_presentation_time.h>
+#include <wlr/types/wlr_primary_selection.h>
+#include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_server_decoration.h>
+#include <wlr/types/wlr_session_lock_v1.h>
+#include <wlr/types/wlr_single_pixel_buffer_v1.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_viewporter.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
+#include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
-#include <wlr/types/wlr_server_decoration.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/util/region.h>
 #include <xkbcommon/xkbcommon.h>
-
 #define bind_listen(_cb, _to, _handle) {  \
   _to.notify = _cb;                       \
   wl_signal_add(_handle, &_to);           \
 }
+
+/* Taken from https://github.com/djpohly/dwl/issues/466 */
+#define COLOR(hex)    { ((hex >> 24) & 0xFF) / 255.0f, \
+                        ((hex >> 16) & 0xFF) / 255.0f, \
+                        ((hex >> 8) & 0xFF) / 255.0f, \
+                        (hex & 0xFF) / 255.0f }
+
+static const float bordercolor[]           = COLOR(0xff0000ff);
 
 typedef enum {
 	CursorModeNone,
@@ -42,6 +73,10 @@ typedef enum {
 
 typedef struct clientwin clientwin;
 
+typedef enum {
+  LayerTiled = 0,
+  LayerNum
+} layer_type;
 typedef struct {	
 	struct wl_list clients, keyboards, mons;
 
@@ -84,6 +119,8 @@ typedef struct {
 	double grabx, graby;
 	clientwin* grabclient;
 	uint32_t resize_edges;
+
+  struct wlr_scene_tree* layers[LayerTiled];
 } comp_state;
 
 typedef struct {
@@ -99,8 +136,8 @@ struct clientwin {
 	comp_state* state;
 
 	struct wl_list link;
-	struct wlr_xdg_toplevel* xdgtoplevel;
-	struct wlr_scene_tree* scenetree;
+  struct wlr_xdg_surface* surface;
+	struct wlr_scene_tree* scenetree, *scene;
   struct wlr_xdg_toplevel_decoration_v1* decoration;
 
 	struct wl_listener map_cb;
@@ -113,6 +150,8 @@ struct clientwin {
 	struct wl_listener reqfullscreen_cb;
   struct wl_listener destory_decoration_cb;
   struct wl_listener request_decoration_mode_cb;
+
+  struct wlr_scene_rect* border[4];
 };
 
 typedef struct {
@@ -214,11 +253,11 @@ void clientfocus(clientwin* client, struct wlr_surface *surface) {
 	wlr_scene_node_raise_to_top(&client->scenetree->node);
 	wl_list_remove(&client->link);
 	wl_list_insert(&state->clients, &client->link);
-	wlr_xdg_toplevel_set_activated(client->xdgtoplevel, true);
+	wlr_xdg_toplevel_set_activated(client->surface->toplevel, true);
 
   // Raise keyboard enter event to get keyboard focus on the client
 	if (keyboard != NULL) {
-		wlr_seat_keyboard_notify_enter(seat, client->xdgtoplevel->base->surface, keyboard->keycodes, 
+		wlr_seat_keyboard_notify_enter(seat, client->surface->toplevel->base->surface, keyboard->keycodes, 
                                  keyboard->num_keycodes, &keyboard->modifiers);
 	}
 }
@@ -232,6 +271,7 @@ static void kbmods(struct wl_listener* listener, void* data) {
 		&kb->wlrkb->modifiers);
 }
 
+
 bool handlekeybind(comp_state* state, xkb_keysym_t key) {
 	switch (key) {
 	case XKB_KEY_Escape:
@@ -242,7 +282,7 @@ bool handlekeybind(comp_state* state, xkb_keysym_t key) {
 			break;
 		}
 		clientwin* next_cylce = wl_container_of(state->clients.prev, next_cylce, link);
-		clientfocus(next_cylce, next_cylce->xdgtoplevel->base->surface);
+		clientfocus(next_cylce, next_cylce->surface->toplevel->base->surface);
 		break;
 	default:
 		return false;
@@ -553,8 +593,14 @@ void monnew(struct wl_listener* listener, void* data) {
 
 void clientmap(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, map_cb);
+  client->scene = client->surface->data = wlr_scene_tree_create(client->state->layers[LayerTiled]);
+  client->scenetree = wlr_scene_xdg_surface_create(client->scene, client->surface);
+  client->scene->node.data = client->scenetree->node.data = client;
+
+  wlr_xdg_toplevel_set_tiled(client->surface->toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
+
 	wl_list_insert(&client->state->clients, &client->link);
-	clientfocus(client, client->xdgtoplevel->base->surface);
+	clientfocus(client, client->surface->toplevel->base->surface);
 }
 
 void clientunmap(struct wl_listener* listener, void* data) {
@@ -570,9 +616,9 @@ void clientunmap(struct wl_listener* listener, void* data) {
 void clientcommit(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, commit_cb);
 
-	if (client->xdgtoplevel->base->initial_commit) {
-		wlr_xdg_toplevel_set_size(client->xdgtoplevel, 0, 0);
-    if(client->decoration) {
+	if (client->surface->toplevel->base->initial_commit) {
+		wlr_xdg_toplevel_set_size(client->surface->toplevel, 0, 0);
+    if(client->decoration != NULL) {
       reqdecorationmode(&client->request_decoration_mode_cb, client->decoration);
     }
 	}
@@ -595,7 +641,7 @@ void interactive(clientwin* client, cursor_mode mode, uint32_t edges) {
 	comp_state* state = client->state;
 	struct wlr_surface* focused = state->seat->pointer_state.focused_surface;
   // Don't handle move/resize events from unfocused clients 
-	if (client->xdgtoplevel->base->surface != wlr_surface_get_root_surface(focused)) return;
+	if (client->surface->toplevel->base->surface != wlr_surface_get_root_surface(focused)) return;
 
 	state->grabclient = client;
 	state->curmode = mode;
@@ -605,7 +651,7 @@ void interactive(clientwin* client, cursor_mode mode, uint32_t edges) {
 		state->graby = state->cursor->y - client->scenetree->node.y;
 	} else {
 		struct wlr_box geo;
-		wlr_xdg_surface_get_geometry(client->xdgtoplevel->base, &geo);
+		wlr_xdg_surface_get_geometry(client->surface->toplevel->base, &geo);
 
 		double borderx = (client->scenetree->node.x + geo.x) + ((edges & WLR_EDGE_RIGHT) ? geo.width : 0);
 		double bordery = (client->scenetree->node.y + geo.y) + ((edges & WLR_EDGE_BOTTOM) ? geo.height : 0);
@@ -634,12 +680,16 @@ void newdecoration(struct wl_listener* listener, void* data) {
 
 void reqdecorationmode(struct wl_listener* listener, void* data) {
   clientwin* client = wl_container_of(listener, client, request_decoration_mode_cb);
+  if(client->surface->toplevel->base->initialized) {
 	wlr_xdg_toplevel_decoration_v1_set_mode(client->decoration,
 			WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+  }
 }
 
 void destroydecoration(struct wl_listener* listener, void* data) {
   clientwin* client = wl_container_of(listener, client, destory_decoration_cb);
+  client->decoration = NULL;
+
   wl_list_remove(&client->destory_decoration_cb.link);
   wl_list_remove(&client->request_decoration_mode_cb.link);
 }
@@ -657,17 +707,17 @@ void clientreqresize(struct wl_listener* listener, void* data) {
 
 void clientreqmaximize(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, reqmaximize_cb);
-	if (client->xdgtoplevel->base->initialized) {
+	if (client->surface->toplevel->base->initialized) {
     // Don't do anything
-		wlr_xdg_surface_schedule_configure(client->xdgtoplevel->base);
+		wlr_xdg_surface_schedule_configure(client->surface->toplevel->base);
 	}
 }
 
 void clientreqfullscreen(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, reqfullscreen_cb);
-	if (client->xdgtoplevel->base->initialized) {
+	if (client->surface->toplevel->base->initialized) {
     // Don't do anything
-		wlr_xdg_surface_schedule_configure(client->xdgtoplevel->base);
+		wlr_xdg_surface_schedule_configure(client->surface->toplevel->base);
 	}
 }
 
@@ -677,11 +727,10 @@ void clientnew(struct wl_listener* listener, void* data) {
 
   // Create the client
 	clientwin* client = malloc(sizeof(clientwin));
+  xdgtoplevel->base->data = client;
 	client->state = state;
-	client->xdgtoplevel = xdgtoplevel;
-	client->scenetree = wlr_scene_xdg_surface_create(&client->state->scene->tree, xdgtoplevel->base);
-	client->scenetree->node.data = client;
-	xdgtoplevel->base->data = client->scenetree;
+  client->surface = xdgtoplevel->base;
+  
 
   // Set up event listeners
   bind_listen(clientmap, client->map_cb, &xdgtoplevel->base->surface->events.map);
@@ -748,6 +797,15 @@ void comp_init(comp_state* state) {
 	wlr_compositor_create(state->display, 5, state->renderer);
 	wlr_subcompositor_create(state->display);
 	wlr_data_device_manager_create(state->display);
+	wlr_export_dmabuf_manager_v1_create(state->display);
+	wlr_screencopy_manager_v1_create(state->display);
+	wlr_data_control_manager_v1_create(state->display);
+	wlr_primary_selection_v1_device_manager_create(state->display);
+	wlr_viewporter_create(state->display);
+	wlr_single_pixel_buffer_manager_v1_create(state->display);
+	wlr_fractional_scale_manager_v1_create(state->display, 1);
+	wlr_presentation_create(state->display, state->backend);
+	wlr_alpha_modifier_v1_create(state->display);
 
 	state->monlayout = wlr_output_layout_create(state->display);
 
@@ -757,6 +815,9 @@ void comp_init(comp_state* state) {
 	state->scene = wlr_scene_create();
 	state->scenelayout = wlr_scene_attach_output_layout(state->scene, state->monlayout);
 
+  for(uint32_t i = 0; i < LayerNum; i++) {
+    state->layers[i] = wlr_scene_tree_create(&state->scene->tree);
+  }
 	wl_list_init(&state->clients);
 	state->xdgsh = wlr_xdg_shell_create(state->display, 3);
 
@@ -784,11 +845,11 @@ void comp_init(comp_state* state) {
   bind_listen(seatreqcur, state->reqcur_cb, &state->seat->events.request_set_cursor);
   bind_listen(seatreqsetsel, state->reqsetsel_cb, &state->seat->events.request_set_selection);
 
-	wlr_server_decoration_manager_set_default_mode(wlr_server_decoration_manager_create(state->display),
+	wlr_server_decoration_manager_set_default_mode(
+			wlr_server_decoration_manager_create(state->display),
 			WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
 	state->decorationmgr = wlr_xdg_decoration_manager_v1_create(state->display);
 	bind_listen(newdecoration, state->decoration_cb, &state->decorationmgr->events.new_toplevel_decoration);
-
 	const char *socket = wl_display_add_socket_auto(state->display);
 	if (!socket) {
 		wlr_backend_destroy(state->backend);
@@ -841,7 +902,7 @@ int main(int argc, char *argv[]) {
 
 	if (startup_cmd) {
 		if (fork() == 0) {
-			execl("/bin/sh", "/bin/sh", "-c", "alacritty", (void *)NULL);
+			execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)NULL);
 		}
 	}
 
