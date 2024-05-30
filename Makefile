@@ -2,7 +2,7 @@ CC = cc
 
 # includes and flags
 CFLAGS = -O3 -ffast-math -Wall -Wextra
-LIBS = -lXft -lX11 -lXcursor -lXft -lfontconfig -lXcomposite -lXrandr  
+LIBS = -lxcb 
 FREETYPEINC = /usr/include/freetype2
 INCS = -I${FREETYPEINC}
 
@@ -21,7 +21,7 @@ print_options:
 .c.o:
 	${CC} -c ${CFLAGS} ${LIBS} ${INCS} $<
 
-${OBJ}: config.h
+${OBJ}: 
 
 ragnar: ${OBJ}
 	${CC} -o $@ ${OBJ} ${LIBS} ${INCS}
