@@ -44,7 +44,7 @@ typedef struct {
 
   client* clients;
 
-  xcb_key_symbols_t* keysyms;
+  xcb_key_symbols_t* key_symbols;
 } State;
 
 
@@ -70,8 +70,7 @@ static void     unfocusclient(client* cl);
 
 static void     grabkeybind(keybind bind, xcb_window_t win);
 static void     setupkeybinds(xcb_window_t win);
-
-static bool     modsdown(uint16_t state, uint16_t* mods, size_t modscount);
+static bool     checkkeybind(xcb_keysym_t keysym, uint16_t state, keybind bind);
 
 static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_MAP_REQUEST]   = evmaprequest,
@@ -94,13 +93,12 @@ setup() {
   s.root = screen->root;
 
 
-  s.keysyms = xcb_key_symbols_alloc(s.con);
-  if (!s.keysyms) {
+  s.key_symbols = xcb_key_symbols_alloc(s.con);
+  if (!s.key_symbols) {
     fprintf(stderr, "ragnar: unable to allocate key symbols\n");
     exit(1);
   }
 
-  setupkeybinds(s.root);
 
   uint32_t values[] = {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
@@ -109,6 +107,7 @@ setup() {
     XCB_EVENT_MASK_KEY_PRESS
   };
   xcb_change_window_attributes(s.con, s.root, XCB_CW_EVENT_MASK, values);
+  setupkeybinds(s.root);
   xcb_flush(s.con);
 }
 
@@ -133,9 +132,9 @@ terminate() {
 bool
 pointinarea(v2 p, area area) {
   return (p.x >= area.pos.x &&
-              p.x < (area.pos.x + area.size.x) &&
-              p.x >= area.pos.y &&
-              p.y < (area.pos.y + area.size.y));
+  p.x < (area.pos.x + area.size.x) &&
+  p.x >= area.pos.y &&
+  p.y < (area.pos.y + area.size.y));
 }
 
 v2 
@@ -165,8 +164,6 @@ evmaprequest(xcb_generic_event_t* ev) {
   xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_BORDER_PIXEL, &winbordercolor);
   xcb_configure_window(s.con, map_ev->window, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){winborderwidth});
 
-  // Setup keybindings
-  setupkeybinds(map_ev->window);
 
   // Map the window
   xcb_map_window(s.con, map_ev->window);
@@ -185,6 +182,7 @@ evmaprequest(xcb_generic_event_t* ev) {
   if(pointinarea(cursor, cl->area)) {
     focusclient(cl);
   }
+
 flush:
   xcb_flush(s.con);
 
@@ -215,14 +213,15 @@ eventernotify(xcb_generic_event_t* ev) {
 void
 evkeypress(xcb_generic_event_t* ev) {
   xcb_key_press_event_t* key_ev = (xcb_key_press_event_t*)ev;
-  xcb_keysym_t keysym = xcb_key_symbols_get_keysym(xcb_key_symbols_alloc(s.con), key_ev->detail, 0);
+  xcb_keysym_t keysym = xcb_key_symbols_get_keysym(s.key_symbols, key_ev->detail, 0);
 
-  if(modsdown(key_ev->state, termkeybind.mods, arraylen(termkeybind.mods) 
-              && keysym == termkeybind.key)) {
-    system(termcmd);
+  // Handle terminal keybind
+  if(checkkeybind(keysym, key_ev->state, terminalkeybind)) {
+    system(terminalcmd);
   }
-  if(modsdown(key_ev->state, exitkeybind.mods, arraylen(exitkeybind.mods) 
-              && keysym == exitkeybind.key)) {
+
+  // Handle exit keybind
+  else if(checkkeybind(keysym, key_ev->state, exitkeybind)) {
     terminate();
   }
 }
@@ -232,7 +231,7 @@ addclient(xcb_window_t win) {
   // Allocate client structure
   client* cl = (client*)malloc(sizeof(*cl));
   cl->win = win;
-  
+
   // Get the window area
   bool success;
   area area = winarea(win, &success);
@@ -282,35 +281,24 @@ unfocusclient(client* cl) {
 
 void 
 grabkeybind(keybind bind, xcb_window_t win) {
-  uint32_t modmask = 0;
-  for(uint32_t i = 0; i < arraylen(bind.mods); i++) {
-    modmask |= bind.mods[i];
-  }
-  xcb_keycode_t keycode = xcb_key_symbols_get_keycode(s.keysyms, modmask)[0];
+  xcb_keycode_t keycode = xcb_key_symbols_get_keycode(s.key_symbols, bind.key)[0];
   if (!keycode) {
     fprintf(stderr, "ragnar: unable to get keycode for key\n");
     exit(1);
   }
-  xcb_grab_key(s.con, 1, win, modmask, bind.key,
+  xcb_grab_key(s.con, 1, win, bind.modmask, keycode,
                XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
 }
 
 void
 setupkeybinds(xcb_window_t win) {
-  grabkeybind(termkeybind, win);
+  grabkeybind(terminalkeybind, win);
   grabkeybind(exitkeybind, win);
-  xcb_flush(s.con);
 }
+
 bool
-modsdown(uint16_t state, uint16_t* mods, size_t modscount) {
-  bool down = true;
-  for(uint32_t i = 0; i < modscount; i++) {
-    if(!(state & mods[i])) {
-      down = false;
-      break;
-    }
-  }
-  return down;
+checkkeybind(xcb_keysym_t keysym, uint16_t state, keybind bind) {
+  return keysym == bind.key && (state & (bind.modmask)) == (bind.modmask);
 }
 
 int 
