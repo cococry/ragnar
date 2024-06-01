@@ -3,8 +3,6 @@
 #define ALT   XCB_MOD_MASK_1
 #define SUPER XCB_MOD_MASK_4
 
-#define _XCB_MOD_COUNT 6
-
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
