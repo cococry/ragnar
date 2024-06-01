@@ -2,7 +2,7 @@ CC = cc
 
 # includes and flags
 CFLAGS = -O3 -ffast-math -Wall -Wextra
-LIBS = -lxcb 
+LIBS = -lxcb -lxcb-keysyms 
 FREETYPEINC = /usr/include/freetype2
 INCS = -I${FREETYPEINC}
 

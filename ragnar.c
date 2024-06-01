@@ -3,13 +3,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
+#include <stdbool.h>
+
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 #include <xcb/xcb_cursor.h>
-#include <stdbool.h>
+#include <xcb/xcb_keysyms.h>
+#include <xcb/xcb_icccm.h>
+#include <xcb/xcb_util.h>
+#include <X11/keysym.h>
+
+#include "config.h"
 
 #define _XCB_EV_LAST 35
-
 #define arraylen(arr) (sizeof(arr) / sizeof(arr[0]))
 
 typedef struct {
@@ -36,6 +43,8 @@ typedef struct {
   xcb_window_t root;
 
   client* clients;
+
+  xcb_key_symbols_t* keysyms;
 } State;
 
 
@@ -50,15 +59,25 @@ static area     winarea(xcb_window_t win, bool* success);
 static void     evmaprequest(xcb_generic_event_t* ev);
 static void     evunmapnotify(xcb_generic_event_t* ev);
 static void     eventernotify(xcb_generic_event_t* ev);
+static void     evkeypress(xcb_generic_event_t* ev);
 
-static void     addclient(xcb_window_t win);
-static void     removeclient(xcb_window_t win);
+static client*  addclient(xcb_window_t win);
+static void     releaseclient(xcb_window_t win);
 static client*  clientfromwin(xcb_window_t win);
 
+static void     focusclient(client* cl);
+static void     unfocusclient(client* cl);
+
+static void     grabkeybind(keybind bind, xcb_window_t win);
+static void     setupkeybinds(xcb_window_t win);
+
+static bool     modsdown(uint16_t state, uint16_t* mods, size_t modscount);
+
 static event_handler_t evhandlers[_XCB_EV_LAST] = {
-  [XCB_MAP_REQUEST] = evmaprequest,
-  [XCB_UNMAP_NOTIFY] = evunmapnotify,
-  [XCB_ENTER_NOTIFY] = eventernotify
+  [XCB_MAP_REQUEST]   = evmaprequest,
+  [XCB_UNMAP_NOTIFY]  = evunmapnotify,
+  [XCB_ENTER_NOTIFY]  = eventernotify,
+  [XCB_KEY_PRESS]     = evkeypress 
 };
 
 static State s;
@@ -68,19 +87,26 @@ setup() {
   s.clients = NULL;
   s.con = xcb_connect(NULL, NULL);
   if (xcb_connection_has_error(s.con)) {
-    fprintf(stderr, "Cannot open display\n");
+    fprintf(stderr, "ragnar: cannot open display\n");
+    exit(1);
+  }
+  xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
+  s.root = screen->root;
+
+
+  s.keysyms = xcb_key_symbols_alloc(s.con);
+  if (!s.keysyms) {
+    fprintf(stderr, "ragnar: unable to allocate key symbols\n");
     exit(1);
   }
 
-  const xcb_setup_t *setup = xcb_get_setup(s.con);
-  xcb_screen_iterator_t iter = xcb_setup_roots_iterator(setup);
-  xcb_screen_t *screen = iter.data;
-  s.root = screen->root;
+  setupkeybinds(s.root);
 
   uint32_t values[] = {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-    XCB_EVENT_MASK_ENTER_WINDOW
+    XCB_EVENT_MASK_ENTER_WINDOW | 
+    XCB_EVENT_MASK_KEY_PRESS
   };
   xcb_change_window_attributes(s.con, s.root, XCB_CW_EVENT_MASK, values);
   xcb_flush(s.con);
@@ -101,6 +127,7 @@ loop() {
 void 
 terminate() {
   xcb_disconnect(s.con);
+  exit(0);
 }
 
 bool
@@ -133,11 +160,19 @@ winarea(xcb_window_t win, bool* success) {
 void 
 evmaprequest(xcb_generic_event_t* ev) {
   xcb_map_request_event_t* map_ev = (xcb_map_request_event_t*)ev;
+
+  // Set window properties
+  xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_BORDER_PIXEL, &winbordercolor);
+  xcb_configure_window(s.con, map_ev->window, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){winborderwidth});
+
+  // Setup keybindings
+  setupkeybinds(map_ev->window);
+
   // Map the window
   xcb_map_window(s.con, map_ev->window);
 
   // Listen for enter events on that window
-  uint32_t values[] = { XCB_EVENT_MASK_ENTER_WINDOW };
+  uint32_t values[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_KEY_PRESS };
   xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_EVENT_MASK, values);
 
   // Retrieving cursor position
@@ -145,47 +180,58 @@ evmaprequest(xcb_generic_event_t* ev) {
   v2 cursor = cursorpos(&cursor_success);
   if(!cursor_success) goto flush;
 
-  // Retrieving geometry of the mapped window 
-  bool area_success;
-  area win = winarea(map_ev->window, &area_success);
-  if(!area_success) goto flush;
-
+  client* cl = addclient(map_ev->window);
   // If the cursor is on the mapped window when it spawned, focus it.
-  if(pointinarea(cursor, win)) {
-    xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, map_ev->window, XCB_CURRENT_TIME);
+  if(pointinarea(cursor, cl->area)) {
+    focusclient(cl);
   }
 flush:
   xcb_flush(s.con);
 
-  addclient(map_ev->window);
 }
 
 void 
 evunmapnotify(xcb_generic_event_t* ev) {
-  // Unmap the window
+  // Retrieve the event
   xcb_unmap_notify_event_t* unmap_ev = (xcb_unmap_notify_event_t*)ev;
-  xcb_unmap_window(s.con, unmap_ev->window);
 
   // Remove the client from the list
-  removeclient(unmap_ev->window);
+  releaseclient(unmap_ev->window);
+
+  // Unmap the window
+  xcb_unmap_window(s.con, unmap_ev->window);
+
 }
 
 void 
 eventernotify(xcb_generic_event_t* ev) {
   xcb_enter_notify_event_t *enter_ev = (xcb_enter_notify_event_t*)ev;
 
-  client* cl = clientfromwin(enter_ev->event);
   // Set input focus on window enter
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, enter_ev->event, XCB_CURRENT_TIME);
   xcb_flush(s.con);
 }
 
-void 
+void
+evkeypress(xcb_generic_event_t* ev) {
+  xcb_key_press_event_t* key_ev = (xcb_key_press_event_t*)ev;
+  xcb_keysym_t keysym = xcb_key_symbols_get_keysym(xcb_key_symbols_alloc(s.con), key_ev->detail, 0);
+
+  if(modsdown(key_ev->state, termkeybind.mods, arraylen(termkeybind.mods) 
+              && keysym == termkeybind.key)) {
+    system(termcmd);
+  }
+  if(modsdown(key_ev->state, exitkeybind.mods, arraylen(exitkeybind.mods) 
+              && keysym == exitkeybind.key)) {
+    terminate();
+  }
+}
+
+client*
 addclient(xcb_window_t win) {
   // Allocate client structure
   client* cl = (client*)malloc(sizeof(*cl));
   cl->win = win;
-  cl->next = s.clients;
   
   // Get the window area
   bool success;
@@ -193,15 +239,18 @@ addclient(xcb_window_t win) {
   assert(success && "Failed to get window area.");
   cl->area = area;
 
+  cl->next = s.clients;
   s.clients = cl;
+  return cl;
 }
 
 void 
-removeclient(xcb_window_t win) {
+releaseclient(xcb_window_t win) {
   client** prev = &s.clients;
   client* cl = s.clients;
   while(cl) {
     if(cl->win == win) {
+      unfocusclient(cl);
       *prev = cl->next;
       free(cl);
       return;
@@ -219,6 +268,49 @@ clientfromwin(xcb_window_t win) {
     if(cl->win == win) return cl;
   }
   return NULL;
+}
+
+void
+focusclient(client* cl) {
+  xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
+}
+
+void
+unfocusclient(client* cl) {
+  (void)cl;
+}
+
+void 
+grabkeybind(keybind bind, xcb_window_t win) {
+  uint32_t modmask = 0;
+  for(uint32_t i = 0; i < arraylen(bind.mods); i++) {
+    modmask |= bind.mods[i];
+  }
+  xcb_keycode_t keycode = xcb_key_symbols_get_keycode(s.keysyms, modmask)[0];
+  if (!keycode) {
+    fprintf(stderr, "ragnar: unable to get keycode for key\n");
+    exit(1);
+  }
+  xcb_grab_key(s.con, 1, win, modmask, bind.key,
+               XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+}
+
+void
+setupkeybinds(xcb_window_t win) {
+  grabkeybind(termkeybind, win);
+  grabkeybind(exitkeybind, win);
+  xcb_flush(s.con);
+}
+bool
+modsdown(uint16_t state, uint16_t* mods, size_t modscount) {
+  bool down = true;
+  for(uint32_t i = 0; i < modscount; i++) {
+    if(!(state & mods[i])) {
+      down = false;
+      break;
+    }
+  }
+  return down;
 }
 
 int 
