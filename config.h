@@ -2,10 +2,8 @@
 
 typedef enum {
   Shift     = XCB_MOD_MASK_SHIFT,
-  CapsLock  = XCB_MOD_MASK_LOCK,
   Control   = XCB_MOD_MASK_CONTROL,
   Alt       = XCB_MOD_MASK_1,
-  NumLock   = XCB_MOD_MASK_2,
   Super     = XCB_MOD_MASK_4
 } kb_modifier;
 
