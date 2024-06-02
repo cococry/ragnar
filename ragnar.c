@@ -16,7 +16,7 @@
 
 #include "config.h"
 
-#define _XCB_EV_LAST 35
+#define _XCB_EV_LAST 36 
 #define arraylen(arr) (sizeof(arr) / sizeof(arr[0]))
 
 typedef struct {
@@ -56,31 +56,40 @@ static bool     pointinarea(v2 p, area a);
 static v2       cursorpos(bool* success);
 static area     winarea(xcb_window_t win, bool* success);
 
+static void     setbordercolor(xcb_window_t win, uint32_t color);
+
 static void     evmaprequest(xcb_generic_event_t* ev);
 static void     evunmapnotify(xcb_generic_event_t* ev);
 static void     eventernotify(xcb_generic_event_t* ev);
+static void     evfocusin(xcb_generic_event_t* ev);
+static void     evfocusout(xcb_generic_event_t* ev);
 static void     evkeypress(xcb_generic_event_t* ev);
+static void     evbuttonpress(xcb_generic_event_t* ev);
 
 static client*  addclient(xcb_window_t win);
 static void     releaseclient(xcb_window_t win);
 static client*  clientfromwin(xcb_window_t win);
 
 static void     focusclient(client* cl);
-static void     unfocusclient(client* cl);
 
 static void     grabkeybind(keybind bind, xcb_window_t win);
 static void     setupkeybinds(xcb_window_t win);
 static bool     checkkeybind(xcb_keysym_t keysym, uint16_t state, keybind bind);
 
+
 static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_MAP_REQUEST]   = evmaprequest,
   [XCB_UNMAP_NOTIFY]  = evunmapnotify,
   [XCB_ENTER_NOTIFY]  = eventernotify,
-  [XCB_KEY_PRESS]     = evkeypress 
+  [XCB_KEY_PRESS]     = evkeypress,
+  [XCB_FOCUS_IN]      = evfocusin,
+  [XCB_FOCUS_OUT]     = evfocusout,
+  [XCB_BUTTON_PRESS]  = evbuttonpress
 };
 
 static State s;
 
+  // Flus
 void
 setup() {
   s.clients = NULL;
@@ -92,22 +101,33 @@ setup() {
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
 
-
   s.key_symbols = xcb_key_symbols_alloc(s.con);
   if (!s.key_symbols) {
     fprintf(stderr, "ragnar: unable to allocate key symbols\n");
     exit(1);
   }
 
-
+  /* Setting event mask for root window */
   uint32_t values[] = {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+    XCB_EVENT_MASK_STRUCTURE_NOTIFY |
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-    XCB_EVENT_MASK_ENTER_WINDOW | 
-    XCB_EVENT_MASK_KEY_PRESS
+    XCB_EVENT_MASK_PROPERTY_CHANGE |
+    XCB_EVENT_MASK_ENTER_WINDOW |
+    XCB_EVENT_MASK_FOCUS_CHANGE
   };
   xcb_change_window_attributes(s.con, s.root, XCB_CW_EVENT_MASK, values);
+
+  // Ungrabbing any grabbed keys
+	xcb_ungrab_key(s.con, XCB_GRAB_ANY, s.root, XCB_MOD_MASK_ANY);
+
+  // Grab left mouse button with move modifier
+	xcb_grab_button(s.con, 0, s.root, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE, 
+                 XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, s.root, XCB_NONE, 1, movewinmod);
+
+  // Grabbing window manager's keybindings
   setupkeybinds(s.root);
+
   xcb_flush(s.con);
 }
 
@@ -156,21 +176,27 @@ winarea(xcb_window_t win, bool* success) {
   }
   return a;
 }
+
+void
+setbordercolor(xcb_window_t win, uint32_t color) {
+  xcb_change_window_attributes(s.con, win, XCB_CW_BORDER_PIXEL, &color);
+  xcb_configure_window(s.con, win, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){winborderwidth});
+}
+
 void 
 evmaprequest(xcb_generic_event_t* ev) {
   xcb_map_request_event_t* map_ev = (xcb_map_request_event_t*)ev;
 
-  // Set window properties
-  xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_BORDER_PIXEL, &winbordercolor);
-  xcb_configure_window(s.con, map_ev->window, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){winborderwidth});
+  // Setup listened events for the mapped window
+  uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE };
+  xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
 
+  // Set initial border color
+  setbordercolor(map_ev->window, winbordercolor);
 
   // Map the window
   xcb_map_window(s.con, map_ev->window);
 
-  // Listen for enter events on that window
-  uint32_t values[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_KEY_PRESS };
-  xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_EVENT_MASK, values);
 
   // Retrieving cursor position
   bool cursor_success;
@@ -185,7 +211,6 @@ evmaprequest(xcb_generic_event_t* ev) {
 
 flush:
   xcb_flush(s.con);
-
 }
 
 void 
@@ -198,16 +223,32 @@ evunmapnotify(xcb_generic_event_t* ev) {
 
   // Unmap the window
   xcb_unmap_window(s.con, unmap_ev->window);
-
 }
 
 void 
 eventernotify(xcb_generic_event_t* ev) {
   xcb_enter_notify_event_t *enter_ev = (xcb_enter_notify_event_t*)ev;
 
-  // Set input focus on window enter
-  xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, enter_ev->event, XCB_CURRENT_TIME);
+  client* cl = clientfromwin(enter_ev->event);
+  if(cl) 
+    focusclient(cl);
+  else {
+    xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
+  }
+
   xcb_flush(s.con);
+}
+
+void
+evfocusin(xcb_generic_event_t* ev) {
+  xcb_focus_in_event_t* focus_ev = (xcb_focus_in_event_t*)ev;
+  setbordercolor(focus_ev->event, winbordercolor_selected);
+}
+
+void
+evfocusout(xcb_generic_event_t* ev) {
+  xcb_focus_out_event_t* focus_ev = (xcb_focus_out_event_t*)ev;
+  setbordercolor(focus_ev->event, winbordercolor);
 }
 
 void
@@ -223,6 +264,20 @@ evkeypress(xcb_generic_event_t* ev) {
   // Handle exit keybind
   else if(checkkeybind(keysym, key_ev->state, exitkeybind)) {
     terminate();
+  }
+}
+
+void
+evbuttonpress(xcb_generic_event_t* ev) {
+  exit(1);
+  xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
+
+  // Check if the button press was the left mouse button (button 1)
+  if (button_ev->detail == 1) {
+    // Raise the window to the top
+    uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+    xcb_configure_window(s.con, button_ev->event, XCB_CONFIG_WINDOW_STACK_MODE, values);
+    xcb_flush(s.con);
   }
 }
 
@@ -249,7 +304,6 @@ releaseclient(xcb_window_t win) {
   client* cl = s.clients;
   while(cl) {
     if(cl->win == win) {
-      unfocusclient(cl);
       *prev = cl->next;
       free(cl);
       return;
@@ -271,23 +325,22 @@ clientfromwin(xcb_window_t win) {
 
 void
 focusclient(client* cl) {
+  if(!cl->win || cl->win == s.root) return;
+  // Set input focus to client
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
-}
 
-void
-unfocusclient(client* cl) {
-  (void)cl;
+  // Change border color to indicate selection
+  setbordercolor(cl->win, winbordercolor_selected);
 }
 
 void 
 grabkeybind(keybind bind, xcb_window_t win) {
   xcb_keycode_t keycode = xcb_key_symbols_get_keycode(s.key_symbols, bind.key)[0];
   if (!keycode) {
-    fprintf(stderr, "ragnar: unable to get keycode for key\n");
+    fprintf(stderr, "ragnar: unable to get keycode for given key.\n");
     exit(1);
   }
-  xcb_grab_key(s.con, 1, win, bind.modmask, keycode,
-               XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+  xcb_grab_key(s.con, 1, win, bind.modmask, keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
 }
 
 void
@@ -304,8 +357,8 @@ checkkeybind(xcb_keysym_t keysym, uint16_t state, keybind bind) {
 int 
 main() {
   setup();
-  system("st &");
   loop();
   terminate();
   return 0;
 }
+
