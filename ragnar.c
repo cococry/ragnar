@@ -52,6 +52,9 @@
 #include <wlr/util/log.h>
 #include <wlr/util/region.h>
 #include <xkbcommon/xkbcommon.h>
+
+#include "config.h"
+
 #define bind_listen(_cb, _to, _handle) {  \
   _to.notify = _cb;                       \
   wl_signal_add(_handle, &_to);           \
@@ -63,7 +66,7 @@
                         ((hex >> 8) & 0xFF) / 255.0f, \
                         (hex & 0xFF) / 255.0f }
 
-static const float bordercolor[]           = COLOR(0xff0000ff);
+static const float bordercolor[] = COLOR(winbordercolor);
 
 typedef enum {
 	CursorModeNone,
@@ -77,6 +80,7 @@ typedef enum {
   LayerTiled = 0,
   LayerNum
 } layer_type;
+
 typedef struct {	
 	struct wl_list clients, keyboards, mons;
 
@@ -137,8 +141,10 @@ struct clientwin {
 
 	struct wl_list link;
   struct wlr_xdg_surface* surface;
-	struct wlr_scene_tree* scenetree, *scene;
+	struct wlr_scene_tree* scenesurface, *scene;
   struct wlr_xdg_toplevel_decoration_v1* decoration;
+
+  struct wlr_box geometry;
 
 	struct wl_listener map_cb;
 	struct wl_listener unmap_cb;
@@ -152,6 +158,7 @@ struct clientwin {
   struct wl_listener request_decoration_mode_cb;
 
   struct wlr_scene_rect* border[4];
+  uint32_t borderwidth;
 };
 
 typedef struct {
@@ -173,7 +180,8 @@ typedef struct {
 
 static void         clientfocus(clientwin* client, struct wlr_surface *surface);
 
-static bool         handlekeybind(comp_state* state, xkb_keysym_t key);
+static bool         handlekeybind(comp_state* state, xkb_keysym_t key, uint32_t modifiers);
+static bool         checkkeybind(xkb_keysym_t key, uint32_t modifiers, keybind bind);
 static void         kbmods(struct wl_listener* listener, void* data);
 static void         kbkey(struct wl_listener* listener, void* data);
 static void         kbdestroy(struct wl_listener* listener, void* data);
@@ -210,8 +218,6 @@ static void         clientunmap(struct wl_listener* listener, void* data);
 static void         clientcommit(struct wl_listener* listener, void* data);
 static void         clientdestroy(struct wl_listener* listener, void* data);
 
-static void         clientreqmove(struct wl_listener* listener, void* data);
-static void         clientreqresize(struct wl_listener* listener, void* data);
 static void         clientreqmaximize(struct wl_listener* listener, void* data);
 static void         clientreqfullscreen(struct wl_listener* listener, void* data);
 
@@ -250,7 +256,7 @@ void clientfocus(clientwin* client, struct wlr_surface *surface) {
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
 
   // Raise & activate client
-	wlr_scene_node_raise_to_top(&client->scenetree->node);
+	wlr_scene_node_raise_to_top(&client->scenesurface->node);
 	wl_list_remove(&client->link);
 	wl_list_insert(&state->clients, &client->link);
 	wlr_xdg_toplevel_set_activated(client->surface->toplevel, true);
@@ -272,22 +278,20 @@ static void kbmods(struct wl_listener* listener, void* data) {
 }
 
 
-bool handlekeybind(comp_state* state, xkb_keysym_t key) {
-	switch (key) {
-	case XKB_KEY_Escape:
-		wl_display_terminate(state->display);
-		break;
-	case XKB_KEY_Tab:
-		if (wl_list_length(&state->clients) < 2) {
-			break;
-		}
-		clientwin* next_cylce = wl_container_of(state->clients.prev, next_cylce, link);
-		clientfocus(next_cylce, next_cylce->surface->toplevel->base->surface);
-		break;
-	default:
-		return false;
-	}
-	return true;
+bool handlekeybind(comp_state* state, xkb_keysym_t key, uint32_t modifiers) {
+  if(checkkeybind(key, modifiers, exitkeybind)) {
+    wl_display_terminate(state->display);
+    return true;
+  }
+  else if(checkkeybind(key, modifiers, terminalkeybind)) {
+    system(terminalcmd);
+    return true;
+  }
+	return false;
+}
+
+bool checkkeybind(xkb_keysym_t key, uint32_t modifiers, keybind bind) {
+  return key == bind.key && (modifiers & (bind.modmask)) == (bind.modmask);
 }
 
 void kbkey(struct wl_listener* listener, void* data) {
@@ -305,10 +309,9 @@ void kbkey(struct wl_listener* listener, void* data) {
 
 	bool consumed = false;
 	uint32_t modifiers = wlr_keyboard_get_modifiers(kb->wlrkb);
-	if ((modifiers & WLR_MODIFIER_ALT) &&
-			event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-		for (int i = 0; i < numkeys; i++) {
-			consumed = handlekeybind(state, keys[i]);
+	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+		for (uint32_t i = 0; i < numkeys; i++) {
+			consumed = handlekeybind(state, keys[i], modifiers);
 		}
 	}
 
@@ -436,7 +439,7 @@ void curmodereset(comp_state* state) {
 
 void movegrab(comp_state* state, uint32_t time) {
   // Move grabbed client
-	wlr_scene_node_set_position(&state->grabclient->scenetree->node,
+	wlr_scene_node_set_position(&state->grabclient->scenesurface->node,
 		state->cursor->x - state->grabx,
 		state->cursor->y - state->graby);
 }
@@ -594,12 +597,36 @@ void monnew(struct wl_listener* listener, void* data) {
 void clientmap(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, map_cb);
   client->scene = client->surface->data = wlr_scene_tree_create(client->state->layers[LayerTiled]);
-  client->scenetree = wlr_scene_xdg_surface_create(client->scene, client->surface);
-  client->scene->node.data = client->scenetree->node.data = client;
+  client->scenesurface = wlr_scene_xdg_surface_create(client->scene, client->surface);
+  client->scene->node.data = client->scenesurface->node.data = client;
 
   wlr_xdg_toplevel_set_tiled(client->surface->toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
 
-	wl_list_insert(&client->state->clients, &client->link);
+  wlr_xdg_surface_get_geometry(client->surface, &client->geometry);
+
+  for(uint32_t i = 0; i < 4; i++) {
+    client->border[i] = wlr_scene_rect_create(client->scene, 0, 0, bordercolor);
+    client->border[i]->node.data = client;
+  }
+
+  client->geometry.width += 2 * client->borderwidth;
+  client->geometry.height += 2 * client->borderwidth;
+
+  wlr_scene_node_set_position(&client->scene->node, client->geometry.x, client->geometry.y);
+  wlr_scene_node_set_position(&client->scenesurface->node, client->borderwidth, client->borderwidth);
+
+  wlr_scene_rect_set_size(client->border[0], client->geometry.width, client->borderwidth);
+
+  wlr_scene_rect_set_size(client->border[1], client->geometry.width, client->borderwidth);
+  wlr_scene_node_set_position(&client->border[1]->node, 0, client->geometry.height - client->borderwidth);
+
+  wlr_scene_rect_set_size(client->border[2], client->borderwidth, client->geometry.height - (2 * client->borderwidth));
+  wlr_scene_node_set_position(&client->border[2]->node, 0, client->borderwidth);
+
+  wlr_scene_rect_set_size(client->border[3], client->borderwidth, client->geometry.height - (2 * client->borderwidth));
+  wlr_scene_node_set_position(&client->border[3]->node, client->geometry.width - client->borderwidth, client->borderwidth);
+
+  wl_list_insert(&client->state->clients, &client->link);
 	clientfocus(client, client->surface->toplevel->base->surface);
 }
 
@@ -609,6 +636,7 @@ void clientunmap(struct wl_listener* listener, void* data) {
 	if (client == client->state->grabclient) {
 		curmodereset(client->state);
 	}
+  wlr_scene_node_destroy(&client->scene->node);
 
 	wl_list_remove(&client->link);
 }
@@ -630,8 +658,6 @@ void clientdestroy(struct wl_listener* listener, void* data) {
 	wl_list_remove(&client->unmap_cb.link);
 	wl_list_remove(&client->commit_cb.link);
 	wl_list_remove(&client->destroy_cb.link);
-	wl_list_remove(&client->reqmove_cb.link);
-	wl_list_remove(&client->reqresize_cb.link);
 	wl_list_remove(&client->reqmaximize_cb.link);
 	wl_list_remove(&client->reqfullscreen_cb.link);
 	free(client);
@@ -647,21 +673,21 @@ void interactive(clientwin* client, cursor_mode mode, uint32_t edges) {
 	state->curmode = mode;
 
 	if (mode == CursorModeMove) {
-		state->grabx = state->cursor->x - client->scenetree->node.x;
-		state->graby = state->cursor->y - client->scenetree->node.y;
+		state->grabx = state->cursor->x - client->scenesurface->node.x;
+		state->graby = state->cursor->y - client->scenesurface->node.y;
 	} else {
 		struct wlr_box geo;
 		wlr_xdg_surface_get_geometry(client->surface->toplevel->base, &geo);
 
-		double borderx = (client->scenetree->node.x + geo.x) + ((edges & WLR_EDGE_RIGHT) ? geo.width : 0);
-		double bordery = (client->scenetree->node.y + geo.y) + ((edges & WLR_EDGE_BOTTOM) ? geo.height : 0);
+		double borderx = (client->scenesurface->node.x + geo.x) + ((edges & WLR_EDGE_RIGHT) ? geo.width : 0);
+		double bordery = (client->scenesurface->node.y + geo.y) + ((edges & WLR_EDGE_BOTTOM) ? geo.height : 0);
 
 		state->grabx = state->cursor->x - borderx;
 		state->graby = state->cursor->y - bordery;
 
 		state->grabgeo = geo;
-		state->grabgeo.x += client->scenetree->node.x;
-		state->grabgeo.y += client->scenetree->node.y;
+		state->grabgeo.x += client->scenesurface->node.x;
+		state->grabgeo.y += client->scenesurface->node.y;
 
 		state->resize_edges = edges;
 	}
@@ -694,16 +720,6 @@ void destroydecoration(struct wl_listener* listener, void* data) {
   wl_list_remove(&client->request_decoration_mode_cb.link);
 }
 
-void clientreqmove(struct wl_listener* listener, void* data) {
-	clientwin* client = wl_container_of(listener, client, reqmove_cb);
-	interactive(client, CursorModeMove, 0);
-}
-
-void clientreqresize(struct wl_listener* listener, void* data) {
-	struct wlr_xdg_toplevel_resize_event *event = data;
-	clientwin* client = wl_container_of(listener, client, reqresize_cb);
-	interactive(client, CursorModeResize, event->edges);
-}
 
 void clientreqmaximize(struct wl_listener* listener, void* data) {
 	clientwin* client = wl_container_of(listener, client, reqmaximize_cb);
@@ -729,7 +745,9 @@ void clientnew(struct wl_listener* listener, void* data) {
 	clientwin* client = malloc(sizeof(clientwin));
   xdgtoplevel->base->data = client;
 	client->state = state;
+  client->decoration = NULL;
   client->surface = xdgtoplevel->base;
+  client->borderwidth = winborderwidth;  
   
 
   // Set up event listeners
@@ -738,8 +756,6 @@ void clientnew(struct wl_listener* listener, void* data) {
   bind_listen(clientcommit, client->commit_cb, &xdgtoplevel->base->surface->events.commit);
 
   bind_listen(clientdestroy, client->destroy_cb, &xdgtoplevel->events.destroy);
-  bind_listen(clientreqmove, client->reqmove_cb, &xdgtoplevel->events.request_move);
-  bind_listen(clientreqresize, client->reqresize_cb, &xdgtoplevel->events.request_resize);
   bind_listen(clientreqmaximize, client->reqmaximize_cb, &xdgtoplevel->events.request_maximize);
   bind_listen(clientreqfullscreen, client->reqfullscreen_cb, &xdgtoplevel->events.request_fullscreen);
 }
@@ -850,6 +866,7 @@ void comp_init(comp_state* state) {
 			WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
 	state->decorationmgr = wlr_xdg_decoration_manager_v1_create(state->display);
 	bind_listen(newdecoration, state->decoration_cb, &state->decorationmgr->events.new_toplevel_decoration);
+
 	const char *socket = wl_display_add_socket_auto(state->display);
 	if (!socket) {
 		wlr_backend_destroy(state->backend);
