@@ -1,7 +1,13 @@
 #pragma once
 
-#define ALT   XCB_MOD_MASK_1
-#define SUPER XCB_MOD_MASK_4
+typedef enum {
+  Shift     = XCB_MOD_MASK_SHIFT,
+  CapsLock  = XCB_MOD_MASK_LOCK,
+  Control   = XCB_MOD_MASK_CONTROL,
+  Alt       = XCB_MOD_MASK_1,
+  NumLock   = XCB_MOD_MASK_2,
+  Super     = XCB_MOD_MASK_4
+} kb_modifier;
 
 typedef struct {
   uint16_t modmask;
@@ -11,7 +17,7 @@ typedef struct {
 static int32_t winborderwidth = 1;
 static int32_t winbordercolor = 0xff0000;
 
-static keybind exitkeybind = {SUPER | ALT, XK_Escape};
-static keybind terminalkeybind = {SUPER, XK_Return};
+static keybind exitkeybind = {Super | Alt, XK_Escape};
+static keybind terminalkeybind = {Super, XK_Return};
 
 static const char* terminalcmd = "alacritty &";
