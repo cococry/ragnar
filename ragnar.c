@@ -20,7 +20,7 @@
 #define arraylen(arr) (sizeof(arr) / sizeof(arr[0]))
 
 typedef struct {
-  int16_t x, y;
+  float x, y;
 } v2;
 
 typedef struct {
@@ -43,8 +43,11 @@ typedef struct {
   xcb_window_t root;
 
   client* clients;
+  client* focus;
 
   xcb_key_symbols_t* key_symbols;
+
+  v2 grabcursor, grabwin;
 } State;
 
 
@@ -57,6 +60,8 @@ static v2       cursorpos(bool* success);
 static area     winarea(xcb_window_t win, bool* success);
 
 static void     setbordercolor(xcb_window_t win, uint32_t color);
+static void     moveclient(client* cl, v2 pos);
+static void     raisewin(xcb_window_t win);
 
 static void     evmaprequest(xcb_generic_event_t* ev);
 static void     evunmapnotify(xcb_generic_event_t* ev);
@@ -65,6 +70,7 @@ static void     evfocusin(xcb_generic_event_t* ev);
 static void     evfocusout(xcb_generic_event_t* ev);
 static void     evkeypress(xcb_generic_event_t* ev);
 static void     evbuttonpress(xcb_generic_event_t* ev);
+static void     evmotionnotify(xcb_generic_event_t* ev);
 
 static client*  addclient(xcb_window_t win);
 static void     releaseclient(xcb_window_t win);
@@ -84,12 +90,12 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_KEY_PRESS]     = evkeypress,
   [XCB_FOCUS_IN]      = evfocusin,
   [XCB_FOCUS_OUT]     = evfocusout,
-  [XCB_BUTTON_PRESS]  = evbuttonpress
+  [XCB_BUTTON_PRESS]  = evbuttonpress,
+  [XCB_MOTION_NOTIFY]  = evmotionnotify,
 };
 
 static State s;
 
-  // Flus
 void
 setup() {
   s.clients = NULL;
@@ -108,22 +114,21 @@ setup() {
   }
 
   /* Setting event mask for root window */
-  uint32_t values[] = {
+  uint32_t evmask[] = {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
     XCB_EVENT_MASK_STRUCTURE_NOTIFY |
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
     XCB_EVENT_MASK_PROPERTY_CHANGE |
     XCB_EVENT_MASK_ENTER_WINDOW |
-    XCB_EVENT_MASK_FOCUS_CHANGE
+    XCB_EVENT_MASK_FOCUS_CHANGE |
+    XCB_EVENT_MASK_BUTTON_PRESS
   };
-  xcb_change_window_attributes(s.con, s.root, XCB_CW_EVENT_MASK, values);
+  xcb_change_window_attributes(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
 
   // Ungrabbing any grabbed keys
 	xcb_ungrab_key(s.con, XCB_GRAB_ANY, s.root, XCB_MOD_MASK_ANY);
 
   // Grab left mouse button with move modifier
-	xcb_grab_button(s.con, 0, s.root, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE, 
-                 XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, s.root, XCB_NONE, 1, movewinmod);
 
   // Grabbing window manager's keybindings
   setupkeybinds(s.root);
@@ -163,6 +168,8 @@ cursorpos(bool* success) {
   v2 cursor = (v2){.x = reply->root_x, .y = reply->root_y};
   if((*success = (reply != NULL))) { 
     free(reply);
+  } else {
+    fprintf(stderr, "ragnar: failed to retrieve cursor position"); 
   }
   return cursor;
 }
@@ -171,8 +178,11 @@ area
 winarea(xcb_window_t win, bool* success) {
   xcb_get_geometry_reply_t *reply = xcb_get_geometry_reply(s.con, xcb_get_geometry(s.con, win), NULL);
   area a = (area){.pos = (v2){reply->x, reply->y}, .size = (v2){reply->width, reply->height}};
+  printf("%f, %f, | %f, %f\n", a.pos.x, a.pos.y, a.size.x, a.size.y);
   if((*success = (reply != NULL))) {
     free(reply);
+  } else {
+    fprintf(stderr, "ragnar: failed to retrieve cursor position"); 
   }
   return a;
 }
@@ -181,6 +191,30 @@ void
 setbordercolor(xcb_window_t win, uint32_t color) {
   xcb_change_window_attributes(s.con, win, XCB_CW_BORDER_PIXEL, &color);
   xcb_configure_window(s.con, win, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){winborderwidth});
+  xcb_flush(s.con);
+}
+
+void
+moveclient(client* cl, v2 pos) {
+  int32_t posval[2] = {
+    (uint32_t)pos.x, (uint32_t)pos.y
+  };
+
+  xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, posval);
+  xcb_flush(s.con);
+
+  bool success;
+  area a = winarea(cl->win, &success);
+  if(!success) return;
+
+  cl->area = a;
+}
+
+void
+raisewin(xcb_window_t win) {
+  uint32_t evmask[] = { XCB_STACK_MODE_ABOVE };
+  xcb_configure_window(s.con, win, XCB_CONFIG_WINDOW_STACK_MODE, evmask);
+  xcb_flush(s.con);
 }
 
 void 
@@ -188,8 +222,17 @@ evmaprequest(xcb_generic_event_t* ev) {
   xcb_map_request_event_t* map_ev = (xcb_map_request_event_t*)ev;
 
   // Setup listened events for the mapped window
-  uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE };
-  xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
+  {
+    uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE }; 
+    xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
+  }
+
+  // Grabbing mouse events for interactive moves/resizes 
+  {
+    uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
+    xcb_grab_button(s.con, 0, map_ev->window, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
+                    s.root, XCB_NONE, 1, winmod);
+  }
 
   // Set initial border color
   setbordercolor(map_ev->window, winbordercolor);
@@ -232,8 +275,14 @@ eventernotify(xcb_generic_event_t* ev) {
   client* cl = clientfromwin(enter_ev->event);
   if(cl) 
     focusclient(cl);
-  else {
+  else if(enter_ev->event == s.root) {
+    // Set Input focus to root
     xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
+    // Reset border color of every client 
+    client* cl;
+    for(cl = s.clients; cl != NULL; cl = cl->next) {
+      setbordercolor(cl->win, winbordercolor);
+    }
   }
 
   xcb_flush(s.con);
@@ -269,16 +318,35 @@ evkeypress(xcb_generic_event_t* ev) {
 
 void
 evbuttonpress(xcb_generic_event_t* ev) {
-  exit(1);
   xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
 
-  // Check if the button press was the left mouse button (button 1)
-  if (button_ev->detail == 1) {
-    // Raise the window to the top
-    uint32_t values[] = { XCB_STACK_MODE_ABOVE };
-    xcb_configure_window(s.con, button_ev->event, XCB_CONFIG_WINDOW_STACK_MODE, values);
-    xcb_flush(s.con);
+  client* cl = clientfromwin(button_ev->event);
+  if(!cl) return;
+  // Focusing client 
+  if(cl != s.focus) {
+    focusclient(cl);
   }
+
+  // Setting grab position
+  s.grabwin = cl->area.pos;
+  s.grabcursor = (v2){.x = (float)button_ev->root_x, (float)button_ev->root_y};
+
+  // Raising the client to the top of the stack
+  raisewin(cl->win);
+}
+
+void
+evmotionnotify(xcb_generic_event_t* ev) {
+  xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
+
+  client* cl = clientfromwin(motion_ev->event);
+
+  v2 dragpos    = (v2){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
+  v2 dragdelta  = (v2){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
+  v2 dragdest   = (v2){.x = (float)(s.grabwin.x + dragdelta.x), .y = (float)(s.grabwin.y + dragdelta.y)};
+
+  moveclient(cl, dragdest);
+
 }
 
 client*
@@ -331,6 +399,9 @@ focusclient(client* cl) {
 
   // Change border color to indicate selection
   setbordercolor(cl->win, winbordercolor_selected);
+
+  // Set the focused client
+  s.focus = cl;
 }
 
 void 

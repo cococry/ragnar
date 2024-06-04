@@ -5,9 +5,9 @@ static const int32_t winborderwidth           = 1;
 static const int32_t winbordercolor           = 0x5e5e5e;
 static const int32_t winbordercolor_selected  = 0xcccccc;
 
-static const kb_modifier movewinmod   = Super; 
+static const kb_modifier winmod       = Alt; 
 
-static const keybind exitkeybind      = {Super | Shift, KeyEscape};
-static const keybind terminalkeybind  = {Super, KeyReturn};
+static const keybind exitkeybind      = {Alt | Shift, KeyEscape};
+static const keybind terminalkeybind  = {Alt, KeyReturn};
 
 static const char* terminalcmd        = "alacritty &";
