@@ -9,5 +9,6 @@ static const kb_modifier winmod       = Alt;
 
 static const keybind exitkeybind      = {Alt | Shift, KeyEscape};
 static const keybind terminalkeybind  = {Alt, KeyReturn};
+static const keybind wincyclekeybind  = {Alt, KeyTab};
 
 static const char* terminalcmd        = "alacritty &";

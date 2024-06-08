@@ -17,7 +17,10 @@
 #include "config.h"
 
 #define _XCB_EV_LAST 36 
-#define arraylen(arr) (sizeof(arr) / sizeof(arr[0]))
+
+#define ARRLEN(arr) (sizeof(arr) / sizeof(arr[0]))
+#define MIN(a, b) (((a)<(b))?(a):(b))
+#define MAX(a, b) (((a)>(b))?(a):(b))
 
 typedef struct {
   float x, y;
@@ -47,7 +50,8 @@ typedef struct {
 
   xcb_key_symbols_t* key_symbols;
 
-  v2 grabcursor, grabwin;
+  v2 grabcursor;
+  area grabwin;
 } State;
 
 
@@ -61,6 +65,7 @@ static area     winarea(xcb_window_t win, bool* success);
 
 static void     setbordercolor(xcb_window_t win, uint32_t color);
 static void     moveclient(client* cl, v2 pos);
+static void     resizeclient(client* cl, v2 size);
 static void     raisewin(xcb_window_t win);
 
 static void     evmaprequest(xcb_generic_event_t* ev);
@@ -128,8 +133,6 @@ setup() {
   // Ungrabbing any grabbed keys
 	xcb_ungrab_key(s.con, XCB_GRAB_ANY, s.root, XCB_MOD_MASK_ANY);
 
-  // Grab left mouse button with move modifier
-
   // Grabbing window manager's keybindings
   setupkeybinds(s.root);
 
@@ -141,7 +144,7 @@ loop() {
   xcb_generic_event_t *ev;
   while ((ev= xcb_wait_for_event(s.con))) {
     uint8_t evcode = ev->response_type & ~0x80;
-    if(evcode < arraylen(evhandlers) && evhandlers[evcode]) {
+    if(evcode < ARRLEN(evhandlers) && evhandlers[evcode]) {
       evhandlers[evcode](ev);
     }
     free(ev);
@@ -200,9 +203,27 @@ moveclient(client* cl, v2 pos) {
     (uint32_t)pos.x, (uint32_t)pos.y
   };
 
+  // Move the window by configuring it's x and y position property
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, posval);
   xcb_flush(s.con);
 
+  /* Referesh window area aafter moving it on X server. */
+  bool success;
+  area a = winarea(cl->win, &success);
+  if(!success) return;
+
+  cl->area = a;
+}
+
+void
+resizeclient(client* cl, v2 size) {
+  uint32_t sizeval[2] = { (uint32_t)size.x, (uint32_t)size.y };
+
+  // Resize the window by configuring it's width and height property
+  xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
+  xcb_flush(s.con);
+
+  /* Referesh window area aafter resizing it on X server. */
   bool success;
   area a = winarea(cl->win, &success);
   if(!success) return;
@@ -232,6 +253,8 @@ evmaprequest(xcb_generic_event_t* ev) {
     uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
     xcb_grab_button(s.con, 0, map_ev->window, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
                     s.root, XCB_NONE, 1, winmod);
+    xcb_grab_button(s.con, 0, map_ev->window, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
+                    s.root, XCB_NONE, 3, winmod);
   }
 
   // Set initial border color
@@ -314,6 +337,17 @@ evkeypress(xcb_generic_event_t* ev) {
   else if(checkkeybind(keysym, key_ev->state, exitkeybind)) {
     terminate();
   }
+
+  // Handle window cycle keybind
+  else if(checkkeybind(keysym, key_ev->state, wincyclekeybind)) {
+    if(s.focus->next != NULL) {
+      s.focus = s.focus->next;
+    }
+    else {
+      s.focus = s.clients;
+    }
+    focusclient(s.focus);
+  }
 }
 
 void
@@ -328,7 +362,7 @@ evbuttonpress(xcb_generic_event_t* ev) {
   }
 
   // Setting grab position
-  s.grabwin = cl->area.pos;
+  s.grabwin = cl->area;
   s.grabcursor = (v2){.x = (float)button_ev->root_x, (float)button_ev->root_y};
 
   // Raising the client to the top of the stack
@@ -341,11 +375,29 @@ evmotionnotify(xcb_generic_event_t* ev) {
 
   client* cl = clientfromwin(motion_ev->event);
 
-  v2 dragpos    = (v2){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
-  v2 dragdelta  = (v2){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
-  v2 dragdest   = (v2){.x = (float)(s.grabwin.x + dragdelta.x), .y = (float)(s.grabwin.y + dragdelta.y)};
 
-  moveclient(cl, dragdest);
+  // Position of the cursor in the drag event
+  v2 dragpos    = (v2){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
+
+  // Drag difference from the current drag event to the initial grab 
+  v2 dragdelta  = (v2){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
+
+  // On left click, move the window
+  if(motion_ev->state & XCB_BUTTON_MASK_1) {
+    // New position of the window
+    v2 movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
+
+    moveclient(cl, movedest);
+  } 
+  // On right click resize the window
+  else if(motion_ev->state & XCB_BUTTON_MASK_3) {
+    // Resize delta (clamped)
+    v2 resizedelta  = (v2){.x = MAX(dragdelta.x, -s.grabwin.size.x), .y = MAX(dragdelta.y, -s.grabwin.size.y)};
+    // New window size
+    v2 sizedest = (v2){.x = s.grabwin.size.x + resizedelta.x, .y = s.grabwin.size.y + resizedelta.y};
+
+    resizeclient(cl, sizedest);
+  }
 
 }
 
@@ -418,6 +470,7 @@ void
 setupkeybinds(xcb_window_t win) {
   grabkeybind(terminalkeybind, win);
   grabkeybind(exitkeybind, win);
+  grabkeybind(wincyclekeybind, win);
 }
 
 bool
