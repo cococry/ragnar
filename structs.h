@@ -1,5 +1,7 @@
 #pragma once
 
+#define _XCB_EV_LAST 36 
+
 typedef enum {
   Shift     = XCB_MOD_MASK_SHIFT,
   Control   = XCB_MOD_MASK_CONTROL,
@@ -10,6 +12,8 @@ typedef enum {
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
+  void (*cb)();
+  char* cmd;
 } keybind;
 
 typedef enum {
@@ -196,3 +200,71 @@ typedef enum {
     KeyHyper_L = XK_Hyper_L,
     KeyHyper_R = XK_Hyper_R,
 } keycode_t;
+
+typedef struct {
+  float x, y;
+} v2;
+
+typedef struct {
+  v2 pos, size;
+} area;
+
+typedef void (*event_handler_t)(xcb_generic_event_t* ev);
+
+typedef struct client client;
+
+struct client {
+  area area;
+  xcb_window_t win;
+
+  client* next;
+
+  uint32_t borderwidth;
+};
+
+typedef struct {
+  xcb_connection_t* con;
+  xcb_window_t root;
+
+  client* clients;
+  client* focus;
+
+  v2 grabcursor;
+  area grabwin;
+} State;
+
+static void     setup();
+static void     loop();
+static void     terminate();
+
+static bool     pointinarea(v2 p, area a);
+static v2       cursorpos(bool* success);
+static area     winarea(xcb_window_t win, bool* success);
+
+static void     setbordercolor(client* cl, uint32_t color);
+static void     setborderwidth(client* cl, uint32_t width);
+static void     moveclient(client* cl, v2 pos);
+static void     resizeclient(client* cl, v2 size);
+static void     raiseclient(client* cl);
+static void     killclient(client* cl);
+static void     killfocus();
+static void     focusclient(client* cl);
+static void     configclient(client* cl);
+static void     cyclefocus();
+
+static void     evmaprequest(xcb_generic_event_t* ev);
+static void     evunmapnotify(xcb_generic_event_t* ev);
+static void     eventernotify(xcb_generic_event_t* ev);
+static void     evfocusin(xcb_generic_event_t* ev);
+static void     evfocusout(xcb_generic_event_t* ev);
+static void     evkeypress(xcb_generic_event_t* ev);
+static void     evbuttonpress(xcb_generic_event_t* ev);
+static void     evmotionnotify(xcb_generic_event_t* ev);
+static void     evconfigrequest(xcb_generic_event_t* ev);
+
+static client*  addclient(xcb_window_t win);
+static void     releaseclient(xcb_window_t win);
+static client*  clientfromwin(xcb_window_t win);
+
+static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
+static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
