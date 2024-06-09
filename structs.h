@@ -232,39 +232,3 @@ typedef struct {
   v2 grabcursor;
   area grabwin;
 } State;
-
-static void     setup();
-static void     loop();
-static void     terminate();
-
-static bool     pointinarea(v2 p, area a);
-static v2       cursorpos(bool* success);
-static area     winarea(xcb_window_t win, bool* success);
-
-static void     setbordercolor(client* cl, uint32_t color);
-static void     setborderwidth(client* cl, uint32_t width);
-static void     moveclient(client* cl, v2 pos);
-static void     resizeclient(client* cl, v2 size);
-static void     raiseclient(client* cl);
-static void     killclient(client* cl);
-static void     killfocus();
-static void     focusclient(client* cl);
-static void     configclient(client* cl);
-static void     cyclefocus();
-
-static void     evmaprequest(xcb_generic_event_t* ev);
-static void     evunmapnotify(xcb_generic_event_t* ev);
-static void     eventernotify(xcb_generic_event_t* ev);
-static void     evfocusin(xcb_generic_event_t* ev);
-static void     evfocusout(xcb_generic_event_t* ev);
-static void     evkeypress(xcb_generic_event_t* ev);
-static void     evbuttonpress(xcb_generic_event_t* ev);
-static void     evmotionnotify(xcb_generic_event_t* ev);
-static void     evconfigrequest(xcb_generic_event_t* ev);
-
-static client*  addclient(xcb_window_t win);
-static void     releaseclient(xcb_window_t win);
-static client*  clientfromwin(xcb_window_t win);
-
-static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
-static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);

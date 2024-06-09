@@ -17,6 +17,45 @@
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
 
+#include "structs.h"
+
+static void     setup();
+static void     loop();
+static void     terminate();
+
+static bool     pointinarea(v2 p, area a);
+static v2       cursorpos(bool* success);
+static area     winarea(xcb_window_t win, bool* success);
+
+static void     setbordercolor(client* cl, uint32_t color);
+static void     setborderwidth(client* cl, uint32_t width);
+static void     moveclient(client* cl, v2 pos);
+static void     resizeclient(client* cl, v2 size);
+static void     raiseclient(client* cl);
+static void     killclient(client* cl);
+static void     killfocus();
+static void     focusclient(client* cl);
+static void     configclient(client* cl);
+static void     cyclefocus();
+
+static void     evmaprequest(xcb_generic_event_t* ev);
+static void     evunmapnotify(xcb_generic_event_t* ev);
+static void     eventernotify(xcb_generic_event_t* ev);
+static void     evfocusin(xcb_generic_event_t* ev);
+static void     evfocusout(xcb_generic_event_t* ev);
+static void     evkeypress(xcb_generic_event_t* ev);
+static void     evbuttonpress(xcb_generic_event_t* ev);
+static void     evmotionnotify(xcb_generic_event_t* ev);
+static void     evconfigrequest(xcb_generic_event_t* ev);
+
+static client*  addclient(xcb_window_t win);
+static void     releaseclient(xcb_window_t win);
+static client*  clientfromwin(xcb_window_t win);
+
+static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
+static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
+
+// This needs to be included after the function definitionss
 #include "config.h"
 
 
@@ -38,10 +77,24 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
 
 static State s;
 
+/**
+ * @brief Sets up the WM state and the X server 
+ *
+ * This function establishes a connection to the x server,
+ * sets up the root window and window manager keybindings.
+ * The event mask of the root window is being cofigured to
+ * listen to necessary events. 
+ * After the configuration of the root window, all the specified
+ * keybinds in config.h are grabbed by the window manager.
+ *
+ */
 void
 setup() {
   s.clients = NULL;
+
+  // Connecting to the X server
   s.con = xcb_connect(NULL, NULL);
+  // Checking for errors
   if (xcb_connection_has_error(s.con)) {
     fprintf(stderr, "ragnar: cannot open display\n");
     exit(1);
@@ -59,7 +112,7 @@ setup() {
     XCB_EVENT_MASK_ENTER_WINDOW |
     XCB_EVENT_MASK_FOCUS_CHANGE
   };
-  xcb_change_window_attributes(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
+  xcb_change_window_attributes_checked(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
 
   // Ungrab any grabbed keys
   xcb_ungrab_key(s.con, XCB_GRAB_ANY, s.root, XCB_MOD_MASK_ANY);
@@ -141,7 +194,7 @@ winarea(xcb_window_t win, bool* success) {
 void
 setbordercolor(client* cl, uint32_t color) {
   if(!cl) return;
-  xcb_change_window_attributes(s.con, cl->win, XCB_CW_BORDER_PIXEL, &color);
+  xcb_change_window_attributes_checked(s.con, cl->win, XCB_CW_BORDER_PIXEL, &color);
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){cl->borderwidth});
   xcb_flush(s.con);
 }
@@ -260,7 +313,7 @@ evmaprequest(xcb_generic_event_t* ev) {
   // Setup listened events for the mapped window
   {
     uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE }; 
-    xcb_change_window_attributes(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
+    xcb_change_window_attributes_checked(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
   }
 
   // Grabbing mouse events for interactive moves/resizes 
