@@ -12,8 +12,8 @@ typedef enum {
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
-  void (*cb)();
-  char* cmd;
+  void (*cb)(const char* cmd);
+  const char* cmd;
 } keybind;
 
 typedef enum {

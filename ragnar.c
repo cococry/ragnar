@@ -19,50 +19,56 @@
 
 #include "structs.h"
 
-static void     setup();
-static void     loop();
-static void     terminate();
+static void             setup();
+static void             loop();
+static void             terminate();
 
-static bool     pointinarea(v2 p, area a);
-static v2       cursorpos(bool* success);
-static area     winarea(xcb_window_t win, bool* success);
+static bool             pointinarea(v2 p, area a);
+static v2               cursorpos(bool* success);
+static area             winarea(xcb_window_t win, bool* success);
 
-static void     setbordercolor(client* cl, uint32_t color);
-static void     setborderwidth(client* cl, uint32_t width);
-static void     moveclient(client* cl, v2 pos);
-static void     resizeclient(client* cl, v2 size);
-static void     raiseclient(client* cl);
-static void     killclient(client* cl);
-static void     killfocus();
-static void     focusclient(client* cl);
-static void     configclient(client* cl);
-static void     cyclefocus();
+static void             setbordercolor(client* cl, uint32_t color);
+static void             setborderwidth(client* cl, uint32_t width);
+static void             moveclient(client* cl, v2 pos);
+static void             resizeclient(client* cl, v2 size);
+static void             raiseclient(client* cl);
+static void             killclient(client* cl);
+static void             killfocus();
+static void             focusclient(client* cl);
+static void             configclient(client* cl);
+static void             cyclefocus();
 
-static void     evmaprequest(xcb_generic_event_t* ev);
-static void     evunmapnotify(xcb_generic_event_t* ev);
-static void     eventernotify(xcb_generic_event_t* ev);
-static void     evfocusin(xcb_generic_event_t* ev);
-static void     evfocusout(xcb_generic_event_t* ev);
-static void     evkeypress(xcb_generic_event_t* ev);
-static void     evbuttonpress(xcb_generic_event_t* ev);
-static void     evmotionnotify(xcb_generic_event_t* ev);
-static void     evconfigrequest(xcb_generic_event_t* ev);
+static void             evmaprequest(xcb_generic_event_t* ev);
+static void             evunmapnotify(xcb_generic_event_t* ev);
+static void             eventernotify(xcb_generic_event_t* ev);
+static void             evfocusin(xcb_generic_event_t* ev);
+static void             evfocusout(xcb_generic_event_t* ev);
+static void             evkeypress(xcb_generic_event_t* ev);
+static void             evbuttonpress(xcb_generic_event_t* ev);
+static void             evmotionnotify(xcb_generic_event_t* ev);
+static void             evconfigrequest(xcb_generic_event_t* ev);
 
-static client*  addclient(xcb_window_t win);
-static void     releaseclient(xcb_window_t win);
-static client*  clientfromwin(xcb_window_t win);
+static client*          addclient(xcb_window_t win);
+static void             releaseclient(xcb_window_t win);
+static client*          clientfromwin(xcb_window_t win);
 
 static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
 static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
 
-// This needs to be included after the function definitionss
+static void             execsafe(const char* cmd);
+
+// This needs to be included after the function definitions
 #include "config.h"
 
 
+/* Evaluates to the length (count of elements) in a given array */
 #define ARRLEN(arr) (sizeof(arr) / sizeof(arr[0]))
+/* Evaluates to the minium of two given numbers */
 #define MIN(a, b) (((a)<(b))?(a):(b))
+/* Evaluates to the maximum of two given numbers */
 #define MAX(a, b) (((a)>(b))?(a):(b))
 
+/* */
 static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_MAP_REQUEST]         = evmaprequest,
   [XCB_UNMAP_NOTIFY]        = evunmapnotify,
@@ -80,13 +86,12 @@ static State s;
 /**
  * @brief Sets up the WM state and the X server 
  *
- * This function establishes a connection to the x server,
+ * This function establishes a connection to the X server,
  * sets up the root window and window manager keybindings.
  * The event mask of the root window is being cofigured to
  * listen to necessary events. 
  * After the configuration of the root window, all the specified
  * keybinds in config.h are grabbed by the window manager.
- *
  */
 void
 setup() {
@@ -96,8 +101,8 @@ setup() {
   s.con = xcb_connect(NULL, NULL);
   // Checking for errors
   if (xcb_connection_has_error(s.con)) {
-    fprintf(stderr, "ragnar: cannot open display\n");
-    exit(1);
+    fprintf(stderr, "ragnar: cannot open display.\n");
+    exit(EXIT_FAILURE);
   }
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
@@ -131,10 +136,16 @@ setup() {
   xcb_flush(s.con);
 }
 
+/**
+ * @brief Event loop of the window manager 
+ *
+ * This function waits for X server events and 
+ * handles them accoringly by calling the associated event handler.
+ */
 void
 loop() {
   xcb_generic_event_t *ev;
-  while ((ev= xcb_wait_for_event(s.con))) {
+  while ((ev = xcb_wait_for_event(s.con))) {
     uint8_t evcode = ev->response_type & ~0x80;
     /* If the event we receive is listened for by our 
      * event listeners, call the callback for the event. */
@@ -145,12 +156,27 @@ loop() {
   }
 }
 
+/**
+ * @brief Terminates the window manager 
+ *
+ * This function terminates the window manager by
+ * disconnecting the connection to the X server and
+ * exiting the program.
+ */
 void 
 terminate() {
   xcb_disconnect(s.con);
-  exit(0);
+  exit(EXIT_SUCCESS);
 }
 
+/**
+ * @brief Evaluates if a given point is inside a given area 
+ *
+ * @param p The point to check if it is inside the given area
+ * @param area The area to check
+ *
+ * @return True if the point p is in the area, false if it is not in the area 
+ */
 bool
 pointinarea(v2 p, area area) {
   return (p.x >= area.pos.x &&
@@ -159,56 +185,106 @@ pointinarea(v2 p, area area) {
   p.y < (area.pos.y + area.size.y));
 }
 
+/**
+ * @brief Returns the current cursor position on the X display 
+ *
+ * @param success Gets assigned whether or not the pointer query
+ * was successfull.
+ *
+ * @return The cursor position as a two dimensional vector 
+ */
 v2 
 cursorpos(bool* success) {
   // Query the pointer position
   xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(s.con, xcb_query_pointer(s.con, s.root), NULL);
-  // Create a v2 for to store it
+  *success = (reply != NULL);
+  if(!(*success)) {
+    fprintf(stderr, "ragnar: failed to retrieve cursor position."); 
+    free(reply);
+    return (v2){0};
+  }
+  // Create a v2 for to store the position 
   v2 cursor = (v2){.x = reply->root_x, .y = reply->root_y};
 
   // Check for errors
-  if((*success = (reply != NULL))) { 
-    free(reply);
-  } else {
-    fprintf(stderr, "ragnar: failed to retrieve cursor position"); 
-  }
+  free(reply);
   return cursor;
 }
 
+/**
+ * @brief Returns the area (position and size) of a given window 
+ *
+ * @param win The window to get the area from 
+ * @param success Gets assigned whether or not the geometry query
+ * was successfull.
+ *
+ * @return The area of the given window 
+ */
 area 
 winarea(xcb_window_t win, bool* success) {
   // Retrieve the geometry of the window 
   xcb_get_geometry_reply_t *reply = xcb_get_geometry_reply(s.con, xcb_get_geometry(s.con, win), NULL);
+  *success = (reply != NULL);
+  if(!(*success)) {
+    fprintf(stderr, "ragnar: failed to retrieve cursor position."); 
+    free(reply);
+    return (area){0};
+  }
   // Creating the area structure to store the geometry in
   area a = (area){.pos = (v2){reply->x, reply->y}, .size = (v2){reply->width, reply->height}};
 
   // Error checking
-  if((*success = (reply != NULL))) {
-    free(reply);
-  } else {
-    fprintf(stderr, "ragnar: failed to retrieve cursor position"); 
-  }
+  free(reply);
   return a;
 }
 
+/**
+ * @brief Sets the border color of a given clients window 
+ *
+ * @param cl The client to set the border color of 
+ * @param color The border color 
+ */
 void
 setbordercolor(client* cl, uint32_t color) {
-  if(!cl) return;
+  // Return if the client is NULL
+  if(!cl) {
+    return;
+  }
+  // Change the configuration for the border color of the clients window
   xcb_change_window_attributes_checked(s.con, cl->win, XCB_CW_BORDER_PIXEL, &color);
-  xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){cl->borderwidth});
   xcb_flush(s.con);
 }
 
+/**
+ * @brief Sets the border width of a given clients window 
+ * and updates its 'borderwidth' variable 
+ *
+ * @param cl The client to set the border width of 
+ * @param width The border width 
+ */
 void
 setborderwidth(client* cl, uint32_t width) {
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
+  // Change the configuration for the border width of the clients window
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){width});
+  // Update the border width of the client
+  cl->borderwidth = width;
   xcb_flush(s.con);
 }
 
+/**
+ * @brief Moves the window of a given client and updates its area.
+ *
+ * @param cl The client to move 
+ * @param pos The position to move the client to 
+ */
 void
 moveclient(client* cl, v2 pos) {
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
   int32_t posval[2] = {
     (uint32_t)pos.x, (uint32_t)pos.y
   };
@@ -225,8 +301,17 @@ moveclient(client* cl, v2 pos) {
   cl->area = a;
 }
 
+/**
+ * @brief Resizes the window of a given client and updates its area.
+ *
+ * @param cl The client to resize 
+ * @param pos The new size of the clients window 
+ */
 void
 resizeclient(client* cl, v2 size) {
+  if(!cl) {
+    return;
+  }
   uint32_t sizeval[2] = { (uint32_t)size.x, (uint32_t)size.y };
 
   // Resize the window by configuring it's width and height property
@@ -241,17 +326,33 @@ resizeclient(client* cl, v2 size) {
   cl->area = a;
 }
 
+/**
+ * @brief Raises the window of a given client to the top of the stack
+ *
+ * @param cl The client to raise 
+ */
 void
 raiseclient(client* cl) {
-  if(!cl) return;
-  uint32_t evmask[] = { XCB_STACK_MODE_ABOVE };
-  xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_STACK_MODE, evmask);
+  if(!cl) {
+    return;
+  }
+  uint32_t config[] = { XCB_STACK_MODE_ABOVE };
+  // Change the configuration of the window to be above 
+  xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_STACK_MODE, config);
   xcb_flush(s.con);
 }
 
+/**
+ * @brief Kills a given client by destroying the associated window and 
+ * removing it from the linked list.
+ *
+ * @param cl The client to kill 
+ */
 void
 killclient(client* cl) {
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
   // Destroy the window on the X server
   xcb_destroy_window(s.con, cl->win);
   // Remove the client from the linked list
@@ -263,15 +364,28 @@ killclient(client* cl) {
   xcb_flush(s.con);
 }
 
+/**
+ * @brief Kills the currently focused window 
+ */
 void
 killfocus() {
+  if(!s.focus) {
+    return;
+  }
   killclient(s.focus);;
 }
 
+/**
+ * @brief Sets the current focus to a given client
+ *
+ * @param cl The client to focus
+ */
 void
 focusclient(client* cl) {
-  if(!cl) return;
-  if(!cl->win || cl->win == s.root) return;
+  // Return if the client is the root window or the client is NULL
+  if(!cl || cl->win == s.root) {
+    return;
+  }
   // Set input focus to client
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
 
@@ -282,9 +396,16 @@ focusclient(client* cl) {
   s.focus = cl;
 }
 
+/**
+ * @brief Configures a given client by sending a X configure event 
+ *
+ * @param cl The client to configure 
+ */
 void
 configclient(client* cl) {
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
   xcb_configure_notify_event_t event;
   memset(&event, 0, sizeof(event));
 
@@ -306,6 +427,13 @@ configclient(client* cl) {
   event.override_redirect = 0;  
 }
 
+/**
+ * @brief Handles a map request event on the X server by 
+ * adding the mapped window to the linked list of clients and 
+ * setting up necessary stuff.
+ *
+ * @param ev The generic event 
+ */
 void 
 evmaprequest(xcb_generic_event_t* ev) {
   xcb_map_request_event_t* map_ev = (xcb_map_request_event_t*)ev;
@@ -348,7 +476,12 @@ evmaprequest(xcb_generic_event_t* ev) {
 flush:
   xcb_flush(s.con);
 }
-
+/**
+ * @brief Handles a X unmap event by unmapping the window 
+ * and removing the associated client from the linked list.
+ *
+ * @param ev The generic event 
+ */
 void 
 evunmapnotify(xcb_generic_event_t* ev) {
   // Retrieve the event
@@ -361,13 +494,20 @@ evunmapnotify(xcb_generic_event_t* ev) {
   xcb_unmap_window(s.con, unmap_ev->window);
 }
 
+/**
+ * @brief Handles a X enter-window event by focusing the window
+ * that's associated with the enter event.
+ *
+ * @param ev The generic event 
+ */
 void 
 eventernotify(xcb_generic_event_t* ev) {
   xcb_enter_notify_event_t *enter_ev = (xcb_enter_notify_event_t*)ev;
 
   client* cl = clientfromwin(enter_ev->event);
-  if(cl) 
+  if(cl) { 
     focusclient(cl);
+  }
   else if(enter_ev->event == s.root) {
     // Set Input focus to root
     xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
@@ -381,51 +521,80 @@ eventernotify(xcb_generic_event_t* ev) {
   xcb_flush(s.con);
 }
 
+/**
+ * @brief Handles a X focus-in event by setting the border color
+ * of the window that gained focus to the selected border color.
+ *
+ * @param ev The generic event 
+ */
 void
 evfocusin(xcb_generic_event_t* ev) {
   xcb_focus_in_event_t* focus_ev = (xcb_focus_in_event_t*)ev;
   // Retrieving associated client
   client* cl = clientfromwin(focus_ev->event);
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
   // If a client gained focus, set selected border color.
   setbordercolor(cl, winbordercolor_selected);
 }
 
+/**
+ * @brief Handles a X focus-out event by setting the border color
+ * of the window that lost focus to the unselected border color.
+ *
+ * @param ev The generic event 
+ */
 void
 evfocusout(xcb_generic_event_t* ev) {
   xcb_focus_out_event_t* focus_ev = (xcb_focus_out_event_t*)ev;
   // Retrieving associated client
   client* cl = clientfromwin(focus_ev->event);
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
   // If a client lost focus, set unselected border color.
   setbordercolor(cl, winbordercolor);
 }
 
+/**
+ * @brief Handles a X key press event by checking if the pressed 
+ * key (and modifiers) match any window manager keybind and then executing
+ * that keybinds function.
+ *
+ * @param ev The generic event 
+ */
 void
 evkeypress(xcb_generic_event_t* ev) {
   xcb_key_press_event_t *e = ( xcb_key_press_event_t *) ev;
   // Get associated keysym for the keycode of the event
   xcb_keysym_t keysym = getkeysym(e->detail);
 
-  
   /* Iterate throguh the keybinds and check if one of them was pressed. */
   for (uint32_t i = 0; i < numkeybinds; ++i) {
     // If it was pressed, call the callback of the keybind
     if ((keysym == keybinds[i].key) && (e->state == keybinds[i].modmask)) {
-      if(keybinds[i].cb)
-        keybinds[i].cb();
-      else 
-        system(keybinds[i].cmd);
+      if(keybinds[i].cb) {
+        keybinds[i].cb(keybinds[i].cmd);
+      }
     }
   }
 }
 
+/**
+ * @brief Handles a X button press event by focusing the client 
+ * associated with the pressed window and setting cursor and window grab positions.
+ *
+ * @param ev The generic event 
+ */
 void
 evbuttonpress(xcb_generic_event_t* ev) {
   xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
 
   client* cl = clientfromwin(button_ev->event);
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
   // Focusing client 
   if(cl != s.focus) {
     focusclient(cl);
@@ -439,17 +608,23 @@ evbuttonpress(xcb_generic_event_t* ev) {
   raiseclient(cl);
 }
 
+/**
+ * @brief Handles a X motion notify event by moving the clients window if left mouse 
+ * button is held and resizing the clients window if right mouse is held. 
+ *
+ * @param ev The generic event 
+ */
 void
 evmotionnotify(xcb_generic_event_t* ev) {
   xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
 
   client* cl = clientfromwin(motion_ev->event);
-  if(!cl) return;
-
+  if(!cl) {
+    return;
+  }
 
   // Position of the cursor in the drag event
   v2 dragpos    = (v2){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
-
   // Drag difference from the current drag event to the initial grab 
   v2 dragdelta  = (v2){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
 
@@ -471,13 +646,21 @@ evmotionnotify(xcb_generic_event_t* ev) {
   }
 }
 
+/**
+ * @brief Handles a X configure request by configuring the client that 
+ * is associated with the window how the event requested it.
+ *
+ * @param ev The generic event 
+ */
 void 
 evconfigrequest(xcb_generic_event_t* ev) {
   xcb_configure_request_event_t* req = (xcb_configure_request_event_t*)ev;
   xcb_window_t win = req->window;
 
   client* cl = clientfromwin(win);
-  if(!cl) return;
+  if(!cl) {
+    return;
+  }
 
   // Configuration mask
   uint16_t mask = 0;
@@ -535,6 +718,9 @@ evconfigrequest(xcb_generic_event_t* ev) {
 }
 
 
+/**
+ * @brief Cycles the currently focused client 
+ */
 void
 cyclefocus() {
   /* If there is a next window ater the window that's currently
@@ -551,6 +737,14 @@ cyclefocus() {
   raiseclient(s.focus);
 }
 
+/**
+ * @brief Adds a client window to the linked list of clients.
+ *
+ * @param win The window to create a client from and add it 
+ * to the clients
+ *
+ * @return The newly created client
+ */
 client*
 addclient(xcb_window_t win) {
   // Allocate client structure
@@ -574,6 +768,12 @@ addclient(xcb_window_t win) {
   return cl;
 }
 
+/**
+ * @brief Removes a given client from the list of clients
+ * by window.
+ *
+ * @param win The window of the client to remove
+ */
 void 
 releaseclient(xcb_window_t win) {
   client** prev = &s.clients;
@@ -596,24 +796,54 @@ releaseclient(xcb_window_t win) {
   }
 }
 
+/**
+ * @brief Returns the associated client from a given window.
+ * Returns NULL if there is no client associated with the window.
+ * by window.
+ *
+ * @param win The window to get the client from
+ *
+ * @return The client associated with the given window (NULL if no associated client)
+ */
 client*
 clientfromwin(xcb_window_t win) {
   client* cl;
   for(cl = s.clients; cl != NULL; cl = cl->next) {
     // If the window is found in the clients, return the client
-    if(cl->win == win) return cl;
+    if(cl->win == win) {
+      return cl;
+    }
   }
   return NULL;
 }
 
+/**
+ * @brief Returns the keysym of a given key code. 
+ * Returns 0 if there is no keysym for the given keycode.
+ *
+ * @param keycode The keycode to get the keysym from 
+ *
+ * @return The keysym of the given keycode (0 if no keysym associated) 
+ */
 xcb_keysym_t
 getkeysym(xcb_keycode_t keycode) {
+  // Allocate key symbols 
   xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(s.con);
+  // Get the keysym
 	xcb_keysym_t keysym = (!(keysyms) ? 0 : xcb_key_symbols_get_keysym(keysyms, keycode, 0));
+  // Free allocated resources
 	xcb_key_symbols_free(keysyms);
 	return keysym;
 }
 
+/**
+ * @brief Returns the keycode of a given keysym. 
+ * Returns NULL if there is no keycode for the given keysym.
+ *
+ * @param keysym The keysym to get the keycode from 
+ *
+ * @return The keycode of the given keysym (NULL if no keysym associated) 
+ */
 xcb_keycode_t*
 getkeycodes(xcb_keysym_t keysym) {
   xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(s.con);
@@ -622,11 +852,40 @@ getkeycodes(xcb_keysym_t keysym) {
 	return keycode;
 }
 
+void
+execsafe(const char* cmd) {
+  if (cmd == NULL) {
+    return;
+  }
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    // Child process
+    execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+    // If execl fails
+    fprintf(stderr, "ragnar: failed to execute command.\n");
+    _exit(EXIT_FAILURE);
+  } else if (pid > 0) {
+    // Parent process
+    int status;
+    waitpid(pid, &status, 0);
+    return;
+  } else {
+    // Fork failed
+    perror("fork");
+    fprintf(stderr, "ragnar: failed to execute command.\n");
+    return;
+  }
+}
+
 int 
 main() {
+  // Setup the window manager
   setup();
+  // Enter the event loop
   loop();
+  // Terminate after the loop
   terminate();
-  return 0;
+  return EXIT_SUCCESS;
 }
 
