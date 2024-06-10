@@ -16,6 +16,7 @@
 #include <xcb/xcb_util.h>
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
+#include <xcb/xcb_icccm.h>
 
 #include "structs.h"
 
@@ -37,6 +38,12 @@ static void             killfocus();
 static void             focusclient(client* cl);
 static void             configclient(client* cl);
 static void             cyclefocus();
+static bool             raiseevent(client* cl, xcb_atom_t protocol);
+static void             setwintype(client* cl);
+static xcb_atom_t       getclientprop(client* cl, xcb_atom_t prop);
+
+static void             setupatoms();
+static void             grabkeybinds();
 
 static void             evmaprequest(xcb_generic_event_t* ev);
 static void             evunmapnotify(xcb_generic_event_t* ev);
@@ -47,6 +54,7 @@ static void             evkeypress(xcb_generic_event_t* ev);
 static void             evbuttonpress(xcb_generic_event_t* ev);
 static void             evmotionnotify(xcb_generic_event_t* ev);
 static void             evconfigrequest(xcb_generic_event_t* ev);
+static void             evpropertynotify(xcb_generic_event_t* ev);
 
 static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
@@ -55,7 +63,10 @@ static client*          clientfromwin(xcb_window_t win);
 static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
 static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
 
-static void             execsafe(const char* cmd);
+static void             runcmd(const char* cmd);
+
+static xcb_atom_t       getatom(const char* atomstr);
+
 
 // This needs to be included after the function definitions
 #include "config.h"
@@ -79,6 +90,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_BUTTON_PRESS]        = evbuttonpress,
   [XCB_MOTION_NOTIFY]       = evmotionnotify,
   [XCB_CONFIGURE_REQUEST]   = evconfigrequest,
+  [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
 };
 
 static State s;
@@ -86,7 +98,7 @@ static State s;
 /**
  * @brief Sets up the WM state and the X server 
  *
- * This function establishes a connection to the X server,
+ * This function establishes a s.conection to the X server,
  * sets up the root window and window manager keybindings.
  * The event mask of the root window is being cofigured to
  * listen to necessary events. 
@@ -97,7 +109,7 @@ void
 setup() {
   s.clients = NULL;
 
-  // Connecting to the X server
+  // s.conecting to the X server
   s.con = xcb_connect(NULL, NULL);
   // Checking for errors
   if (xcb_connection_has_error(s.con)) {
@@ -119,21 +131,10 @@ setup() {
   };
   xcb_change_window_attributes_checked(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
 
-  // Ungrab any grabbed keys
-  xcb_ungrab_key(s.con, XCB_GRAB_ANY, s.root, XCB_MOD_MASK_ANY);
-
-  // Grab every keybind 
-	for (uint32_t i = 0; i < numkeybinds; ++i) {
-    // Get the keycode for the keysym of the keybind
-		xcb_keycode_t *keycode = getkeycodes(keybinds[i].key);
-    // Grab the key if it is valid 
-		if (keycode != NULL) {
-			xcb_grab_key(s.con, 1, s.root, keybinds[i].modmask, *keycode,
-				XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
-		}
-	}
-
-  xcb_flush(s.con);
+  // Grab the window manager's keybinds
+  grabkeybinds();
+  // Setup atoms for EWMH and so on
+  setupatoms();
 }
 
 /**
@@ -160,7 +161,7 @@ loop() {
  * @brief Terminates the window manager 
  *
  * This function terminates the window manager by
- * disconnecting the connection to the X server and
+ * diss.conecting the s.conection to the X server and
  * exiting the program.
  */
 void 
@@ -354,7 +355,9 @@ killclient(client* cl) {
     return;
   }
   // Destroy the window on the X server
-  xcb_destroy_window(s.con, cl->win);
+  if(!raiseevent(s.focus, s.wm_atoms[WMdelete])) {
+    xcb_destroy_window(s.con, cl->win);
+  }
   // Remove the client from the linked list
   releaseclient(cl->win);
   // Unset focus if the client was focused
@@ -424,7 +427,9 @@ configclient(client* cl) {
   // Above sibling window (None in this case)
   event.above_sibling = XCB_NONE;
   // Override-redirect flag
-  event.override_redirect = 0;  
+  event.override_redirect = 0;
+  // Send the event
+  xcb_send_event(s.con, 0, cl->win, XCB_EVENT_MASK_STRUCTURE_NOTIFY, (const char *)&event);
 }
 
 /**
@@ -453,7 +458,6 @@ evmaprequest(xcb_generic_event_t* ev) {
                     s.root, XCB_NONE, 3, winmod);
   }
 
-
   // Map the window
   xcb_map_window(s.con, map_ev->window);
 
@@ -467,6 +471,9 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Set initial border color
   setbordercolor(cl, winbordercolor);
+
+  // Set window type of client (e.g dialog)
+  setwintype(cl);
 
   // If the cursor is on the mapped window when it spawned, focus it.
   if(pointinarea(cursor, cl->area)) {
@@ -717,6 +724,23 @@ evconfigrequest(xcb_generic_event_t* ev) {
   xcb_flush(s.con);
 }
 
+/**
+ * @brief Handles a X property notify event for window properties by handling various Extended Window Manager Hints (EWMH). 
+ *
+ * @param ev The generic event 
+ */
+void
+evpropertynotify(xcb_generic_event_t* ev) {
+  xcb_property_notify_event_t* prop_ev = (xcb_property_notify_event_t*)ev;
+  client* cl = clientfromwin(prop_ev->window);
+
+  if(cl) {
+    // Updating the window type if we receive a window type change event.
+    if(prop_ev->atom == s.ewmh_atoms[EWMHwindowType]) {
+      setwintype(cl);
+    }
+  }
+}
 
 /**
  * @brief Cycles the currently focused client 
@@ -735,6 +759,165 @@ cyclefocus() {
   /* Update & raise focus */
   focusclient(s.focus);
   raiseclient(s.focus);
+}
+
+
+/**
+ * @brief Sends a given X event by atom to the window of a given client
+ *
+ * @param cl The client to send the event to
+ * @param protocol The atom to store the event
+ */
+bool
+raiseevent(client* cl, xcb_atom_t protocol) {
+  bool exists = false;
+  xcb_icccm_get_wm_protocols_reply_t reply;
+
+  // Checking if the event protocol exists
+  if (xcb_icccm_get_wm_protocols_reply(s.con, xcb_icccm_get_wm_protocols(s.con, cl->win, s.wm_atoms[WMprotocols]), &reply, NULL)) {
+    for (unsigned int i = 0; i < reply.atoms_len && !exists; i++) {
+      exists = (reply.atoms[i] == protocol);
+    }
+    xcb_icccm_get_wm_protocols_reply_wipe(&reply);
+  }
+
+  if(exists) {
+    /* Creating and sending the event structure if the event protocol is 
+     * valid. */
+    xcb_client_message_event_t event;
+    event.response_type = XCB_CLIENT_MESSAGE;
+    event.window = cl->win;
+    event.type = s.wm_atoms[WMprotocols];
+    event.format = 32;
+    event.data.data32[0] = protocol;
+    event.data.data32[1] = XCB_CURRENT_TIME;
+    xcb_send_event(s.con, 0, cl->win, XCB_EVENT_MASK_NO_EVENT, (const char *)&event);
+  }
+  return exists;
+}
+
+/**
+ * @brief Checks for window type of clients by EWMH and acts 
+ * accoringly.
+ *
+ * @param cl The client to set/update the window type of
+ */
+void
+setwintype(client* cl) {
+  xcb_atom_t state = getclientprop(cl, s.ewmh_atoms[EWMHstate]);
+  xcb_atom_t wintype = getclientprop(cl, s.ewmh_atoms[EWMHstate]);
+
+  if(state == s.ewmh_atoms[EWMHfullscreen]) {
+    // TODO: Set client fullscreen
+  } 
+  if(wintype == s.ewmh_atoms[EWMHwindowTypeDialog]) {
+    // TODO: Mark client as floating
+  }
+}
+
+/**
+ * @brief Gets the value of a given property on a 
+ * window of a given client.
+ *
+ * @param cl The client to retrieve the property value from
+ * @param prop The property to retrieve
+ *
+ * @return The value of the given property on the given window
+ */
+xcb_atom_t
+getclientprop(client* cl, xcb_atom_t prop) {
+  xcb_generic_error_t *error;
+  xcb_atom_t atom = XCB_NONE;
+  xcb_get_property_cookie_t cookie;
+  xcb_get_property_reply_t *reply;
+
+  // Get the property from the window
+  cookie = xcb_get_property(s.con, 0, cl->win, prop, XCB_ATOM_ATOM, 0, sizeof(xcb_atom_t));
+  // Get the reply
+  reply = xcb_get_property_reply(s.con, cookie, &error);
+
+  if(reply) { 
+    // Check if the property type matches the expected type and has the right format
+    if(reply->type == XCB_ATOM_ATOM && reply->format == 32 && reply->value_len > 0) {
+      atom = *(xcb_atom_t*)xcb_get_property_value(reply);
+    }
+    free(reply);
+  }
+  if(error) {
+    free(error);
+  }
+  return atom;
+}
+
+/**
+ * @brief Creates WM atoms & sets up properties for EWMH. 
+ * */
+void
+setupatoms() {
+  s.wm_atoms[WMprotocols]             = getatom("WM_PROTOCOLS");
+	s.wm_atoms[WMdelete]                = getatom("WM_DELETE_WINDOW");
+	s.wm_atoms[WMstate]                 = getatom("WM_STATE");
+	s.wm_atoms[WMtakeFocus]             = getatom("WM_TAKE_FOCUS");
+	s.ewmh_atoms[EWMHactiveWindow]      = getatom("_NET_ACTIVE_WINDOW");
+	s.ewmh_atoms[EWMHsupported]         = getatom("_NET_SUPPORTED");
+	s.ewmh_atoms[EWMHname]              = getatom("_NET_WM_NAME");
+	s.ewmh_atoms[EWMHstate]             = getatom("_NET_WM_STATE");
+  s.ewmh_atoms[EWMHcheck]             = getatom("_NET_SUPPORTING_WM_CHECK");
+  s.ewmh_atoms[EWMHfullscreen]        = getatom("_NET_WM_STATE_FULLSCREEN");
+  s.ewmh_atoms[EWMHwindowType]        = getatom("_NET_WM_WINDOW_TYPE");
+  s.ewmh_atoms[EWMHwindowTypeDialog]  = getatom("_NET_WM_WINDOW_TYPE_DIALOG");
+  s.ewmh_atoms[EWMHclientList]        = getatom("_NET_CLIENT_LIST");
+
+  xcb_atom_t utf8str = getatom("UTF8_STRING");
+
+  xcb_window_t wmcheckwin = xcb_generate_id(s.con);
+    xcb_create_window(s.con, XCB_COPY_FROM_PARENT, wmcheckwin, s.root, 
+                      0, 0, 1, 1, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
+                      XCB_COPY_FROM_PARENT, 0, NULL);
+
+  // Set _NET_WM_CHECK property on the wmcheckwin
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, wmcheckwin, s.ewmh_atoms[EWMHcheck],
+                      XCB_ATOM_WINDOW, 32, 1, &wmcheckwin);
+
+  // Set _NET_WM_NAME property on the wmcheckwin
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, wmcheckwin, s.ewmh_atoms[EWMHname],
+                      utf8str, 8, strlen("ragnar"), "ragnar");
+
+  // Set _NET_WM_CHECK property on the root window
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHcheck],
+                      XCB_ATOM_WINDOW, 32, 1, &wmcheckwin);
+
+  // Set _NET_SUPPORTED property on the root window
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHsupported],
+                      XCB_ATOM_ATOM, 32, EWMHcount, s.ewmh_atoms);
+
+  // Delete _NET_CLIENT_LIST property from the root window
+  xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHclientList]);
+
+  xcb_flush(s.con);
+}
+
+
+/**
+ * @brief Grabs all the keybinds specified in config.h for the window 
+ * manager. The function also ungrabs all previously grabbed keys.
+ * */
+void
+grabkeybinds() {
+  // Ungrab any grabbed keys
+  xcb_ungrab_key(s.con, XCB_GRAB_ANY, s.root, XCB_MOD_MASK_ANY);
+
+  // Grab every keybind 
+	for (uint32_t i = 0; i < numkeybinds; ++i) {
+    // Get the keycode for the keysym of the keybind
+		xcb_keycode_t *keycode = getkeycodes(keybinds[i].key);
+    // Grab the key if it is valid 
+		if (keycode != NULL) {
+			xcb_grab_key(s.con, 1, s.root, keybinds[i].modmask, *keycode,
+				XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+		}
+	}
+  xcb_flush(s.con);
 }
 
 /**
@@ -852,8 +1035,13 @@ getkeycodes(xcb_keysym_t keysym) {
 	return keycode;
 }
 
+/**
+ * @brief Runs a given command by forking the process and using execl.
+ *
+ * @param cmd The command to run 
+ */
 void
-execsafe(const char* cmd) {
+runcmd(const char* cmd) {
   if (cmd == NULL) {
     return;
   }
@@ -878,8 +1066,28 @@ execsafe(const char* cmd) {
   }
 }
 
+/**
+ * @brief Retrieves an intern X atom by name.
+ *
+ * @param atomstr The string (name) of the atom to retrieve
+ *
+ * @return The XCB atom associated with the given atom name.
+ * Returns XCB_ATOM_NONE if the given name is not associated with 
+ * any atom.
+ * */
+xcb_atom_t
+getatom(const char* atomstr) {
+  xcb_intern_atom_cookie_t cookie = xcb_intern_atom(s.con, 0, strlen(atomstr), atomstr);
+  xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(s.con, cookie, NULL);
+  xcb_atom_t atom = reply ? reply->atom : XCB_ATOM_NONE;
+  free(reply);
+  return atom;
+}
+
 int 
 main() {
+  // Run the startup script
+  runcmd("ragnarstart");
   // Setup the window manager
   setup();
   // Enter the event loop

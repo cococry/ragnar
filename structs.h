@@ -70,64 +70,38 @@ typedef enum {
     KeyGreater = XK_greater,
     KeyQuestion = XK_question,
     KeyAt = XK_at,
-    KeyA = XK_A,
-    KeyB = XK_B,
-    KeyC = XK_C,
-    KeyD = XK_D,
-    KeyE = XK_E,
-    KeyF = XK_F,
-    KeyG = XK_G,
-    KeyH = XK_H,
-    KeyI = XK_I,
-    KeyJ = XK_J,
-    KeyK = XK_K,
-    KeyL = XK_L,
-    KeyM = XK_M,
-    KeyN = XK_N,
-    KeyO = XK_O,
-    KeyP = XK_P,
-    KeyQ = XK_Q,
-    KeyR = XK_R,
-    KeyS = XK_S,
-    KeyT = XK_T,
-    KeyU = XK_U,
-    KeyV = XK_V,
-    KeyW = XK_W,
-    KeyX = XK_X,
-    KeyY = XK_Y,
-    KeyZ = XK_Z,
     KeyBracketLeft = XK_bracketleft,
     KeyBackslash = XK_backslash,
     KeyBracketRight = XK_bracketright,
     KeyAsciiCircum = XK_asciicircum,
     KeyUnderscore = XK_underscore,
     KeyGrave = XK_grave,
-    Keya = XK_a,
-    Keyb = XK_b,
-    Keyc = XK_c,
-    Keyd = XK_d,
-    Keye = XK_e,
-    Keyf = XK_f,
-    Keyg = XK_g,
-    Keyh = XK_h,
-    Keyi = XK_i,
-    Keyj = XK_j,
-    Keyk = XK_k,
-    Keyl = XK_l,
-    Keym = XK_m,
-    Keyn = XK_n,
-    Keyo = XK_o,
-    Keyp = XK_p,
-    Keyq = XK_q,
-    Keyr = XK_r,
-    Keys = XK_s,
-    Keyt = XK_t,
-    Keyu = XK_u,
-    Keyv = XK_v,
-    Keyw = XK_w,
-    Keyx = XK_x,
-    Keyy = XK_y,
-    Keyz = XK_z,
+    KeyA = XK_a,
+    KeyB = XK_b,
+    KeyC = XK_c,
+    KeyD = XK_d,
+    KeyE = XK_e,
+    KeyF = XK_f,
+    KeyG = XK_g,
+    KeyH = XK_h,
+    KeyI = XK_i,
+    KeyJ = XK_j,
+    KeyK = XK_k,
+    KeyL = XK_l,
+    KeyM = XK_m,
+    KeyN = XK_n,
+    KeyO = XK_o,
+    KeyP = XK_p,
+    KeyQ = XK_q,
+    KeyR = XK_r,
+    KeyS = XK_s,
+    KeyT = XK_t,
+    KeyU = XK_u,
+    KeyV = XK_v,
+    KeyW = XK_w,
+    KeyX = XK_x,
+    KeyY = XK_y,
+    KeyZ = XK_z,
     KeyBraceLeft = XK_braceleft,
     KeyBar = XK_bar,
     KeyBraceRight = XK_braceright,
@@ -222,6 +196,28 @@ struct client {
   uint32_t borderwidth;
 };
 
+typedef enum {
+  EWMHsupported, 
+  EWMHname, 
+  EWMHstate, 
+  EWMHcheck,
+  EWMHfullscreen, 
+  EWMHactiveWindow, 
+  EWMHwindowType,
+  EWMHwindowTypeDialog, 
+  EWMHclientList,
+  EWMHcount
+} ewmh_atom;
+
+typedef enum {
+  WMprotocols,
+  WMdelete,
+  WMstate,
+  WMtakeFocus,
+  WMcount
+} wm_atom;
+
+
 typedef struct {
   xcb_connection_t* con;
   xcb_window_t root;
@@ -231,4 +227,7 @@ typedef struct {
 
   v2 grabcursor;
   area grabwin;
+
+  xcb_atom_t wm_atoms[WMcount]; 
+  xcb_atom_t ewmh_atoms[EWMHcount]; 
 } State;
