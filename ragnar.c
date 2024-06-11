@@ -37,6 +37,7 @@ static void             raiseclient(client* cl);
 static void             killclient(client* cl);
 static void             killfocus();
 static void             focusclient(client* cl);
+static void             setxfocus(client* cl);
 static void             unfocusclient(client* cl);
 static void             configclient(client* cl);
 static void             cyclefocus();
@@ -52,7 +53,6 @@ static void             loaddefaultcursor();
 static void             evmaprequest(xcb_generic_event_t* ev);
 static void             evunmapnotify(xcb_generic_event_t* ev);
 static void             eventernotify(xcb_generic_event_t* ev);
-static void             evfocusin(xcb_generic_event_t* ev);
 static void             evkeypress(xcb_generic_event_t* ev);
 static void             evbuttonpress(xcb_generic_event_t* ev);
 static void             evmotionnotify(xcb_generic_event_t* ev);
@@ -90,7 +90,6 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_UNMAP_NOTIFY]        = evunmapnotify,
   [XCB_ENTER_NOTIFY]        = eventernotify,
   [XCB_KEY_PRESS]           = evkeypress,
-  [XCB_FOCUS_IN]            = evfocusin,
   [XCB_BUTTON_PRESS]        = evbuttonpress,
   [XCB_MOTION_NOTIFY]       = evmotionnotify,
   [XCB_CONFIGURE_REQUEST]   = evconfigrequest,
@@ -392,15 +391,38 @@ killfocus() {
  */
 void
 focusclient(client* cl) {
-  // Return if the client is the root window or the client is NULL
   if(!cl || cl->win == s.root) {
     return;
   }
+
   // Unfocus the previously focused window to ensure that there is only
   // one focused (highlighted) window at a time.
   if(s.focus) {
     unfocusclient(s.focus);
   }
+
+  // Set input focus 
+  setxfocus(cl);
+
+  // Change border color to indicate selection
+  setbordercolor(cl, winbordercolor_selected);
+  setborderwidth(cl, winborderwidth);
+
+  // Set the focused client
+  s.focus = cl;
+
+  xcb_flush(s.con);
+}
+
+/**
+ * @brief Sets the X input focus to a given client and handles EWMH atoms & 
+ * focus event.
+ *
+ * @param cl The client to set the input focus to
+ */
+
+void
+setxfocus(client* cl) {
   // Set input focus to client
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
 
@@ -410,22 +432,17 @@ focusclient(client* cl) {
 
   // Raise take-focus event
   raiseevent(cl, s.wm_atoms[WMtakeFocus]);
-
-  // Change border color to indicate selection
-  setbordercolor(cl, winbordercolor_selected);
-  setborderwidth(cl, winborderwidth);
-
-  // Set the focused client
-  s.focus = cl;
 }
 
 void
 unfocusclient(client* cl) {
-  if (!cl)
+  if (!cl) {
     return;
+  }
   setbordercolor(cl, winbordercolor);
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
   xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHactiveWindow]);
+  xcb_flush(s.con);
 }
 
 /**
@@ -571,6 +588,7 @@ eventernotify(xcb_generic_event_t* ev) {
   }
 
   client* cl = clientfromwin(enter_ev->event);
+  // Focus entered client
   if(cl) { 
     focusclient(cl);
   }
@@ -586,27 +604,6 @@ eventernotify(xcb_generic_event_t* ev) {
   }
 
   xcb_flush(s.con);
-}
-
-/**
- * @brief Handles a X focus-in event by setting the border color
- * of the window that gained focus to the selected border color.
- *
- * @param ev The generic event 
- */
-void
-evfocusin(xcb_generic_event_t* ev) {
-  xcb_focus_in_event_t* focus_ev = (xcb_focus_in_event_t*)ev;
-  // Retrieving associated client
-  client* cl = clientfromwin(focus_ev->event);
-  if(!cl || cl == s.focus) {
-    return;
-  }
-  // If a client gained focus, set selected border color.
-  setbordercolor(cl, winbordercolor_selected);
-  setborderwidth(cl, winborderwidth);
-
-  focusclient(cl);
 }
 
 /**
@@ -650,6 +647,11 @@ evbuttonpress(xcb_generic_event_t* ev) {
   }
   // Focusing client 
   if(cl != s.focus) {
+    // Unfocus the previously focused window to ensure that there is only
+    // one focused (highlighted) window at a time.
+    if(s.focus) {
+      unfocusclient(s.focus);
+    }
     focusclient(cl);
   }
 
@@ -822,18 +824,11 @@ evclientmessage(xcb_generic_event_t* ev) {
  */
 void
 cyclefocus() {
-  /* If there is a next window ater the window that's currently
-   * focused, focus that window */
-  if(s.focus->next != NULL) {
-    s.focus = s.focus->next;
-  }
-  else {
-    // Set the focus back to the first client on the list
-    s.focus = s.clients;
-  }
-  /* Update & raise focus */
-  focusclient(s.focus);
-  raiseclient(s.focus);
+  if (!s.clients || !s.focus)
+    return;
+  // Find the next client to focus
+  client *next = s.focus->next ? s.focus->next : s.clients;
+  focusclient(next);
 }
 
 
