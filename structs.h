@@ -194,6 +194,8 @@ struct client {
   client* next;
 
   uint32_t borderwidth;
+
+  bool urgent;
 };
 
 typedef enum {
@@ -221,6 +223,7 @@ typedef enum {
 typedef struct {
   xcb_connection_t* con;
   xcb_window_t root;
+  xcb_screen_t* screen; 
 
   client* clients;
   client* focus;

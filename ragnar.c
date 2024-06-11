@@ -17,6 +17,7 @@
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
 #include <xcb/xcb_icccm.h>
+#include <xcb/xcb_cursor.h>
 
 #include "structs.h"
 
@@ -36,25 +37,28 @@ static void             raiseclient(client* cl);
 static void             killclient(client* cl);
 static void             killfocus();
 static void             focusclient(client* cl);
+static void             unfocusclient(client* cl);
 static void             configclient(client* cl);
 static void             cyclefocus();
 static bool             raiseevent(client* cl, xcb_atom_t protocol);
 static void             setwintype(client* cl);
+static void             seturgent(client* cl, bool urgent);
 static xcb_atom_t       getclientprop(client* cl, xcb_atom_t prop);
 
 static void             setupatoms();
 static void             grabkeybinds();
+static void             loaddefaultcursor();
 
 static void             evmaprequest(xcb_generic_event_t* ev);
 static void             evunmapnotify(xcb_generic_event_t* ev);
 static void             eventernotify(xcb_generic_event_t* ev);
 static void             evfocusin(xcb_generic_event_t* ev);
-static void             evfocusout(xcb_generic_event_t* ev);
 static void             evkeypress(xcb_generic_event_t* ev);
 static void             evbuttonpress(xcb_generic_event_t* ev);
 static void             evmotionnotify(xcb_generic_event_t* ev);
 static void             evconfigrequest(xcb_generic_event_t* ev);
 static void             evpropertynotify(xcb_generic_event_t* ev);
+static void             evclientmessage(xcb_generic_event_t* ev);
 
 static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
@@ -64,8 +68,9 @@ static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
 static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
 
 static void             runcmd(const char* cmd);
-
 static xcb_atom_t       getatom(const char* atomstr);
+
+static void             ewmh_updateclients();
 
 
 // This needs to be included after the function definitions
@@ -86,11 +91,11 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_ENTER_NOTIFY]        = eventernotify,
   [XCB_KEY_PRESS]           = evkeypress,
   [XCB_FOCUS_IN]            = evfocusin,
-  [XCB_FOCUS_OUT]           = evfocusout,
   [XCB_BUTTON_PRESS]        = evbuttonpress,
   [XCB_MOTION_NOTIFY]       = evmotionnotify,
   [XCB_CONFIGURE_REQUEST]   = evconfigrequest,
   [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
+  [XCB_CLIENT_MESSAGE]      = evclientmessage,
 };
 
 static State s;
@@ -118,7 +123,7 @@ setup() {
   }
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
-
+  s.screen = screen;
 
   /* Setting event mask for root window */
   uint32_t evmask[] = {
@@ -130,6 +135,8 @@ setup() {
     XCB_EVENT_MASK_FOCUS_CHANGE
   };
   xcb_change_window_attributes_checked(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
+
+  loaddefaultcursor();
 
   // Grab the window manager's keybinds
   grabkeybinds();
@@ -389,14 +396,36 @@ focusclient(client* cl) {
   if(!cl || cl->win == s.root) {
     return;
   }
+  // Unfocus the previously focused window to ensure that there is only
+  // one focused (highlighted) window at a time.
+  if(s.focus) {
+    unfocusclient(s.focus);
+  }
   // Set input focus to client
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
 
+  // Set active window hint
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHactiveWindow],
+                      XCB_ATOM_WINDOW, 32, 1, &cl->win);
+
+  // Raise take-focus event
+  raiseevent(cl, s.wm_atoms[WMtakeFocus]);
+
   // Change border color to indicate selection
   setbordercolor(cl, winbordercolor_selected);
+  setborderwidth(cl, winborderwidth);
 
   // Set the focused client
   s.focus = cl;
+}
+
+void
+unfocusclient(client* cl) {
+  if (!cl)
+    return;
+  setbordercolor(cl, winbordercolor);
+  xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
+  xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHactiveWindow]);
 }
 
 /**
@@ -443,6 +472,21 @@ void
 evmaprequest(xcb_generic_event_t* ev) {
   xcb_map_request_event_t* map_ev = (xcb_map_request_event_t*)ev;
 
+  // Retrieving attributes of the mapped window
+  xcb_get_window_attributes_cookie_t wa_cookie = xcb_get_window_attributes(s.con, map_ev->window);
+  xcb_get_window_attributes_reply_t *wa_reply = xcb_get_window_attributes_reply(s.con, wa_cookie, NULL);
+  // Return if attributes could not be retrieved or if the window uses override_redirect
+  if (!wa_reply || wa_reply->override_redirect) {
+    free(wa_reply);
+    return;
+  }
+  free(wa_reply);
+
+  // Don't handle already managed clients 
+  if(clientfromwin(map_ev->window) != NULL) {
+    return;
+  }
+
   // Setup listened events for the mapped window
   {
     uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE }; 
@@ -458,29 +502,35 @@ evmaprequest(xcb_generic_event_t* ev) {
                     s.root, XCB_NONE, 3, winmod);
   }
 
-  // Map the window
-  xcb_map_window(s.con, map_ev->window);
 
   // Retrieving cursor position
   bool cursor_success;
   v2 cursor = cursorpos(&cursor_success);
-  if(!cursor_success) goto flush;
+  if(!cursor_success) return;
 
   // Adding the mapped client to our linked list
   client* cl = addclient(map_ev->window);
 
-  // Set initial border color
+  // Set initial border 
   setbordercolor(cl, winbordercolor);
+  setborderwidth(cl, winborderwidth);
 
   // Set window type of client (e.g dialog)
   setwintype(cl);
+
+  // Send configure event to the client
+  configclient(cl);
+
+  // Update the EWMH client list
+  ewmh_updateclients();
 
   // If the cursor is on the mapped window when it spawned, focus it.
   if(pointinarea(cursor, cl->area)) {
     focusclient(cl);
   }
 
-flush:
+  // Map the window
+  xcb_map_window(s.con, map_ev->window);
   xcb_flush(s.con);
 }
 /**
@@ -497,8 +547,12 @@ evunmapnotify(xcb_generic_event_t* ev) {
   // Remove the client from the list
   releaseclient(unmap_ev->window);
 
+  // Update the EWMH client list
+  ewmh_updateclients();
+
   // Unmap the window
   xcb_unmap_window(s.con, unmap_ev->window);
+  xcb_flush(s.con);
 }
 
 /**
@@ -511,6 +565,11 @@ void
 eventernotify(xcb_generic_event_t* ev) {
   xcb_enter_notify_event_t *enter_ev = (xcb_enter_notify_event_t*)ev;
 
+  if((enter_ev->mode != XCB_NOTIFY_MODE_NORMAL || enter_ev->detail == XCB_NOTIFY_DETAIL_INFERIOR)
+    && enter_ev->event != s.root) {
+    return;
+  }
+
   client* cl = clientfromwin(enter_ev->event);
   if(cl) { 
     focusclient(cl);
@@ -522,6 +581,7 @@ eventernotify(xcb_generic_event_t* ev) {
     client* cl;
     for(cl = s.clients; cl != NULL; cl = cl->next) {
       setbordercolor(cl, winbordercolor);
+      setborderwidth(cl, winborderwidth);
     }
   }
 
@@ -539,29 +599,14 @@ evfocusin(xcb_generic_event_t* ev) {
   xcb_focus_in_event_t* focus_ev = (xcb_focus_in_event_t*)ev;
   // Retrieving associated client
   client* cl = clientfromwin(focus_ev->event);
-  if(!cl) {
+  if(!cl || cl == s.focus) {
     return;
   }
   // If a client gained focus, set selected border color.
   setbordercolor(cl, winbordercolor_selected);
-}
+  setborderwidth(cl, winborderwidth);
 
-/**
- * @brief Handles a X focus-out event by setting the border color
- * of the window that lost focus to the unselected border color.
- *
- * @param ev The generic event 
- */
-void
-evfocusout(xcb_generic_event_t* ev) {
-  xcb_focus_out_event_t* focus_ev = (xcb_focus_out_event_t*)ev;
-  // Retrieving associated client
-  client* cl = clientfromwin(focus_ev->event);
-  if(!cl) {
-    return;
-  }
-  // If a client lost focus, set unselected border color.
-  setbordercolor(cl, winbordercolor);
+  focusclient(cl);
 }
 
 /**
@@ -586,6 +631,7 @@ evkeypress(xcb_generic_event_t* ev) {
       }
     }
   }
+  xcb_flush(s.con);
 }
 
 /**
@@ -613,6 +659,7 @@ evbuttonpress(xcb_generic_event_t* ev) {
 
   // Raising the client to the top of the stack
   raiseclient(cl);
+  xcb_flush(s.con);
 }
 
 /**
@@ -651,6 +698,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
 
     resizeclient(cl, sizedest);
   }
+  xcb_flush(s.con);
 }
 
 /**
@@ -673,7 +721,6 @@ evconfigrequest(xcb_generic_event_t* ev) {
   uint16_t mask = 0;
   uint32_t values[7];
   int i = 0;
-
   // If the events wants to configure x, add it to the config
   if (req->value_mask & XCB_CONFIG_WINDOW_X) {
     cl->area.pos.y = req->y;
@@ -738,6 +785,34 @@ evpropertynotify(xcb_generic_event_t* ev) {
     // Updating the window type if we receive a window type change event.
     if(prop_ev->atom == s.ewmh_atoms[EWMHwindowType]) {
       setwintype(cl);
+    }
+  }
+  xcb_flush(s.con);
+}
+/**
+ * @brief Handles a X client message event by setting fullscreen or 
+ * urgency (based on the event request).
+ *
+ * @param ev The generic event 
+ */
+void
+evclientmessage(xcb_generic_event_t* ev) {
+  xcb_client_message_event_t* msg_ev = (xcb_client_message_event_t*)ev;
+  client* cl = clientfromwin(msg_ev->window);
+
+  if(!cl) {
+    return;
+  }
+
+  if(msg_ev->type == s.ewmh_atoms[EWMHstate]) {
+    if(msg_ev->data.data32[1] == s.ewmh_atoms[EWMHfullscreen] ||
+       msg_ev->data.data32[2] == s.ewmh_atoms[EWMHfullscreen]) {
+      // TODO: Set client fullscreen
+      printf("Client went fullscreen.\n");
+    }
+  } else if(msg_ev->type == s.ewmh_atoms[EWMHactiveWindow]) {
+    if(s.focus != cl && !cl->urgent) {
+      seturgent(cl, true);
     }
   }
 }
@@ -805,14 +880,33 @@ raiseevent(client* cl, xcb_atom_t protocol) {
 void
 setwintype(client* cl) {
   xcb_atom_t state = getclientprop(cl, s.ewmh_atoms[EWMHstate]);
-  xcb_atom_t wintype = getclientprop(cl, s.ewmh_atoms[EWMHstate]);
+  xcb_atom_t wintype = getclientprop(cl, s.ewmh_atoms[EWMHwindowType]);
 
   if(state == s.ewmh_atoms[EWMHfullscreen]) {
     // TODO: Set client fullscreen
+    printf("Client went fullscreen.\n");
   } 
   if(wintype == s.ewmh_atoms[EWMHwindowTypeDialog]) {
     // TODO: Mark client as floating
   }
+}
+
+void
+seturgent(client* cl, bool urgent) {
+  xcb_icccm_wm_hints_t wmh;
+  cl->urgent = urgent;
+
+  xcb_get_property_cookie_t cookie = xcb_icccm_get_wm_hints(s.con, cl->win);
+  if (!xcb_icccm_get_wm_hints_reply(s.con, cookie, &wmh, NULL)) {
+    return;
+  }
+
+  if (urgent) {
+    wmh.flags |= XCB_ICCCM_WM_HINT_X_URGENCY;
+  } else {
+    wmh.flags &= ~XCB_ICCCM_WM_HINT_X_URGENCY;
+  }
+  xcb_icccm_set_wm_hints(s.con, cl->win, &wmh);
 }
 
 /**
@@ -919,6 +1013,30 @@ grabkeybinds() {
 	}
   xcb_flush(s.con);
 }
+/**
+ * @brief Loads and sets the default cursor image of the window manager.
+ * The default image is the left facing pointer.
+ * */
+void
+loaddefaultcursor() {
+  xcb_cursor_context_t* context;
+  // Create the cursor context
+  if (xcb_cursor_context_new(s.con, s.screen, &context) < 0) {
+    fprintf(stderr, "ragnar: cannot create cursor context.\n");
+    terminate();
+  }
+  // Load the context
+  xcb_cursor_t cursor = xcb_cursor_load_cursor(context, "arrow");
+
+  // Set the cursor to the root window
+  xcb_change_window_attributes(s.con, s.root, XCB_CW_CURSOR, &cursor);
+
+  // Flush the requests to the X server
+  xcb_flush(s.con);
+
+  // Free allocated resources
+  xcb_cursor_context_free(context);
+}
 
 /**
  * @brief Adds a client window to the linked list of clients.
@@ -942,8 +1060,6 @@ addclient(xcb_window_t win) {
   cl->area = area;
   cl->borderwidth = winborderwidth;
 
-  // Sending a configure event
-  configclient(cl);
 
   // Updating the linked list of clients
   cl->next = s.clients;
@@ -1082,6 +1198,20 @@ getatom(const char* atomstr) {
   xcb_atom_t atom = reply ? reply->atom : XCB_ATOM_NONE;
   free(reply);
   return atom;
+}
+
+/**
+ * @brief Updates the client list EWMH atom tothe current list of clients.
+ * */
+void
+ewmh_updateclients() {
+  xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHclientList]);
+
+  client* cl;
+  for(cl = s.clients; cl != NULL; cl = cl->next) {
+    xcb_change_property(s.con, XCB_PROP_MODE_APPEND, s.root, s.ewmh_atoms[EWMHclientList],
+                        XCB_ATOM_WINDOW, 32, 1, &cl->win);
+  }
 }
 
 int 
