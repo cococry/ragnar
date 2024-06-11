@@ -72,6 +72,7 @@ static xcb_atom_t       getatom(const char* atomstr);
 
 static void             ewmh_updateclients();
 
+static void             sigchld_handler(int32_t signum);
 
 // This needs to be included after the function definitions
 #include "config.h"
@@ -111,6 +112,16 @@ static State s;
  */
 void
 setup() {
+  // Setup SIGCHLD handler
+  struct sigaction sa;
+  sa.sa_handler = sigchld_handler;
+  sa.sa_flags = SA_RESTART;
+  sigemptyset(&sa.sa_mask);
+  if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+    perror("sigaction");
+    exit(EXIT_FAILURE);
+  }
+
   s.clients = NULL;
 
   // s.conecting to the X server
@@ -1207,6 +1218,15 @@ ewmh_updateclients() {
     xcb_change_property(s.con, XCB_PROP_MODE_APPEND, s.root, s.ewmh_atoms[EWMHclientList],
                         XCB_ATOM_WINDOW, 32, 1, &cl->win);
   }
+}
+
+/**
+ * @brief Signal handler for SIGCHLD to avoid zombie processes
+ * */
+void
+sigchld_handler(int32_t signum) {
+  (void)signum;
+  while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
 int 
