@@ -18,6 +18,7 @@
 #include <X11/keysym.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_cursor.h>
+#include <xcb/randr.h>
 
 #include "structs.h"
 
@@ -26,6 +27,7 @@ static void             loop();
 static void             terminate();
 
 static bool             pointinarea(v2 p, area a);
+static bool             areainarea(area a, area b);
 static v2               cursorpos(bool* success);
 static area             winarea(xcb_window_t win, bool* success);
 
@@ -63,6 +65,13 @@ static void             evclientmessage(xcb_generic_event_t* ev);
 static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
 static client*          clientfromwin(xcb_window_t win);
+
+
+static monitor*         addmon(area a);
+static monitor*         monbyarea(area a);
+static monitor*         clientmon(client* cl);
+static monitor*         cursormon();
+static void             updatemons();
 
 static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
 static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
@@ -142,7 +151,8 @@ setup() {
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
     XCB_EVENT_MASK_PROPERTY_CHANGE |
     XCB_EVENT_MASK_ENTER_WINDOW |
-    XCB_EVENT_MASK_FOCUS_CHANGE
+    XCB_EVENT_MASK_FOCUS_CHANGE | 
+    XCB_EVENT_MASK_POINTER_MOTION
   };
   xcb_change_window_attributes_checked(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
 
@@ -152,6 +162,10 @@ setup() {
   grabkeybinds();
   // Setup atoms for EWMH and so on
   setupatoms();
+
+  // Handle monitor setup 
+  updatemons();
+  s.monfocus = cursormon();
 }
 
 /**
@@ -183,6 +197,24 @@ loop() {
  */
 void 
 terminate() {
+  {
+    client* cl = s.clients;
+    client* next;
+    while(cl != NULL) {
+      next = cl->next;
+      releaseclient(cl->win);
+      cl = next; 
+    }
+  }
+  {
+    monitor* mon = s.monitors;
+    monitor* next;
+    while (mon != NULL) {
+      next = mon->next;
+      free(mon);
+      mon = next;
+    }
+  }
   xcb_disconnect(s.con);
   exit(EXIT_SUCCESS);
 }
@@ -193,7 +225,7 @@ terminate() {
  * @param p The point to check if it is inside the given area
  * @param area The area to check
  *
- * @return True if the point p is in the area, false if it is not in the area 
+ * @return If the point p is in the area, false if it is not in the area 
  */
 bool
 pointinarea(v2 p, area area) {
@@ -201,6 +233,34 @@ pointinarea(v2 p, area area) {
   p.x < (area.pos.x + area.size.x) &&
   p.x >= area.pos.y &&
   p.y < (area.pos.y + area.size.y));
+}
+
+
+/**
+ * @brief Evaluates if a given area is contained within another 
+ * given area
+ *
+ * @param a The area to check if it's contained within the other area.
+ * @param b The area to check if a is contained within it.
+ *
+ * @return If the area 'a' is within the area 'b'  
+ */
+bool
+areainarea(area a, area b) {
+  // Calculate the corners of area a
+  float a_left = a.pos.x;
+  float a_right = a.pos.x + a.size.x;
+  float a_bottom = a.pos.y;
+  float a_top = a.pos.y + a.size.y;
+
+  // Calculate the corners of area b
+  float b_left = b.pos.x;
+  float b_right = b.pos.x + b.size.x;
+  float b_bottom = b.pos.y;
+  float b_top = b.pos.y + b.size.y;
+
+  // Check if all corners of area a are within area b
+  return (a_left >= b_left && a_right <= b_right && a_bottom >= b_bottom && a_top <= b_top);
 }
 
 /**
@@ -557,6 +617,13 @@ evmaprequest(xcb_generic_event_t* ev) {
     focusclient(cl);
   }
 
+  if(s.monfocus) {
+    // Spawn the window in the center of the focused monitor
+    moveclient(cl, (v2){
+      s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
+      s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
+  }
+
   // Map the window
   xcb_map_window(s.con, map_ev->window);
   xcb_flush(s.con);
@@ -685,6 +752,11 @@ void
 evmotionnotify(xcb_generic_event_t* ev) {
   xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
 
+  if(motion_ev->event == s.root) {
+    // Update the focused monitor to the monitor under the cursor
+    s.monfocus = cursormon();
+    return;
+  }
   client* cl = clientfromwin(motion_ev->event);
   if(!cl) {
     return;
@@ -701,6 +773,9 @@ evmotionnotify(xcb_generic_event_t* ev) {
     v2 movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
 
     moveclient(cl, movedest);
+
+    // Update focused monitor in case the user dragged the window onto another monitor
+    s.monfocus = clientmon(cl);
   } 
   // On right click resize the window
   else if(motion_ev->state & XCB_BUTTON_MASK_3) {
@@ -1104,7 +1179,6 @@ releaseclient(xcb_window_t win) {
 /**
  * @brief Returns the associated client from a given window.
  * Returns NULL if there is no client associated with the window.
- * by window.
  *
  * @param win The window to get the client from
  *
@@ -1120,6 +1194,139 @@ clientfromwin(xcb_window_t win) {
     }
   }
   return NULL;
+}
+
+/**
+ * @brief Adds a monitor area to the linked list of monitors.
+ *
+ * @param a The area of the monitor to create 
+ *
+ * @return The newly created monitor 
+ */
+monitor* addmon(area a) {
+  monitor* mon = (monitor*)malloc(sizeof(*mon));
+  mon->area = a;
+
+  mon->next = s.monitors;
+  s.monitors = mon;
+
+  return mon;
+}
+
+void
+updatemons() {
+  // Get xrandr screen resources
+  xcb_randr_get_screen_resources_current_cookie_t res_cookie = xcb_randr_get_screen_resources_current(s.con, s.screen->root);
+  xcb_randr_get_screen_resources_current_reply_t *res_reply = xcb_randr_get_screen_resources_current_reply(s.con, res_cookie, NULL);
+
+  if (!res_reply) {
+    fprintf(stderr, "ragnar: not get screen resources.\n");
+    terminate();
+  }
+
+  // Get number of connected monitors
+  int num_outputs = xcb_randr_get_screen_resources_current_outputs_length(res_reply);
+  // Get list of monitors
+  xcb_randr_output_t *outputs = xcb_randr_get_screen_resources_current_outputs(res_reply);
+
+  for (int i = 0; i < num_outputs; i++) {
+    // Get the monitor info
+    xcb_randr_get_output_info_cookie_t info_cookie = xcb_randr_get_output_info(s.con, outputs[i], XCB_TIME_CURRENT_TIME);
+    xcb_randr_get_output_info_reply_t *info_reply = xcb_randr_get_output_info_reply(s.con, info_cookie, NULL);
+
+    // Check if montior has CRTC
+    if (info_reply && info_reply->crtc != XCB_NONE) {
+      // Get CRTC info
+      xcb_randr_get_crtc_info_cookie_t crtc_cookie = xcb_randr_get_crtc_info(s.con, info_reply->crtc, XCB_TIME_CURRENT_TIME);
+      xcb_randr_get_crtc_info_reply_t *crtc_reply = xcb_randr_get_crtc_info_reply(s.con, crtc_cookie, NULL);
+
+      // If that worked, register the monitor if it isn't registered yet 
+      if (crtc_reply) {
+        area monarea = (area){
+          .pos = (v2){
+            crtc_reply->x, crtc_reply->y
+          },
+          .size = (v2){
+            crtc_reply->width, crtc_reply->height
+          }
+        };
+        if(!monbyarea(monarea)) {
+          addmon(monarea);
+        }
+        free(crtc_reply);
+      }
+    }
+    if (info_reply) {
+      free(info_reply);
+    }
+  }
+  free(res_reply);
+
+}
+
+/**
+ * @brief Returns the monitor within the list of monitors 
+ * that matches the given area. 
+ * Returns NULL if there is no monitor associated with the area.
+ *
+ * @param a The area to find within the monitors 
+ *
+ * @return The monitor associated with the given area (NULL if no associated monitor)
+ */
+monitor* monbyarea(area a) {
+  monitor* mon;
+  for(mon = s.monitors; mon != NULL; mon = mon->next) {
+    if((mon->area.pos.x == a.pos.x && mon->area.pos.y == a.pos.y) &&
+        (mon->area.size.x == a.size.x && mon->area.size.y == a.size.y)) {
+      return mon;
+    }
+  }
+  return NULL;
+}
+
+/**
+ * @brief Returns the monitor in which a given client is contained in. 
+ * any registered monitor.
+ *
+ * @param cl The client to get the monitor of 
+ *
+ * @return The monitor that the given client is contained in.
+ * Returns the first monitor if the given client is not contained within
+ */
+monitor*
+clientmon(client* cl) {
+  if(!cl) {
+    return s.monitors;
+  }
+  monitor* mon;
+  for(mon = s.monitors; mon != NULL; mon = mon->next) {
+    if(areainarea(cl->area, mon->area)) {
+      return mon;
+    }
+  }
+  return s.monitors;
+}
+
+/**
+ * @brief Returns the monitor under the cursor 
+ *
+ * @return The monitor that is under the cursor.
+ * Returns the first monitor if there is no monitor under the cursor. 
+ */
+monitor*
+cursormon() {
+  bool success;
+  v2 cursor = cursorpos(&success);
+  if(!success) {
+    return s.monitors;
+  }
+  monitor* mon;
+  for(mon = s.monitors; mon != NULL; mon = mon->next) {
+    if(pointinarea(cursor, mon->area)) {
+      return mon;
+    }
+  }
+  return s.monitors;
 }
 
 /**

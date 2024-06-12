@@ -219,6 +219,12 @@ typedef enum {
   WMcount
 } wm_atom;
 
+typedef struct monitor monitor;
+
+struct monitor {
+  area area;
+  monitor* next;
+};
 
 typedef struct {
   xcb_connection_t* con;
@@ -230,6 +236,9 @@ typedef struct {
 
   v2 grabcursor;
   area grabwin;
+
+  monitor* monitors;
+  monitor* monfocus;
 
   xcb_atom_t wm_atoms[WMcount]; 
   xcb_atom_t ewmh_atoms[EWMHcount]; 
