@@ -185,16 +185,25 @@ typedef struct {
 
 typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 
+typedef struct monitor monitor;
+
+struct monitor {
+  area area;
+  monitor* next;
+};
+
 typedef struct client client;
 
 struct client {
   area area, area_prev;
-  bool fullscreen;
+  bool fullscreen, floating;
   xcb_window_t win;
 
   client* next;
 
   uint32_t borderwidth;
+
+  monitor* mon;
 
   bool urgent;
 };
@@ -220,12 +229,6 @@ typedef enum {
   WMcount
 } wm_atom;
 
-typedef struct monitor monitor;
-
-struct monitor {
-  area area;
-  monitor* next;
-};
 
 typedef struct {
   xcb_connection_t* con;

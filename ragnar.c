@@ -62,6 +62,7 @@ static void             evkeypress(xcb_generic_event_t* ev);
 static void             evbuttonpress(xcb_generic_event_t* ev);
 static void             evmotionnotify(xcb_generic_event_t* ev);
 static void             evconfigrequest(xcb_generic_event_t* ev);
+static void             evconfignotify(xcb_generic_event_t* ev);
 static void             evpropertynotify(xcb_generic_event_t* ev);
 static void             evclientmessage(xcb_generic_event_t* ev);
 
@@ -106,6 +107,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_BUTTON_PRESS]        = evbuttonpress,
   [XCB_MOTION_NOTIFY]       = evmotionnotify,
   [XCB_CONFIGURE_REQUEST]   = evconfigrequest,
+  [XCB_CONFIGURE_NOTIFY]    = evconfignotify,
   [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
   [XCB_CLIENT_MESSAGE]      = evclientmessage,
 };
@@ -375,6 +377,11 @@ moveclient(client* cl, v2 pos) {
   xcb_flush(s.con);
 
   cl->area.pos = pos;
+
+
+  // Update focused monitor in case the window was moved onto another monitor
+  cl->mon = clientmon(cl);
+  s.monfocus = cl->mon; 
 }
 
 /**
@@ -422,6 +429,10 @@ moveresizeclient(client* cl, area a) {
   xcb_flush(s.con);
 
   cl->area = a;
+
+  // Update focused monitor in case the window was moved onto another monitor
+  cl->mon = clientmon(cl);
+  s.monfocus = cl->mon; 
 }
 
 /**
@@ -597,7 +608,7 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Setup listened events for the mapped window
   {
-    uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE }; 
+    uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE | XCB_EVENT_MASK_POINTER_MOTION }; 
     xcb_change_window_attributes_checked(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
   }
 
@@ -626,6 +637,13 @@ evmaprequest(xcb_generic_event_t* ev) {
   // Set window type of client (e.g dialog)
   setwintype(cl);
 
+  // Set client's monitor
+  cl->mon = clientmon(cl);
+
+  // Set all clients floating for now (TODO)
+  cl->floating = true;
+
+
   // Send configure event to the client
   configclient(cl);
 
@@ -635,13 +653,6 @@ evmaprequest(xcb_generic_event_t* ev) {
   // If the cursor is on the mapped window when it spawned, focus it.
   if(pointinarea(cursor, cl->area)) {
     focusclient(cl);
-  }
-
-  if(s.monfocus) {
-    // Spawn the window in the center of the focused monitor
-    moveclient(cl, (v2){
-      s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
-      s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
 
   // Map the window
@@ -781,6 +792,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
   if(!cl) {
     return;
   }
+  s.monfocus = cursormon();
 
   // Position of the cursor in the drag event
   v2 dragpos    = (v2){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
@@ -793,9 +805,6 @@ evmotionnotify(xcb_generic_event_t* ev) {
     v2 movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
 
     moveclient(cl, movedest);
-
-    // Update focused monitor in case the user dragged the window onto another monitor
-    s.monfocus = clientmon(cl);
   } 
   // On right click resize the window
   else if(motion_ev->state & XCB_BUTTON_MASK_3) {
@@ -810,75 +819,118 @@ evmotionnotify(xcb_generic_event_t* ev) {
 }
 
 /**
- * @brief Handles a X configure request by configuring the client that 
+ * @brief Handles a Xorg configure request by configuring the client that 
  * is associated with the window how the event requested it.
  *
  * @param ev The generic event 
  */
 void 
 evconfigrequest(xcb_generic_event_t* ev) {
-  xcb_configure_request_event_t* req = (xcb_configure_request_event_t*)ev;
-  xcb_window_t win = req->window;
+  /* ===== Taken from DWM and rewriten for XCB ==== */
+  xcb_configure_request_event_t* config_ev = (xcb_configure_request_event_t*)ev;
 
-  client* cl = clientfromwin(win);
-  if(!cl) {
-    return;
-  }
+  client* cl = clientfromwin(config_ev->window);
+  monitor* mon;
 
-  // Configuration mask
+  // Variables for configuring the window
   uint16_t mask = 0;
   uint32_t values[7];
   int i = 0;
-  // If the events wants to configure x, add it to the config
-  if (req->value_mask & XCB_CONFIG_WINDOW_X) {
-    cl->area.pos.y = req->y;
-    mask |= XCB_CONFIG_WINDOW_X;
-    values[i++] = req->x;
-  }
-  // If the events wants to configure y, add it to the config
-  if (req->value_mask & XCB_CONFIG_WINDOW_Y) {
-    cl->area.pos.x = req->x;
-    mask |= XCB_CONFIG_WINDOW_Y;
-    values[i++] = req->y;
-  }
-  // If the events wants to configure width, add it to the config
-  if (req->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
-    cl->area.size.x = req->width;
-    mask |= XCB_CONFIG_WINDOW_WIDTH;
-    values[i++] = req->width;
-  }
-  if (req->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
-    cl->area.size.y = req->height;
-    mask |= XCB_CONFIG_WINDOW_HEIGHT;
-    values[i++] = req->height;
-  }
-  // If the events wants to configure height, add it to the config
-  if (req->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
-    cl->borderwidth = req->border_width;
-    mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
-    values[i++] = req->border_width;
-  }
-  // If the events wants to configure a sibling, add it to the config
-  if (req->value_mask & XCB_CONFIG_WINDOW_SIBLING) {
-    mask |= XCB_CONFIG_WINDOW_SIBLING;
-    values[i++] = req->sibling;
-  }
-  // If the events wants to configure the stack mode, add it to the config
-  if (req->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) {
-    mask |= XCB_CONFIG_WINDOW_STACK_MODE;
-    values[i++] = req->stack_mode;
-  }
 
-  // Update the clients geometry and border width
-  setborderwidth(cl, cl->borderwidth);
-  moveclient(cl, cl->area.pos);
-  resizeclient(cl, cl->area.size);
+  if (cl) {
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
+      cl->borderwidth = config_ev->border_width;
+    } else if (cl->floating) {
+      mon = cl->mon;
+      // If the event wants to configure X position, update it and 
+      // backup previous position
+      if (config_ev->value_mask & XCB_CONFIG_WINDOW_X) {
+        cl->area_prev.pos.x = cl->area.pos.x;
+        cl->area.pos.x = mon->area.pos.x + config_ev->x;
+      }
+      // If the event wants to configure Y position, update it and 
+      // backup previous position
+      if (config_ev->value_mask & XCB_CONFIG_WINDOW_Y) {
+        cl->area_prev.pos.y = cl->area.pos.y;
+        cl->area.pos.y = mon->area.pos.y + config_ev->y;
+      }
+      // If the event wants to configure width, update it and 
+      // backup previous width 
+      if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
+        cl->area_prev.size.x = cl->area.size.x;
+        cl->area.size.x = config_ev->width;
+      }
+      // If the event wants to configure height, update it and 
+      // backup previous height 
+      if (config_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
+        cl->area_prev.size.y = cl->area.size.y;
+        cl->area.size.y = config_ev->height;
+      }
+      // Center floating clients
+      cl->area.pos.x = mon->area.pos.x + (mon->area.size.x - cl->area.size.x) / 2.0f;
+      cl->area.pos.y = mon->area.pos.y + (mon->area.size.y - cl->area.size.y) / 2.0f;
 
-  // Configure the window with the accumulated mask and values
-  xcb_configure_window(s.con, win, mask, values);
+      // Send a configure event to the client
+      if ((config_ev->value_mask & (XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y)) &&
+        !(config_ev->value_mask & (XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT))) {
+        configclient(cl);
+      }
+      // Move and resize the client based on the event's request
+      moveresizeclient(cl, cl->area);
+    } else {
+      // If the client is not floating, don't use any values of the event, instead
+      // configure the client window by the tiling layout later
+      configclient(cl);
+    }
+  } else {
+    // If the configure event did not occur on a client window, 
+    // just configure it.
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_X) {
+      values[i++] = config_ev->x;
+      mask |= XCB_CONFIG_WINDOW_X;
+    }
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_Y) {
+      values[i++] = config_ev->y;
+      mask |= XCB_CONFIG_WINDOW_Y;
+    }
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
+      values[i++] = config_ev->width;
+      mask |= XCB_CONFIG_WINDOW_WIDTH;
+    }
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
+      values[i++] = config_ev->height;
+      mask |= XCB_CONFIG_WINDOW_HEIGHT;
+    }
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
+      values[i++] = config_ev->border_width;
+      mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
+    }
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_SIBLING) {
+      values[i++] = config_ev->sibling;
+      mask |= XCB_CONFIG_WINDOW_SIBLING;
+    }
+    if (config_ev->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) {
+      values[i++] = config_ev->stack_mode;
+      mask |= XCB_CONFIG_WINDOW_STACK_MODE;
+    }
+    xcb_configure_window(s.con, config_ev->window, mask, values);
+  }
   xcb_flush(s.con);
 }
 
+
+/*
+ * @brief Handles a X configure notify event. If the root window 
+ * recieved a configure notify event, the list of monitors is refreshed.
+ * */
+void
+evconfignotify(xcb_generic_event_t* ev) {
+  xcb_configure_notify_event_t* config_ev = (xcb_configure_notify_event_t*)ev;
+
+  if(config_ev->window == s.root) {
+    updatemons();
+  }
+}
 /**
  * @brief Handles a X property notify event for window properties by handling various Extended Window Manager Hints (EWMH). 
  *
@@ -936,6 +988,7 @@ cyclefocus() {
   // Find the next client to focus
   client *next = s.focus->next ? s.focus->next : s.clients;
   focusclient(next);
+  raiseclient(next);
 }
 
 
@@ -985,10 +1038,10 @@ setwintype(client* cl) {
   xcb_atom_t wintype = getclientprop(cl, s.ewmh_atoms[EWMHwindowType]);
 
   if(state == s.ewmh_atoms[EWMHfullscreen]) {
-    printf("Client went fullscreen.\n");
+    setfullscreen(cl, true);
   } 
   if(wintype == s.ewmh_atoms[EWMHwindowTypeDialog]) {
-    // TODO: Mark client as floating
+    cl->floating = true;
   }
 }
 
@@ -1196,9 +1249,11 @@ addclient(xcb_window_t win) {
   area area = winarea(win, &success);
   // Assert that it worked
   assert(success && "Failed to get window area.");
+
   cl->area = area;
   cl->borderwidth = winborderwidth;
   cl->fullscreen = false;
+  cl->floating = false;
 
 
   // Updating the linked list of clients
