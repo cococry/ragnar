@@ -35,6 +35,7 @@ static void             setbordercolor(client* cl, uint32_t color);
 static void             setborderwidth(client* cl, uint32_t width);
 static void             moveclient(client* cl, v2 pos);
 static void             resizeclient(client* cl, v2 size);
+static void             moveresizeclient(client* cl, area a);
 static void             raiseclient(client* cl);
 static void             killclient(client* cl);
 static void             killfocus();
@@ -47,6 +48,8 @@ static bool             raiseevent(client* cl, xcb_atom_t protocol);
 static void             setwintype(client* cl);
 static void             seturgent(client* cl, bool urgent);
 static xcb_atom_t       getclientprop(client* cl, xcb_atom_t prop);
+static void             setfullscreen(client* cl, bool fullscreen);
+static void             togglefullscreen();
 
 static void             setupatoms();
 static void             grabkeybinds();
@@ -371,12 +374,7 @@ moveclient(client* cl, v2 pos) {
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, posval);
   xcb_flush(s.con);
 
-  /* Referesh window area aafter moving it on X server. */
-  bool success;
-  area a = winarea(cl->win, &success);
-  if(!success) return;
-
-  cl->area = a;
+  cl->area.pos = pos;
 }
 
 /**
@@ -396,10 +394,32 @@ resizeclient(client* cl, v2 size) {
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
   xcb_flush(s.con);
 
-  /* Referesh window area aafter resizing it on X server. */
-  bool success;
-  area a = winarea(cl->win, &success);
-  if(!success) return;
+  cl->area.size = size;
+}
+
+/**
+ * @brief Moves and resizes the window of a given client and updates its area.
+ *
+ * @param cl The client to move and resize
+ * @param a The new area (position and size) for the client's window
+ */
+void
+moveresizeclient(client* cl, area a) {
+  if (!cl) {
+    return;
+  }
+  uint32_t values[4] = {
+    (uint32_t)a.pos.x, 
+    (uint32_t)a.pos.y,
+    (uint32_t)a.size.x,
+    (uint32_t)a.size.y
+  };
+
+  // Move and resize the window by configuring its x, y, width, and height properties
+  xcb_configure_window(s.con, cl->win, 
+                       XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | 
+                       XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values);
+  xcb_flush(s.con);
 
   cl->area = a;
 }
@@ -893,10 +913,11 @@ evclientmessage(xcb_generic_event_t* ev) {
   }
 
   if(msg_ev->type == s.ewmh_atoms[EWMHstate]) {
+    // If client requested fullscreen toggle
     if(msg_ev->data.data32[1] == s.ewmh_atoms[EWMHfullscreen] ||
        msg_ev->data.data32[2] == s.ewmh_atoms[EWMHfullscreen]) {
-      // TODO: Set client fullscreen
-      printf("Client went fullscreen.\n");
+      // Set/unset client fullscreen 
+      setfullscreen(cl, (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen)));
     }
   } else if(msg_ev->type == s.ewmh_atoms[EWMHactiveWindow]) {
     if(s.focus != cl && !cl->urgent) {
@@ -964,7 +985,6 @@ setwintype(client* cl) {
   xcb_atom_t wintype = getclientprop(cl, s.ewmh_atoms[EWMHwindowType]);
 
   if(state == s.ewmh_atoms[EWMHfullscreen]) {
-    // TODO: Set client fullscreen
     printf("Client went fullscreen.\n");
   } 
   if(wintype == s.ewmh_atoms[EWMHwindowTypeDialog]) {
@@ -1022,6 +1042,44 @@ getclientprop(client* cl, xcb_atom_t prop) {
     free(error);
   }
   return atom;
+}
+
+/**
+ * @brief Puts a given client in or out of fullscreen
+ * mode based on the input.
+ *
+ * @param cl The client to toggle fullscreen of 
+ * @param fullscreen Whether the client should be set 
+ * fullscreen or not
+ */
+void setfullscreen(client* cl, bool fullscreen) {
+  cl->fullscreen = fullscreen;
+  if(cl->fullscreen) {
+    // Store previous position of client
+    cl->area_prev = cl->area;
+    // Set the client's area to the focused monitors area, effictivly
+    // making the client as large as the monitor screen
+    cl->area = s.monfocus->area;
+
+    // Unset border of client if it's fullscreen
+    cl->borderwidth = 0;
+  } else {
+    // Set the client's area to the area before the last fullscreen occured 
+    cl->area = cl->area_prev;
+    cl->borderwidth = winborderwidth;
+  }
+  // Update client's border width
+  setborderwidth(cl, cl->borderwidth);
+  // Update client's geometry
+  moveresizeclient(cl, cl->area);
+}
+
+/**
+ * @brief Toggles fullscreen mode on the currently focused client
+ */
+void togglefullscreen() {
+  bool fs = !(s.focus->fullscreen);
+  setfullscreen(s.focus, fs); 
 }
 
 /**
@@ -1140,6 +1198,7 @@ addclient(xcb_window_t win) {
   assert(success && "Failed to get window area.");
   cl->area = area;
   cl->borderwidth = winborderwidth;
+  cl->fullscreen = false;
 
 
   // Updating the linked list of clients

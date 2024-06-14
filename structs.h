@@ -188,7 +188,8 @@ typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 typedef struct client client;
 
 struct client {
-  area area;
+  area area, area_prev;
+  bool fullscreen;
   xcb_window_t win;
 
   client* next;
