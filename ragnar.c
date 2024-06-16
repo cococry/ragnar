@@ -255,14 +255,10 @@ areainarea(area a, area b) {
   // Calculate the corners of area a
   float a_left = a.pos.x;
   float a_right = a.pos.x + a.size.x;
-  float a_bottom = a.pos.y;
-  float a_top = a.pos.y + a.size.y;
 
   // Calculate the corners of area b
   float b_left = b.pos.x;
   float b_right = b.pos.x + b.size.x;
-  float b_bottom = b.pos.y;
-  float b_top = b.pos.y + b.size.y;
 
   // Check if all corners of area a are within area b
   return (a_left >= b_left && a_right <= b_right);
