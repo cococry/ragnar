@@ -1,1 +1,2 @@
 nitrogen --restore
+setxkbmap de

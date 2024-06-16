@@ -265,7 +265,7 @@ areainarea(area a, area b) {
   float b_top = b.pos.y + b.size.y;
 
   // Check if all corners of area a are within area b
-  return (a_left >= b_left && a_right <= b_right && a_bottom >= b_bottom && a_top <= b_top);
+  return (a_left >= b_left && a_right <= b_right);
 }
 
 /**
@@ -506,12 +506,15 @@ focusclient(client* cl) {
   // Set input focus 
   setxfocus(cl);
 
-  // Change border color to indicate selection
-  setbordercolor(cl, winbordercolor_selected);
-  setborderwidth(cl, winborderwidth);
+  if(!cl->fullscreen) {
+    // Change border color to indicate selection
+    setbordercolor(cl, winbordercolor_selected);
+    setborderwidth(cl, winborderwidth);
+  }
 
   // Set the focused client
   s.focus = cl;
+  s.monfocus = cl->mon;
 
   xcb_flush(s.con);
 }
@@ -643,6 +646,13 @@ evmaprequest(xcb_generic_event_t* ev) {
   // Set all clients floating for now (TODO)
   cl->floating = true;
 
+  if(s.monfocus) {
+    // Spawn the window in the center of the focused monitor
+    moveclient(cl, (v2){
+      s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
+      s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
+  }
+
 
   // Send configure event to the client
   configclient(cl);
@@ -707,6 +717,9 @@ eventernotify(xcb_generic_event_t* ev) {
     /* Reset border color to unactive for every client */
     client* cl;
     for(cl = s.clients; cl != NULL; cl = cl->next) {
+      if(cl->fullscreen) {
+        continue;
+      }
       setbordercolor(cl, winbordercolor);
       setborderwidth(cl, winborderwidth);
     }
@@ -830,7 +843,6 @@ evconfigrequest(xcb_generic_event_t* ev) {
   xcb_configure_request_event_t* config_ev = (xcb_configure_request_event_t*)ev;
 
   client* cl = clientfromwin(config_ev->window);
-  monitor* mon;
 
   // Variables for configuring the window
   uint16_t mask = 0;
@@ -840,43 +852,6 @@ evconfigrequest(xcb_generic_event_t* ev) {
   if (cl) {
     if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
       cl->borderwidth = config_ev->border_width;
-    } else if (cl->floating) {
-      mon = cl->mon;
-      // If the event wants to configure X position, update it and 
-      // backup previous position
-      if (config_ev->value_mask & XCB_CONFIG_WINDOW_X) {
-        cl->area_prev.pos.x = cl->area.pos.x;
-        cl->area.pos.x = mon->area.pos.x + config_ev->x;
-      }
-      // If the event wants to configure Y position, update it and 
-      // backup previous position
-      if (config_ev->value_mask & XCB_CONFIG_WINDOW_Y) {
-        cl->area_prev.pos.y = cl->area.pos.y;
-        cl->area.pos.y = mon->area.pos.y + config_ev->y;
-      }
-      // If the event wants to configure width, update it and 
-      // backup previous width 
-      if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
-        cl->area_prev.size.x = cl->area.size.x;
-        cl->area.size.x = config_ev->width;
-      }
-      // If the event wants to configure height, update it and 
-      // backup previous height 
-      if (config_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
-        cl->area_prev.size.y = cl->area.size.y;
-        cl->area.size.y = config_ev->height;
-      }
-      // Center floating clients
-      cl->area.pos.x = mon->area.pos.x + (mon->area.size.x - cl->area.size.x) / 2.0f;
-      cl->area.pos.y = mon->area.pos.y + (mon->area.size.y - cl->area.size.y) / 2.0f;
-
-      // Send a configure event to the client
-      if ((config_ev->value_mask & (XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y)) &&
-        !(config_ev->value_mask & (XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT))) {
-        configclient(cl);
-      }
-      // Move and resize the client based on the event's request
-      moveresizeclient(cl, cl->area);
     } else {
       // If the client is not floating, don't use any values of the event, instead
       // configure the client window by the tiling layout later
