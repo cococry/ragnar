@@ -3,8 +3,6 @@ CC = cc
 # includes and flags
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
 LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr
-FREETYPEINC = /usr/include/freetype2
-INCS = -I${FREETYPEINC}
 
 SRC = ragnar.c
 OBJ = ${SRC:.c=.o}

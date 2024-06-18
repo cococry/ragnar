@@ -9,6 +9,12 @@ typedef enum {
   Super     = XCB_MOD_MASK_4
 } kb_modifier;
 
+typedef enum {
+  LeftMouse   = XCB_BUTTON_MASK_1,
+  MiddleMouse = XCB_BUTTON_MASK_2,
+  RightMouse  = XCB_BUTTON_MASK_3,
+} mousebtn;
+
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
@@ -201,7 +207,7 @@ struct client {
 
   client* next;
 
-  uint32_t borderwidth;
+  size_t borderwidth;
 
   monitor* mon;
 

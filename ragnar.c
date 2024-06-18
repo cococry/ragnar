@@ -729,6 +729,7 @@ evkeypress(xcb_generic_event_t* ev) {
   xcb_keysym_t keysym = getkeysym(e->detail);
 
   /* Iterate throguh the keybinds and check if one of them was pressed. */
+  size_t numkeybinds = sizeof(keybinds) / sizeof(keybinds[0]);
   for (uint32_t i = 0; i < numkeybinds; ++i) {
     // If it was pressed, call the callback of the keybind
     if ((keysym == keybinds[i].key) && (e->state == keybinds[i].modmask)) {
@@ -804,17 +805,23 @@ evmotionnotify(xcb_generic_event_t* ev) {
   // Drag difference from the current drag event to the initial grab 
   v2 dragdelta  = (v2){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
 
-  // On left click, move the window
-  if(motion_ev->state & XCB_BUTTON_MASK_1) {
-    cl->fullscreen = false;
+  if(!(motion_ev->state & XCB_BUTTON_MASK_1 || motion_ev->state & XCB_BUTTON_MASK_3)) return;
+
+  // Unset fullscreen
+  cl->fullscreen = false;
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
+  cl->borderwidth = winborderwidth;
+  setborderwidth(cl, cl->borderwidth);
+
+  // Move the window
+  if(motion_ev->state & movebtn) {
     // New position of the window
     v2 movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
 
     moveclient(cl, movedest);
   } 
-  // On right click resize the window
-  else if(motion_ev->state & XCB_BUTTON_MASK_3) {
-    cl->fullscreen = false;
+  // Resize the window
+  else if(motion_ev->state & resizebtn) {
     // Resize delta (clamped)
     v2 resizedelta  = (v2){.x = MAX(dragdelta.x, -s.grabwin.size.x), .y = MAX(dragdelta.y, -s.grabwin.size.y)};
     // New window size
@@ -840,7 +847,7 @@ evconfigrequest(xcb_generic_event_t* ev) {
 
   uint16_t mask = 0;
   uint32_t values[7];
-  int i = 0;
+  uint32_t i = 0;
 
   if (config_ev->value_mask & XCB_CONFIG_WINDOW_X) {
     mask |= XCB_CONFIG_WINDOW_X;
@@ -964,7 +971,7 @@ raiseevent(client* cl, xcb_atom_t protocol) {
 
   // Checking if the event protocol exists
   if (xcb_icccm_get_wm_protocols_reply(s.con, xcb_icccm_get_wm_protocols(s.con, cl->win, s.wm_atoms[WMprotocols]), &reply, NULL)) {
-    for (unsigned int i = 0; i < reply.atoms_len && !exists; i++) {
+    for (uint32_t i = 0; i < reply.atoms_len && !exists; i++) {
       exists = (reply.atoms[i] == protocol);
     }
     xcb_icccm_get_wm_protocols_reply_wipe(&reply);
@@ -1086,6 +1093,10 @@ void setfullscreen(client* cl, bool fullscreen) {
   setborderwidth(cl, cl->borderwidth);
   // Update client's geometry
   moveresizeclient(cl, cl->area);
+
+  if(cl->area.size.x >= cl->mon->area.size.x && cl->area.size.y >= cl->mon->area.size.y && !cl->fullscreen) {
+    setfullscreen(cl, true);
+  }
 }
 
 /**
@@ -1155,8 +1166,9 @@ grabkeybinds() {
   // Ungrab any grabbed keys
   xcb_ungrab_key(s.con, XCB_GRAB_ANY, s.root, XCB_MOD_MASK_ANY);
 
-  // Grab every keybind 
-	for (uint32_t i = 0; i < numkeybinds; ++i) {
+  // Grab every keybind
+  size_t numkeybinds = sizeof(keybinds) / sizeof(keybinds[0]);
+	for (size_t i = 0; i < numkeybinds; ++i) {
     // Get the keycode for the keysym of the keybind
 		xcb_keycode_t *keycode = getkeycodes(keybinds[i].key);
     // Grab the key if it is valid 
@@ -1301,11 +1313,11 @@ updatemons() {
   }
 
   // Get number of connected monitors
-  int num_outputs = xcb_randr_get_screen_resources_current_outputs_length(res_reply);
+  int32_t num_outputs = xcb_randr_get_screen_resources_current_outputs_length(res_reply);
   // Get list of monitors
   xcb_randr_output_t *outputs = xcb_randr_get_screen_resources_current_outputs(res_reply);
 
-  for (int i = 0; i < num_outputs; i++) {
+  for (int32_t i = 0; i < num_outputs; i++) {
     // Get the monitor info
     xcb_randr_get_output_info_cookie_t info_cookie = xcb_randr_get_output_info(s.con, outputs[i], XCB_TIME_CURRENT_TIME);
     xcb_randr_get_output_info_reply_t *info_reply = xcb_randr_get_output_info_reply(s.con, info_cookie, NULL);
@@ -1469,7 +1481,7 @@ runcmd(const char* cmd) {
     _exit(EXIT_FAILURE);
   } else if (pid > 0) {
     // Parent process
-    int status;
+    int32_t status;
     waitpid(pid, &status, 0);
     return;
   } else {

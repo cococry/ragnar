@@ -5,24 +5,24 @@ static const int32_t winborderwidth           = 1;
 static const int32_t winbordercolor           = 0x5e5e5e;
 static const int32_t winbordercolor_selected  = 0xcccccc;
 
-static const kb_modifier winmod   = Alt; 
+static const kb_modifier modkey   = Super; 
+static const kb_modifier winmod   = modkey; 
+static const mousebtn movebtn     = LeftMouse; 
+static const mousebtn resizebtn   = RightMouse; 
 
-#define TERMINAL_CMD "alacritty &"
-#define MENU_CMD "~/.config/rofi/launchers/type-3/launcher.sh &"
-#define BROWSER_CMD "brave &"
-
-// Number of keybinds
-static const uint32_t numkeybinds = 7;
+#define TERMINAL_CMD  "alacritty &"
+#define MENU_CMD      "~/.config/rofi/launchers/type-3/launcher.sh &"
+#define BROWSER_CMD   "brave &"
 
 // Window manger keybinds
 static const keybind keybinds[] = {
 /* Modifier | Key       | Callback        | Command */ 
-  {Alt,     KeyEscape,  terminate,        NULL},
-  {Alt,     KeyTab,     cyclefocus,       NULL},
-  {Alt,     KeyQ,       killfocus,        NULL},
-  {Alt,     KeyF,       togglefullscreen, NULL},
+  {modkey,     KeyEscape,  terminate,        NULL},
+  {modkey,     KeyTab,     cyclefocus,       NULL},
+  {modkey,     KeyQ,       killfocus,        NULL},
+  {modkey,     KeyF,       togglefullscreen, NULL},
   /* Application shortcuts */
-  {Alt,     KeyReturn,  runcmd,           TERMINAL_CMD},
-  {Alt,     KeyS,       runcmd,           MENU_CMD},
-  {Alt,     KeyW,       runcmd,           BROWSER_CMD}
+  {modkey,     KeyReturn,  runcmd,           TERMINAL_CMD},
+  {modkey,     KeyS,       runcmd,           MENU_CMD},
+  {modkey,     KeyW,       runcmd,           BROWSER_CMD}
 };
