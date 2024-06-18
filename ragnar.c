@@ -27,9 +27,9 @@ static void             loop();
 static void             terminate();
 
 static bool             pointinarea(v2 p, area a);
-static bool             areainarea(area a, area b);
 static v2               cursorpos(bool* success);
 static area             winarea(xcb_window_t win, bool* success);
+static float            getoverlaparea(area a, area b);
 
 static void             setbordercolor(client* cl, uint32_t color);
 static void             setborderwidth(client* cl, uint32_t width);
@@ -151,7 +151,7 @@ setup() {
 
   /* Setting event mask for root window */
   uint32_t evmask[] = {
-    // XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+    XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
     XCB_EVENT_MASK_STRUCTURE_NOTIFY |
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
     XCB_EVENT_MASK_PROPERTY_CHANGE |
@@ -240,30 +240,6 @@ pointinarea(v2 p, area area) {
   p.y < (area.pos.y + area.size.y));
 }
 
-
-/**
- * @brief Evaluates if a given area is contained within another 
- * given area
- *
- * @param a The area to check if it's contained within the other area.
- * @param b The area to check if a is contained within it.
- *
- * @return If the area 'a' is within the area 'b'  
- */
-bool
-areainarea(area a, area b) {
-  // Calculate the corners of area a
-  float a_left = a.pos.x;
-  float a_right = a.pos.x + a.size.x;
-
-  // Calculate the corners of area b
-  float b_left = b.pos.x;
-  float b_right = b.pos.x + b.size.x;
-
-  // Check if all corners of area a are within area b
-  return (a_left >= b_left && a_right <= b_right);
-}
-
 /**
  * @brief Returns the current cursor position on the X display 
  *
@@ -315,6 +291,21 @@ winarea(xcb_window_t win, bool* success) {
   // Error checking
   free(reply);
   return a;
+}
+
+/**
+ * @brief Gets the area (in float) of the overlap between two areas 
+ *
+ * @param a The inner area 
+ * @param a The outer area 
+ *
+ * @return The overlap between the two areas 
+ */
+float
+getoverlaparea(area a, area b) {
+    float x = MAX(0, MIN(a.pos.x + a.size.x, b.pos.x + b.size.x) - MAX(a.pos.x, b.pos.x));
+    float y = MAX(0, MIN(a.pos.y + a.size.y, b.pos.y + b.size.y) - MAX(a.pos.y, b.pos.y));
+    return x * y;
 }
 
 /**
@@ -815,8 +806,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
 
   // On left click, move the window
   if(motion_ev->state & XCB_BUTTON_MASK_1) {
-    if(cl->fullscreen)
-      setfullscreen(cl, false);
+    cl->fullscreen = false;
     // New position of the window
     v2 movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
 
@@ -824,8 +814,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
   } 
   // On right click resize the window
   else if(motion_ev->state & XCB_BUTTON_MASK_3) {
-    if(cl->fullscreen)
-      setfullscreen(cl, false);
+    cl->fullscreen = false;
     // Resize delta (clamped)
     v2 resizedelta  = (v2){.x = MAX(dragdelta.x, -s.grabwin.size.x), .y = MAX(dragdelta.y, -s.grabwin.size.y)};
     // New window size
@@ -1103,6 +1092,7 @@ void setfullscreen(client* cl, bool fullscreen) {
  * @brief Toggles fullscreen mode on the currently focused client
  */
 void togglefullscreen() {
+  if(!s.focus) return;
   bool fs = !(s.focus->fullscreen);
   setfullscreen(s.focus, fs); 
 }
@@ -1359,7 +1349,8 @@ updatemons() {
  *
  * @return The monitor associated with the given area (NULL if no associated monitor)
  */
-monitor* monbyarea(area a) {
+monitor*
+monbyarea(area a) {
   monitor* mon;
   for(mon = s.monitors; mon != NULL; mon = mon->next) {
     if((mon->area.pos.x == a.pos.x && mon->area.pos.y == a.pos.y) &&
@@ -1381,16 +1372,24 @@ monitor* monbyarea(area a) {
  */
 monitor*
 clientmon(client* cl) {
-  if(!cl) {
-    return s.monitors;
+  monitor* ret = s.monitors;
+  if (!cl) {
+    return ret;
   }
+
   monitor* mon;
-  for(mon = s.monitors; mon != NULL; mon = mon->next) {
-    if(areainarea(cl->area, mon->area)) {
-      return mon;
+  float biggest_overlap_area = -1.0f;
+
+  for (mon = s.monitors; mon != NULL; mon = mon->next) {
+    float overlap = getoverlaparea(cl->area, mon->area);
+
+    // Assign the monitor on which the client has the biggest overlap area
+    if (overlap > biggest_overlap_area) {
+      biggest_overlap_area = overlap;
+      ret = mon;
     }
   }
-  return s.monitors;
+  return ret;
 }
 
 /**
