@@ -16,7 +16,7 @@ static const mousebtn movebtn     = LeftMouse;
 static const mousebtn resizebtn   = RightMouse;
 
 /* Desktops */
-static const int32_t desktopcount  = 10;
+static const int32_t desktopcount  = 9;
 // The desktop index that is selected on startup
 static const int32_t desktopinit   = 0;
 
