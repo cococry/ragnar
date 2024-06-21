@@ -16,10 +16,15 @@ typedef enum {
 } mousebtn;
 
 typedef struct {
+  const char* cmd;
+  int32_t i;
+} passthrough_data;
+
+typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
-  void (*cb)(const char* cmd);
-  const char* cmd;
+  void (*cb)(passthrough_data data);
+  passthrough_data data;
 } keybind;
 
 typedef enum {
@@ -196,6 +201,7 @@ typedef struct monitor monitor;
 struct monitor {
   area area;
   monitor* next;
+  uint32_t idx;
 };
 
 typedef struct client client;
@@ -210,20 +216,23 @@ struct client {
   size_t borderwidth;
 
   monitor* mon;
+  int32_t desktop;
 
-  bool urgent;
+  bool urgent, ignoreunmap;
 };
 
 typedef enum {
   EWMHsupported, 
   EWMHname, 
   EWMHstate, 
+  EWMHstateHidden, 
   EWMHcheck,
   EWMHfullscreen, 
   EWMHactiveWindow, 
   EWMHwindowType,
   EWMHwindowTypeDialog, 
   EWMHclientList,
+  EWMHcurrentDesktop,
   EWMHcount
 } ewmh_atom;
 
@@ -251,5 +260,7 @@ typedef struct {
   monitor* monfocus;
 
   xcb_atom_t wm_atoms[WMcount]; 
-  xcb_atom_t ewmh_atoms[EWMHcount]; 
+  xcb_atom_t ewmh_atoms[EWMHcount];
+
+  int32_t* curdesktop;
 } State;
