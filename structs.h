@@ -215,6 +215,8 @@ struct client {
 
   size_t borderwidth;
 
+  xcb_window_t decoration;
+
   monitor* mon;
   int32_t desktop;
 

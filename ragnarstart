@@ -1,3 +1,2 @@
 nitrogen --restore
 setxkbmap de
-picom -b --experimental-backends &

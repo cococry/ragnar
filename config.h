@@ -20,6 +20,10 @@ static const int32_t desktopcount  = 9;
 // The desktop index that is selected on startup
 static const int32_t desktopinit   = 0;
 
+/* Window decoration */
+static const bool usedecoration = true;
+static const uint32_t titlebarheight = 30;
+
 #define TERMINAL_CMD  "alacritty &"
 #define MENU_CMD      "~/.config/rofi/launchers/type-3/launcher.sh &"
 #define BROWSER_CMD   "brave &"
@@ -58,8 +62,6 @@ static const keybind keybinds[] = {
   {modkey | Shift,     Key7,       switchfocusdesktop,           { .i = 6 }},
   {modkey | Shift,     Key8,       switchfocusdesktop,           { .i = 7 }},
   {modkey | Shift,     Key9,       switchfocusdesktop,           { .i = 8 }},
-  {modkey | Shift,     KeyP,       cyclefocusdesktopupsticky,     { NULL }},
-  {modkey | Shift,     KeyO,       cyclefocusdesktopdownsticky,   { NULL }},
 
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd,                  { .cmd = TERMINAL_CMD }},

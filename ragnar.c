@@ -45,8 +45,10 @@ static void             unfocusclient(client* cl);
 static void             configclient(client* cl);
 static void             hideclient(client* cl);
 static void             showclient(client* cl);
+static void             setupdecoration(client* cl);
 static void             cyclefocus();
 static void             raisefocus();
+static void             updateclientdecoration(client* cl);
 static bool             raiseevent(client* cl, xcb_atom_t protocol);
 static void             setwintype(client* cl);
 static void             seturgent(client* cl, bool urgent);
@@ -60,8 +62,6 @@ static void             switchdesktop(passthrough_data data);
 static void             switchfocusdesktop(passthrough_data data);
 static void             cyclefocusdesktopup();
 static void             cyclefocusdesktopdown();
-static void             cyclefocusdesktopupsticky();
-static void             cyclefocusdesktopdownsticky();
 static void             togglefullscreen();
 
 
@@ -79,6 +79,7 @@ static void             evconfigrequest(xcb_generic_event_t* ev);
 static void             evconfignotify(xcb_generic_event_t* ev);
 static void             evpropertynotify(xcb_generic_event_t* ev);
 static void             evclientmessage(xcb_generic_event_t* ev);
+static void             evdestroynotify(xcb_generic_event_t* ev);
 
 static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
@@ -112,7 +113,7 @@ static void             sigchld_handler(int32_t signum);
 /* Evaluates to the maximum of two given numbers */
 #define MAX(a, b) (((a)>(b))?(a):(b))
 
-/* */
+/* Event handlers */
 static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_MAP_REQUEST]         = evmaprequest,
   [XCB_UNMAP_NOTIFY]        = evunmapnotify,
@@ -124,6 +125,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_CONFIGURE_NOTIFY]    = evconfignotify,
   [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
   [XCB_CLIENT_MESSAGE]      = evclientmessage,
+  [XCB_DESTROY_NOTIFY]      = evdestroynotify,
 };
 
 static State s;
@@ -376,7 +378,7 @@ moveclient(client* cl, v2 pos) {
   if(!cl) {
     return;
   }
-  int32_t posval[2] = {
+  uint32_t posval[2] = {
     (uint32_t)pos.x, (uint32_t)pos.y
   };
 
@@ -386,6 +388,9 @@ moveclient(client* cl, v2 pos) {
 
   cl->area.pos = pos;
 
+  // Update the position and size of the client's decoration to make it stick to the client
+  updateclientdecoration(cl);
+  
 
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(cl);
@@ -410,6 +415,10 @@ resizeclient(client* cl, v2 size) {
   xcb_flush(s.con);
 
   cl->area.size = size;
+
+  // Update the position and size of the client's decoration to make it stick to the client
+  updateclientdecoration(cl);
+
 }
 
 /**
@@ -438,6 +447,9 @@ moveresizeclient(client* cl, area a) {
 
   cl->area = a;
 
+  // Update the position and size of the client's decoration to make it stick to the client
+  updateclientdecoration(cl);
+
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(cl);
   s.monfocus = cl->mon; 
@@ -456,6 +468,7 @@ raiseclient(client* cl) {
   uint32_t config[] = { XCB_STACK_MODE_ABOVE };
   // Change the configuration of the window to be above 
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_STACK_MODE, config);
+  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
   xcb_flush(s.con);
 }
 
@@ -599,9 +612,11 @@ void
 hideclient(client* cl) {
   cl->ignoreunmap = true;
   xcb_unmap_window(s.con, cl->win);
+  xcb_unmap_window(s.con, cl->decoration);
   const size_t state[] = {XCB_ICCCM_WM_STATE_ICONIC, XCB_NONE};
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, 
                       s.wm_atoms[WMstate], s.wm_atoms[WMstate], 32, 2, state); 
+  xcb_flush(s.con);
 }
 
 /*
@@ -611,9 +626,30 @@ hideclient(client* cl) {
 void
 showclient(client* cl) {
   xcb_map_window(s.con, cl->win);
+  xcb_map_window(s.con, cl->decoration);
   const size_t state[] = {XCB_ICCCM_WM_STATE_NORMAL, XCB_NONE};
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win,
                       s.wm_atoms[WMstate], s.wm_atoms[WMstate], 32, 2, state); 
+  xcb_flush(s.con);
+}
+
+void 
+setupdecoration(client* cl) {
+  area geom = cl->area; 
+
+  cl->decoration = xcb_generate_id(s.con);
+  uint32_t vals[2] = {s.screen->black_pixel, XCB_EVENT_MASK_STRUCTURE_NOTIFY};
+  xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->decoration, 
+                    s.root, geom.pos.x, geom.pos.y - titlebarheight - winborderwidth, 
+                    geom.size.x, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                    s.screen->root_visual, 
+                    XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
+                    vals);
+  xcb_map_window(s.con, cl->decoration);
+  uint32_t config[] = { XCB_STACK_MODE_ABOVE };
+  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
+
+  xcb_flush(s.con);
 }
 
 /**
@@ -676,12 +712,17 @@ evmaprequest(xcb_generic_event_t* ev) {
   // Set window type of client (e.g dialog)
   setwintype(cl);
 
+
   // Set client's monitor
   cl->mon = clientmon(cl);
   cl->desktop = s.curdesktop[s.monfocus->idx];
 
   // Set all clients floating for now (TODO)
   cl->floating = true;
+
+  if(usedecoration) {
+    setupdecoration(cl);
+  }
 
   // Update the EWMH client list
   ewmh_updateclients();
@@ -720,14 +761,15 @@ evunmapnotify(xcb_generic_event_t* ev) {
     return;
   }
 
+  // Unmap the window
+  xcb_unmap_window(s.con, unmap_ev->window);
+
   // Remove the client from the list
   releaseclient(unmap_ev->window);
 
   // Update the EWMH client list
   ewmh_updateclients();
 
-  // Unmap the window
-  xcb_unmap_window(s.con, unmap_ev->window);
   xcb_flush(s.con);
 }
 
@@ -998,6 +1040,20 @@ evclientmessage(xcb_generic_event_t* ev) {
 }
 
 /**
+ * @brief Handles a X destroy window event by destroying
+ * the client's decoration.
+ *
+ * @param ev The generic event 
+ */
+void
+evdestroynotify(xcb_generic_event_t* ev) {
+  xcb_destroy_notify_event_t* destroy_ev = (xcb_destroy_notify_event_t*)ev;
+  client* cl = clientfromwin(destroy_ev->window);
+  if(!cl) return;
+  killclient(cl);
+}
+
+/**
  * @brief Cycles the currently focused client 
  */
 void
@@ -1044,6 +1100,21 @@ raisefocus() {
   raiseclient(s.focus);
 }
 
+/**
+ * @brief Updates the area (pos, size) of the decoration 
+ * of a given client to stick to the client.
+ */
+void
+updateclientdecoration(client* cl) {
+  uint32_t vals[4];
+  vals[0] = cl->area.pos.x;
+  vals[1] = cl->area.pos.y - titlebarheight - winborderwidth;
+  vals[2] = cl->area.size.x;
+  vals[3] = titlebarheight - winborderwidth;
+  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y 
+                       | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
+  xcb_map_window(s.con, cl->decoration);
+}
 
 /**
  * @brief Sends a given X event by atom to the window of a given client
@@ -1173,11 +1244,17 @@ setfullscreen(client* cl, bool fullscreen) {
 
     // Unset border of client if it's fullscreen
     cl->borderwidth = 0;
+
+    // Hide client decoration in fullscreen mode
+    xcb_unmap_window(s.con, cl->decoration);
   } else {
     xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
     // Set the client's area to the area before the last fullscreen occured 
     cl->area = cl->area_prev;
     cl->borderwidth = winborderwidth;
+
+    // Show client decoration again if the client is unfullscreened
+    xcb_map_window(s.con, cl->decoration);
   }
   // Update client's border width
   setborderwidth(cl, cl->borderwidth);
@@ -1234,27 +1311,6 @@ cyclefocusdesktopdown() {
     new_desktop = desktopcount - 1;
   }
   switchclientdesktop(s.focus, new_desktop);
-}
-
-/*
- * Cycles the desktop of the currently focused client up and 
- * cycles the currently selected desktop to match the client
- * */
-
-void
-cyclefocusdesktopupsticky() {
-  cyclefocusdesktopup();
-  cycledesktopup();
-}
-
-/*
- * Cycles the desktop of the currently focused client down and 
- * cycles the currently selected desktop to match the client
- * */
-void
-cyclefocusdesktopdownsticky() {
-  cyclefocusdesktopdown();
-  cycledesktopdown();
 }
 
 /**
@@ -1354,7 +1410,7 @@ setupatoms() {
 	s.ewmh_atoms[EWMHsupported]         = getatom("_NET_SUPPORTED");
 	s.ewmh_atoms[EWMHname]              = getatom("_NET_WM_NAME");
 	s.ewmh_atoms[EWMHstate]             = getatom("_NET_WM_STATE");
-  s.ewmh_atoms[EWMHstateHidden]         = getatom("_NET_WM_STATE_HIDDEN");
+  s.ewmh_atoms[EWMHstateHidden]       = getatom("_NET_WM_STATE_HIDDEN");
   s.ewmh_atoms[EWMHcheck]             = getatom("_NET_SUPPORTING_WM_CHECK");
   s.ewmh_atoms[EWMHfullscreen]        = getatom("_NET_WM_STATE_FULLSCREEN");
   s.ewmh_atoms[EWMHwindowType]        = getatom("_NET_WM_WINDOW_TYPE");
@@ -1490,6 +1546,7 @@ releaseclient(xcb_window_t win) {
        * from our list of clients*/ 
       *prev = cl->next;
       // Freeing memory allocated for client
+      xcb_destroy_window(s.con, cl->decoration);
       free(cl);
       return;
     }
