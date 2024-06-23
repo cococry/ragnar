@@ -42,19 +42,21 @@ static void             killfocus();
 static void             focusclient(client* cl);
 static void             setxfocus(client* cl);
 static void             unfocusclient(client* cl);
-static void             configclient(client* cl);
 static void             hideclient(client* cl);
 static void             showclient(client* cl);
-static void             setupdecoration(client* cl);
+static void             updateclient(client* cl);
 static void             cyclefocus();
 static void             raisefocus();
-static void             updateclientdecoration(client* cl);
 static bool             raiseevent(client* cl, xcb_atom_t protocol);
 static void             setwintype(client* cl);
 static void             seturgent(client* cl, bool urgent);
 static xcb_atom_t       getclientprop(client* cl, xcb_atom_t prop);
 static void             setfullscreen(client* cl, bool fullscreen);
 static void             switchclientdesktop(client* cl, int32_t desktop);
+
+
+static void             setupdecoration(client* cl);
+static void             updatedecoration(client* cl);
 
 static void             cycledesktopup(); 
 static void             cycledesktopdown();
@@ -84,6 +86,7 @@ static void             evdestroynotify(xcb_generic_event_t* ev);
 static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
 static client*          clientfromwin(xcb_window_t win);
+static client*          clientfromdecoration(xcb_window_t decoration);
 
 
 static monitor*         addmon(area a, uint32_t idx); 
@@ -304,12 +307,12 @@ winarea(xcb_window_t win, bool* success) {
   xcb_get_geometry_reply_t *reply = xcb_get_geometry_reply(s.con, xcb_get_geometry(s.con, win), NULL);
   *success = (reply != NULL);
   if(!(*success)) {
-    fprintf(stderr, "ragnar: failed to retrieve cursor position."); 
+    fprintf(stderr, "ragnar: failed to retrieve window geometry."); 
     free(reply);
     return (area){0};
   }
   // Creating the area structure to store the geometry in
-  area a = (area){.pos = (v2){reply->x, reply->y}, .size = (v2){reply->width, reply->height}};
+  area a = (area){.pos = (v2){reply->x, reply->y}, .size = (v2){reply->width, reply->height + ((usedecoration) ? titlebarheight : 0.0f) }};
 
   // Error checking
   free(reply);
@@ -389,7 +392,7 @@ moveclient(client* cl, v2 pos) {
   cl->area.pos = pos;
 
   // Update the position and size of the client's decoration to make it stick to the client
-  updateclientdecoration(cl);
+  updatedecoration(cl);
   
 
   // Update focused monitor in case the window was moved onto another monitor
@@ -417,7 +420,7 @@ resizeclient(client* cl, v2 size) {
   cl->area.size = size;
 
   // Update the position and size of the client's decoration to make it stick to the client
-  updateclientdecoration(cl);
+  updatedecoration(cl);
 
 }
 
@@ -448,7 +451,7 @@ moveresizeclient(client* cl, area a) {
   cl->area = a;
 
   // Update the position and size of the client's decoration to make it stick to the client
-  updateclientdecoration(cl);
+  updatedecoration(cl);
 
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(cl);
@@ -571,38 +574,6 @@ unfocusclient(client* cl) {
   xcb_flush(s.con);
 }
 
-/**
- * @brief Configures a given client by sending a X configure event 
- *
- * @param cl The client to configure 
- */
-void
-configclient(client* cl) {
-  if(!cl) {
-    return;
-  }
-  xcb_configure_notify_event_t event;
-  memset(&event, 0, sizeof(event));
-
-  event.response_type = XCB_CONFIGURE_NOTIFY;
-  event.window = cl->win;
-  // New X position of the window
-  event.x = cl->area.pos.x;                
-  // New Y position of the window
-  event.y = cl->area.pos.y;
-  // New width of the window
-  event.width = cl->area.size.x;            
-  // New height of the window
-  event.height = cl->area.size.y;
-  // Border width
-  event.border_width = cl->borderwidth;
-  // Above sibling window (None in this case)
-  event.above_sibling = XCB_NONE;
-  // Override-redirect flag
-  event.override_redirect = 0;
-  // Send the event
-  xcb_send_event(s.con, 0, cl->win, XCB_EVENT_MASK_STRUCTURE_NOTIFY, (const char *)&event);
-}
 
 /*
  * @brief Hides a given client by unmapping it's window
@@ -633,6 +604,24 @@ showclient(client* cl) {
   xcb_flush(s.con);
 }
 
+/*
+ * @brief Updates a client's geometry 
+ */
+void
+updateclient(client* cl) {
+  if(!cl) return;
+  // Retrieve the geometry of the window 
+  xcb_get_geometry_reply_t *reply = xcb_get_geometry_reply(s.con, xcb_get_geometry(s.con, cl->win), NULL);
+  // Update area
+  cl->area = (area){.pos = (v2){reply->x, reply->y}, .size = (v2){reply->width, reply->height}};
+  // Update border width 
+  cl->borderwidth = reply->border_width; 
+  // Update decoration
+  updatedecoration(cl);
+
+  free(reply);
+}
+
 void 
 setupdecoration(client* cl) {
   area geom = cl->area; 
@@ -641,16 +630,48 @@ setupdecoration(client* cl) {
   uint32_t vals[2] = {s.screen->black_pixel, XCB_EVENT_MASK_STRUCTURE_NOTIFY};
   xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->decoration, 
                     s.root, geom.pos.x, geom.pos.y - titlebarheight, 
-                    geom.size.x - cl->borderwidth, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                    geom.size.x, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
                     s.screen->root_visual, 
                     XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
                     vals);
+
+  // Set up events
+  {
+    uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
+    xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
+                    s.root, XCB_NONE, 1, XCB_NONE);
+    xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
+                    s.root, XCB_NONE, 3, XCB_NONE);
+  }
   xcb_map_window(s.con, cl->decoration);
   uint32_t config[] = { XCB_STACK_MODE_ABOVE };
   xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
 
   xcb_flush(s.con);
 }
+
+/**
+ * @brief Updates the area (pos, size) of the decoration 
+ * of a given client to stick to the client.
+ */
+void
+updatedecoration(client* cl) {
+  bool success;
+  // Update client geometry 
+  cl->area = winarea(cl->win, &success);
+  if(!success) return;
+
+  // Update decoration geometry
+  uint32_t vals[4];
+  vals[0] = cl->area.pos.x;
+  vals[1] = cl->area.pos.y - titlebarheight - cl->borderwidth;
+  vals[2] = cl->area.size.x;
+  vals[3] = titlebarheight - cl->borderwidth;
+  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y 
+                       | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
+  xcb_map_window(s.con, cl->decoration);
+}
+
 
 /**
  * @brief Handles a map request event on the X server by 
@@ -707,7 +728,6 @@ evmaprequest(xcb_generic_event_t* ev) {
   setborderwidth(cl, winborderwidth);
 
   // Send configure event to the client
-  configclient(cl);
 
   // Set window type of client (e.g dialog)
   setwintype(cl);
@@ -719,6 +739,8 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Set all clients floating for now (TODO)
   cl->floating = true;
+
+  updateclient(cl);
 
   if(usedecoration) {
     setupdecoration(cl);
@@ -739,9 +761,6 @@ evmaprequest(xcb_generic_event_t* ev) {
       s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
 
-
-  // Update the decoration
-  updateclientdecoration(cl);
 
   // Map the window
   xcb_map_window(s.con, map_ev->window);
@@ -851,16 +870,20 @@ evbuttonpress(xcb_generic_event_t* ev) {
 
   client* cl = clientfromwin(button_ev->event);
   if(!cl) {
-    return;
-  }
-  // Focusing client 
-  if(cl != s.focus) {
-    // Unfocus the previously focused window to ensure that there is only
-    // one focused (highlighted) window at a time.
-    if(s.focus) {
-      unfocusclient(s.focus);
-    }
+    // Not a client window, check if it's decoration
+    cl = clientfromdecoration(button_ev->event);
+    if(!cl) return;
     focusclient(cl);
+  } else {
+    // Focusing client 
+    if(cl != s.focus) {
+      // Unfocus the previously focused window to ensure that there is only
+      // one focused (highlighted) window at a time.
+      if(s.focus) {
+        unfocusclient(s.focus);
+      }
+      focusclient(cl);
+    }
   }
   bool success;
   area area = winarea(button_ev->event, &success);
@@ -892,16 +915,22 @@ evmotionnotify(xcb_generic_event_t* ev) {
     s.monfocus = cursormon();
     return;
   }
-  client* cl = clientfromwin(motion_ev->event);
-  if(!cl) {
-    return;
-  }
-  s.monfocus = cursormon();
-
   // Position of the cursor in the drag event
   v2 dragpos    = (v2){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
   // Drag difference from the current drag event to the initial grab 
   v2 dragdelta  = (v2){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
+
+  client* cl = clientfromwin(motion_ev->event);
+  if(!cl) {
+    // Not a client window, check if it's decoration
+    if(!(cl = clientfromdecoration(motion_ev->event))) return;
+
+    dragdelta.y += titlebarheight;
+    v2 movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
+
+    moveclient(cl, movedest);
+    return;
+  }
 
   if(!(motion_ev->state & XCB_BUTTON_MASK_1 || motion_ev->state & XCB_BUTTON_MASK_3)) return;
 
@@ -940,9 +969,6 @@ void
 evconfigrequest(xcb_generic_event_t* ev) {
   xcb_configure_request_event_t *config_ev = (xcb_configure_request_event_t *)ev;
 
-  client* cl = clientfromwin(config_ev->width);
-  if(cl) return;
-
   uint16_t mask = 0;
   uint32_t values[7];
   uint32_t i = 0;
@@ -963,10 +989,6 @@ evconfigrequest(xcb_generic_event_t* ev) {
     mask |= XCB_CONFIG_WINDOW_HEIGHT;
     values[i++] = config_ev->height;
   }
-  if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
-    mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
-    values[i++] = config_ev->border_width;
-  }
   if (config_ev->value_mask & XCB_CONFIG_WINDOW_SIBLING) {
     mask |= XCB_CONFIG_WINDOW_SIBLING;
     values[i++] = config_ev->sibling;
@@ -974,6 +996,12 @@ evconfigrequest(xcb_generic_event_t* ev) {
   if (config_ev->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) {
     mask |= XCB_CONFIG_WINDOW_STACK_MODE;
     values[i++] = config_ev->stack_mode;
+  }
+
+  client* cl = clientfromwin(config_ev->window);
+  if(cl) {
+    cl->area.pos = (v2){config_ev->x, config_ev->y};
+    cl->area.size = (v2){config_ev->width, config_ev->height};
   }
 
   // Configure the window with the specified values
@@ -1053,7 +1081,7 @@ evdestroynotify(xcb_generic_event_t* ev) {
   xcb_destroy_notify_event_t* destroy_ev = (xcb_destroy_notify_event_t*)ev;
   client* cl = clientfromwin(destroy_ev->window);
   if(!cl) return;
-  killclient(cl);
+  releaseclient(destroy_ev->window);
 }
 
 /**
@@ -1101,28 +1129,6 @@ void
 raisefocus() {
   if(!s.focus) return;
   raiseclient(s.focus);
-}
-
-/**
- * @brief Updates the area (pos, size) of the decoration 
- * of a given client to stick to the client.
- */
-void
-updateclientdecoration(client* cl) {
-  bool success;
-  // Update client geometry 
-  cl->area = winarea(cl->win, &success);
-  if(!success) return;
-
-  // Update decoration geometry
-  uint32_t vals[4];
-  vals[0] = cl->area.pos.x;
-  vals[1] = cl->area.pos.y - titlebarheight - cl->borderwidth;
-  vals[2] = cl->area.size.x;
-  vals[3] = titlebarheight - cl->borderwidth;
-  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y 
-                       | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
-  xcb_map_window(s.con, cl->decoration);
 }
 
 /**
@@ -1288,6 +1294,7 @@ switchclientdesktop(client* cl, int32_t desktop) {
   if(cl == s.focus) {
     unfocusclient(cl);
   }
+  raiseclient(cl);
   hideclient(cl);
   xcb_flush(s.con);
 }
@@ -1584,7 +1591,24 @@ clientfromwin(xcb_window_t win) {
   }
   return NULL;
 }
-
+/**
+ * @brief Returns the associated client from a given decoration.
+ * Returns NULL if there is no client associated with the decoration.
+ *
+ * @param win The decoration to get the client from
+ *
+ * @return The client associated with the given decoration (NULL if no associated client)
+ */
+client*
+clientfromdecoration(xcb_window_t decoration) {
+  client* cl;
+  for(cl = s.clients; cl != NULL; cl = cl->next) {
+    if(cl->decoration == decoration) {
+      return cl;
+    }
+  }
+  return NULL;
+}
 /**
  * @brief Adds a monitor area to the linked list of monitors.
  *
