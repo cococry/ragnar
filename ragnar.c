@@ -640,8 +640,8 @@ setupdecoration(client* cl) {
   cl->decoration = xcb_generate_id(s.con);
   uint32_t vals[2] = {s.screen->black_pixel, XCB_EVENT_MASK_STRUCTURE_NOTIFY};
   xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->decoration, 
-                    s.root, geom.pos.x, geom.pos.y - titlebarheight - winborderwidth, 
-                    geom.size.x, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                    s.root, geom.pos.x, geom.pos.y - titlebarheight, 
+                    geom.size.x - cl->borderwidth, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
                     s.screen->root_visual, 
                     XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
                     vals);
@@ -739,6 +739,9 @@ evmaprequest(xcb_generic_event_t* ev) {
       s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
 
+
+  // Update the decoration
+  updateclientdecoration(cl);
 
   // Map the window
   xcb_map_window(s.con, map_ev->window);
@@ -1106,11 +1109,17 @@ raisefocus() {
  */
 void
 updateclientdecoration(client* cl) {
+  bool success;
+  // Update client geometry 
+  cl->area = winarea(cl->win, &success);
+  if(!success) return;
+
+  // Update decoration geometry
   uint32_t vals[4];
   vals[0] = cl->area.pos.x;
-  vals[1] = cl->area.pos.y - titlebarheight - winborderwidth;
+  vals[1] = cl->area.pos.y - titlebarheight - cl->borderwidth;
   vals[2] = cl->area.size.x;
-  vals[3] = titlebarheight - winborderwidth;
+  vals[3] = titlebarheight - cl->borderwidth;
   xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y 
                        | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
   xcb_map_window(s.con, cl->decoration);
