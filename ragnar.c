@@ -929,6 +929,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
     v2 movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
 
     moveclient(cl, movedest);
+    xcb_flush(s.con);
     return;
   }
 
@@ -1021,7 +1022,11 @@ evconfignotify(xcb_generic_event_t* ev) {
 
   if(config_ev->window == s.root) {
     updatemons();
+    return;
   }
+  client* cl = clientfromwin(config_ev->window);
+  if(!cl) return;
+  updatedecoration(cl);
 }
 /**
  * @brief Handles a X property notify event for window properties by handling various Extended Window Manager Hints (EWMH). 
