@@ -206,6 +206,11 @@ struct monitor {
 
 typedef struct client client;
 
+
+typedef struct {
+  xcb_window_t win;
+} renderwindow;
+
 struct client {
   area area, area_prev;
   bool fullscreen, floating;
@@ -249,8 +254,12 @@ typedef enum {
 
 typedef struct {
   xcb_connection_t* con;
+  Display* dsp;
   xcb_window_t root;
   xcb_screen_t* screen; 
+
+  XVisualInfo* visual;
+  GLXContext glcontext;
 
   client* clients;
   client* focus;

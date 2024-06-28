@@ -15,12 +15,20 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_util.h>
 #include <xcb/xcb_keysyms.h>
-#include <X11/keysym.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
+#include <xcb/glx.h>
+
+#include <GL/gl.h>
+#include <GL/glx.h>
+
+#include <X11/Xlib.h>
+#include <X11/Xlib-xcb.h>
+#include <X11/keysym.h>
 
 #include "structs.h"
+#include "render.h"
 
 static void             setup();
 static void             loop();
@@ -87,7 +95,6 @@ static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
 static client*          clientfromwin(xcb_window_t win);
 static client*          clientfromdecoration(xcb_window_t decoration);
-
 
 static monitor*         addmon(area a, uint32_t idx); 
 static monitor*         monbyarea(area a);
@@ -157,16 +164,100 @@ setup() {
 
   s.clients = NULL;
 
-  // s.conecting to the X server
-  s.con = xcb_connect(NULL, NULL);
+  // Connecting to the X Server
+  s.dsp = XOpenDisplay(NULL);
+  if(!s.dsp) {
+    fprintf(stderr,"rangar: cannot open X display.\n"); 
+    exit(EXIT_FAILURE);
+  }
+
+  s.con = XGetXCBConnection(s.dsp);
+
   // Checking for errors
-  if (xcb_connection_has_error(s.con)) {
+  if (xcb_connection_has_error(s.con) || !s.con) {
     fprintf(stderr, "ragnar: cannot open display.\n");
+    XCloseDisplay(s.dsp);
     exit(EXIT_FAILURE);
   }
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
   s.screen = screen;
+
+
+  // Framebuffer attributes
+  static int visual_attribs[] = {
+    GLX_RENDER_TYPE, GLX_RGBA_BIT,
+    GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+    GLX_DOUBLEBUFFER, True,
+    GLX_RED_SIZE, 8,
+    GLX_GREEN_SIZE, 8,
+    GLX_BLUE_SIZE, 8,
+    GLX_ALPHA_SIZE, 8,
+    GLX_DEPTH_SIZE, 24,
+    None
+  };
+
+  int fbcount;
+  GLXFBConfig *fbc = glXChooseFBConfig(s.dsp, DefaultScreen(s.dsp), visual_attribs, &fbcount);
+  if (!fbc) {
+    fprintf(stderr, "Failed to retrieve a framebuffer config\n");
+    XCloseDisplay(s.dsp);
+    exit(EXIT_FAILURE);
+  }
+
+  // Get a visual
+  s.visual = glXGetVisualFromFBConfig(s.dsp, fbc[0]);
+  if (!s.visual) {
+    fprintf(stderr, "No appropriate visual found\n");
+    XFree(fbc);
+    XCloseDisplay(s.dsp);
+    exit(EXIT_FAILURE);
+  }
+  XFree(fbc);
+
+  {
+    // Framebuffer attributes
+    static int visual_attribs[] = {
+      GLX_RENDER_TYPE, GLX_RGBA_BIT,
+      GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+      GLX_DOUBLEBUFFER, True,
+      GLX_RED_SIZE, 8,
+      GLX_GREEN_SIZE, 8,
+      GLX_BLUE_SIZE, 8,
+      GLX_ALPHA_SIZE, 8,
+      GLX_DEPTH_SIZE, 24,
+      None
+    };
+
+    int fbcount;
+    GLXFBConfig *fbc = glXChooseFBConfig(s.dsp, DefaultScreen(s.dsp), visual_attribs, &fbcount);
+    if (!fbc) {
+      fprintf(stderr, "Failed to retrieve a framebuffer config\n");
+      exit(1);
+    }
+
+    // Get a visual
+    XVisualInfo *vi = glXGetVisualFromFBConfig(s.dsp, fbc[0]);
+    if (!vi) {
+      fprintf(stderr, "No appropriate visual found\n");
+      XFree(fbc);
+      exit(1);
+    }
+
+    XFree(fbc);
+    // Create a GLX context
+    GLXContext context = glXCreateContext(s.dsp, vi, NULL, GL_TRUE);
+    if (!context) {
+      fprintf(stderr, "Failed to create GL context\n");
+      XFree(vi);
+      XFree(fbc);
+      exit(1);
+    }
+
+    XFree(vi);
+    XFree(fbc);
+  }
+
 
   /* Setting event mask for root window */
   uint32_t evmask[] = {
@@ -197,6 +288,8 @@ setup() {
       s.curdesktop[i] = desktopinit;
     }
   }
+
+  // Initialize OpenGL Context
 }
 
 /**
@@ -246,7 +339,7 @@ terminate() {
       mon = next;
     }
   }
-  xcb_disconnect(s.con);
+  XCloseDisplay(s.dsp);
   exit(EXIT_SUCCESS);
 }
 
@@ -627,27 +720,35 @@ setupdecoration(client* cl) {
   area geom = cl->area; 
 
   cl->decoration = xcb_generate_id(s.con);
-  uint32_t vals[2] = {s.screen->black_pixel, XCB_EVENT_MASK_STRUCTURE_NOTIFY};
-  xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->decoration, 
+  xcb_colormap_t colormap = xcb_generate_id(s.con);
+  xcb_create_colormap(s.con, XCB_COLORMAP_ALLOC_NONE, colormap, s.root, s.visual->visualid);
+
+  uint32_t value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
+  uint32_t value_list[] = {s.screen->black_pixel, XCB_EVENT_MASK_STRUCTURE_NOTIFY, colormap};
+
+  xcb_create_window(s.con, s.visual->depth, cl->decoration, 
                     s.root, geom.pos.x, geom.pos.y - titlebarheight, 
                     geom.size.x, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-                    s.screen->root_visual, 
-                    XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-                    vals);
+                    s.visual->visualid, 
+                    value_mask,
+                    value_list);
 
+  /*
   // Set up events
   {
     uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
-    xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
+    xcb_grab_button(s.con, 0, cl->decoration, evmask,d XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
                     s.root, XCB_NONE, 1, XCB_NONE);
     xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
                     s.root, XCB_NONE, 3, XCB_NONE);
-  }
+  }*/
   xcb_map_window(s.con, cl->decoration);
+  xcb_flush(s.con);
+  /*
   uint32_t config[] = { XCB_STACK_MODE_ABOVE };
   xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
+  */
 
-  xcb_flush(s.con);
 }
 
 /**
