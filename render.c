@@ -1,13 +1,17 @@
 #include "render.h"
 #include "structs.h"
+#include "config.h"
+
 #include <GL/glx.h>
 #include <X11/Xlib.h>
+#include <leif/leif.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <time.h>
+#include <string.h>
 
-void render_initgl(State* s) {
+void 
+render_initgl(State* s) {
   static int32_t visattribs[] = {
     GLX_X_RENDERABLE, True,
     GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
@@ -44,4 +48,47 @@ void render_initgl(State* s) {
     fprintf(stderr, "ragnar_render: cannot create an OpenGL context.\n" );
     terminate(EXIT_FAILURE);
   }
+}
+
+
+void 
+render_setvsync(Window win, bool vsync, State* s) {
+  // Check for GLX_EXT_swap_control extension
+  const char *extensions = glXQueryExtensionsString(s->dsp, DefaultScreen(s->dsp));
+  if (strstr(extensions, "GLX_EXT_swap_control") == NULL) {
+    fprintf(stderr, "ragnar_render: GLX_EXT_swap_control extension is not available.\n");
+    exit(1);
+  }
+
+  // Set swap interval to 0
+  typedef void (*PFNGLXSWAPINTERVALEXT)(Display *, GLXDrawable, int);
+  PFNGLXSWAPINTERVALEXT glXSwapIntervalEXT = (PFNGLXSWAPINTERVALEXT) glXGetProcAddress((const GLubyte *)"glXSwapIntervalEXT");
+
+  if (glXSwapIntervalEXT) {
+    glXSwapIntervalEXT(s->dsp, win, (int32_t)vsync);
+  } else {
+    fprintf(stderr, "ragnar_render: failed to get address for glXSwapIntervalEXT.\n");
+    exit(1);
+  }
+}
+void 
+render_setcontext(Window win, State* s) {
+  if(!glXMakeCurrent(s->dsp, win, s->glcontext)) {
+    fprintf(stderr, "ragnar_render: cannot make OpenGL context.\n");
+    terminate(EXIT_FAILURE);
+  }
+}
+void
+render_clientdecoration(client* cl, State* s) {
+  render_setcontext(cl->deco.win, s);
+  {
+    LfColor clearcolor = lf_color_from_hex(decorationcolor);
+    vec4s zto = lf_color_to_zto(clearcolor); 
+    glClearColor(zto.r, zto.g, zto.b, zto.a);
+  }
+  glClear(GL_COLOR_BUFFER_BIT);
+  lf_begin(&cl->deco.lf);
+  lf_text(&cl->deco.lf, "Hello");
+  lf_end(&cl->deco.lf);
+  glXSwapBuffers(s->dsp, cl->deco.win);
 }

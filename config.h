@@ -1,10 +1,12 @@
 #pragma once
 #include "structs.h"
+#include "clientfuncs.h"
 
 /* Window properties */
 static const int32_t winborderwidth           = 1;
 static const int32_t winbordercolor           = 0x5e5e5e;
 static const int32_t winbordercolor_selected  = 0xcccccc;
+static const int32_t decorationcolor          = 0x171717;
 
 // Main modifier that is used to execute all window manager keybindings
 static const kb_modifier modkey   = Alt; 
@@ -20,8 +22,11 @@ static const int32_t desktopcount  = 9;
 static const int32_t desktopinit   = 0;
 
 /* Window decoration */
-static const bool usedecoration = true;
+static const bool usedecoration = true; // Can get funky on nvidia GPUs 
 static const uint32_t titlebarheight = 30;
+
+/* Vsync */
+static const bool rendervsync = false; // Can remove lag on nvidia GPUs if set to false
 
 #define TERMINAL_CMD  "alacritty &"
 #define MENU_CMD      "~/.config/rofi/launchers/type-3/launcher.sh &"

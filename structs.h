@@ -2,10 +2,9 @@
 #include <stdbool.h>
 
 #include <xcb/xcb_keysyms.h>
-
 #include <GL/glx.h>
-
 #include <X11/X.h>
+#include <leif/leif.h>
 
 #define _XCB_EV_LAST 36 
 
@@ -213,6 +212,11 @@ struct monitor {
 
 typedef struct client client;
 
+typedef struct {
+  xcb_window_t win;
+  LfState lf;
+} clientdeco;
+
 struct client {
   area area, area_prev;
   bool fullscreen, floating;
@@ -222,7 +226,7 @@ struct client {
 
   size_t borderwidth;
 
-  xcb_window_t decoration;
+  clientdeco deco;
 
   monitor* mon;
   int32_t desktop;

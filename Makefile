@@ -4,7 +4,7 @@ CC = cc
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
 LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
 
-SRC = ragnar.c render.c
+SRC = ragnar.c render.c config.h
 OBJ = ${SRC:.c=.o}
 
 all: ragnar print_options 
