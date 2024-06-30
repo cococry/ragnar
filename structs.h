@@ -249,8 +249,12 @@ typedef enum {
 
 typedef struct {
   xcb_connection_t* con;
+  Display* dsp;
   xcb_window_t root;
   xcb_screen_t* screen; 
+
+  GLXContext glcontext;
+  GLXFBConfig glfbconf;
 
   client* clients;
   client* focus;

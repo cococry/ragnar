@@ -15,10 +15,18 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_util.h>
 #include <xcb/xcb_keysyms.h>
-#include <X11/keysym.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
+
+#include <GL/gl.h>
+#include <GL/glx.h>
+
+#include <X11/Xlib.h>
+#include <X11/Xlib-xcb.h>
+#include <X11/keysym.h>
+
+#include <leif/leif.h>
 
 #include "structs.h"
 
@@ -105,6 +113,8 @@ static void             ewmh_updateclients();
 
 static void             sigchld_handler(int32_t signum);
 
+static void             initglcontext();
+
 // This needs to be included after the function definitions
 #include "config.h"
 
@@ -157,13 +167,25 @@ setup() {
 
   s.clients = NULL;
 
+  s.dsp = XOpenDisplay(NULL);
+  if(!s.dsp) {
+    fprintf(stderr, "rangar: cannot open X Display.\n");
+    exit(EXIT_FAILURE);
+  }
   // s.conecting to the X server
-  s.con = xcb_connect(NULL, NULL);
+  s.con = XGetXCBConnection(s.dsp);
   // Checking for errors
-  if (xcb_connection_has_error(s.con)) {
+  if (xcb_connection_has_error(s.con) || !s.con) {
     fprintf(stderr, "ragnar: cannot open display.\n");
     exit(EXIT_FAILURE);
   }
+  
+  // Lock the display to prevent concurrency issues
+  XSetEventQueueOwner(s.dsp, XCBOwnsEventQueue);
+
+  // Initialize OpenGL
+  initglcontext();
+
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
   s.screen = screen;
@@ -646,8 +668,27 @@ setupdecoration(client* cl) {
   xcb_map_window(s.con, cl->decoration);
   uint32_t config[] = { XCB_STACK_MODE_ABOVE };
   xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
-
   xcb_flush(s.con);
+
+  {
+    GLXDrawable drawable = cl->decoration;
+    if(!glXMakeCurrent(s.dsp, drawable, s.glcontext)) {
+      fprintf(stderr, "ragnar: cannot make OpenGL context.\n");
+      exit(EXIT_FAILURE);
+    }
+
+    LfState lf = lf_init_x11(geom.size.x, titlebarheight);
+
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    lf_begin(&lf);
+    lf_text(&lf, "Hello");
+    lf_set_ptr_x_absolute(&lf, geom.size.x - 15 - 7.5f);
+    lf_rect_render(&lf, (vec2s){lf_get_ptr_x(&lf), 7.5f}, (vec2s){15, 15},   LF_WHITE, LF_NO_COLOR, 0.0f, 1.5);
+    lf_end(&lf);
+    glXSwapBuffers(s.dsp, cl->decoration);
+  }
 }
 
 /**
@@ -1862,6 +1903,48 @@ void
 sigchld_handler(int32_t signum) {
   (void)signum;
   while (waitpid(-1, NULL, WNOHANG) > 0);
+}
+
+void 
+initglcontext() {
+  static int32_t visattribs[] = {
+    GLX_X_RENDERABLE, True,
+    GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+    GLX_RENDER_TYPE, GLX_RGBA_BIT,
+    GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
+    GLX_RED_SIZE, 8,
+    GLX_GREEN_SIZE, 8,
+    GLX_BLUE_SIZE, 8,
+    GLX_ALPHA_SIZE, 8,
+    GLX_DEPTH_SIZE, 24,
+    GLX_STENCIL_SIZE, 8,
+    GLX_DOUBLEBUFFER, True,
+    None
+  };
+
+  int fbcount;
+  GLXFBConfig* fbconfs = glXChooseFBConfig(s.dsp, DefaultScreen(s.dsp), visattribs, &fbcount);
+  if(!fbconfs) {
+    fprintf(stderr, "rangar: cannot retrieve an OpenGL framebuffer config.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  s.glfbconf = fbconfs[0];
+  XFree(fbconfs);
+
+  XVisualInfo* visual = glXGetVisualFromFBConfig(s.dsp, s.glfbconf);
+  if(!visual) {
+    fprintf(stderr, "ragnar: no appropriate OpenGL visual found.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  s.glcontext = glXCreateContext(s.dsp, visual, NULL, GL_TRUE);
+  if(!s.glcontext) {
+    fprintf(stderr, "ragnar: failed to create an OpenGL context.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  XFree(visual);
 }
 
 int 
