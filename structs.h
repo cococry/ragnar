@@ -1,10 +1,4 @@
 #pragma once
-#include <stdbool.h>
-
-#include <xcb/xcb_keysyms.h>
-#include <GL/glx.h>
-#include <X11/X.h>
-#include <leif/leif.h>
 
 #define _XCB_EV_LAST 36 
 
@@ -212,21 +206,17 @@ struct monitor {
 
 typedef struct client client;
 
-typedef struct {
-  xcb_window_t win;
-  LfState lf;
-} clientdeco;
-
 struct client {
   area area, area_prev;
   bool fullscreen, floating;
   xcb_window_t win;
 
+  char name[512];
   client* next;
 
   size_t borderwidth;
 
-  clientdeco deco;
+  xcb_window_t decoration;
 
   monitor* mon;
   int32_t desktop;
@@ -266,6 +256,7 @@ typedef struct {
 
   GLXContext glcontext;
   XVisualInfo* glvisual;
+  GLXFBConfig glfbconf;
 
   client* clients;
   client* focus;
@@ -281,5 +272,3 @@ typedef struct {
 
   int32_t* curdesktop;
 } State;
-
-void terminate(int32_t exitcode);

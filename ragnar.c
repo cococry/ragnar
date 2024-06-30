@@ -1,31 +1,38 @@
-#include <GL/gl.h>
-#include <GL/glx.h>
-#include <X11/X.h>
-#include <X11/Xlib.h>
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <string.h>
 #include <sys/wait.h>
 
 #include <xcb/xcb.h>
+#include <xcb/xproto.h>
 #include <xcb/xcb_cursor.h>
+#include <xcb/xcb_keysyms.h>
 #include <xcb/xcb_icccm.h>
+#include <xcb/xcb_util.h>
+#include <xcb/xcb_keysyms.h>
+#include <xcb/xcb_icccm.h>
+#include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
 
+#include <GL/gl.h>
+#include <GL/glx.h>
+
+#include <X11/Xlib.h>
 #include <X11/Xlib-xcb.h>
+#include <X11/keysym.h>
 
 #include <leif/leif.h>
-#include <xcb/xproto.h>
 
 #include "structs.h"
-#include "render.h"
 
 static void             setup();
 static void             loop();
+static void             terminate();
 
 static bool             pointinarea(v2 p, area a);
 static v2               cursorpos(bool* success);
@@ -39,21 +46,35 @@ static void             resizeclient(client* cl, v2 size);
 static void             moveresizeclient(client* cl, area a);
 static void             raiseclient(client* cl);
 static void             killclient(client* cl);
+static void             killfocus();
 static void             focusclient(client* cl);
 static void             setxfocus(client* cl);
 static void             unfocusclient(client* cl);
 static void             hideclient(client* cl);
 static void             showclient(client* cl);
 static void             updateclient(client* cl);
+static void             cyclefocus();
+static void             raisefocus();
 static bool             raiseevent(client* cl, xcb_atom_t protocol);
 static void             setwintype(client* cl);
 static void             seturgent(client* cl, bool urgent);
 static xcb_atom_t       getclientprop(client* cl, xcb_atom_t prop);
 static void             setfullscreen(client* cl, bool fullscreen);
 static void             switchclientdesktop(client* cl, int32_t desktop);
+static int              getclientname(xcb_connection_t *conn, xcb_window_t w, xcb_atom_t atom, char *text, unsigned int size);
+
 
 static void             setupdecoration(client* cl);
 static void             updatedecoration(client* cl);
+
+static void             cycledesktopup(); 
+static void             cycledesktopdown();
+static void             switchdesktop(passthrough_data data); 
+static void             switchfocusdesktop(passthrough_data data);
+static void             cyclefocusdesktopup();
+static void             cyclefocusdesktopdown();
+static void             togglefullscreen();
+
 
 static void             setupatoms();
 static void             grabkeybinds();
@@ -77,6 +98,7 @@ static void             releaseclient(xcb_window_t win);
 static client*          clientfromwin(xcb_window_t win);
 static client*          clientfromdecoration(xcb_window_t decoration);
 
+
 static monitor*         addmon(area a, uint32_t idx); 
 static monitor*         monbyarea(area a);
 static monitor*         clientmon(client* cl);
@@ -86,13 +108,20 @@ static uint32_t         updatemons();
 static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
 static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
 
+static void             runcmd(passthrough_data data);
 static xcb_atom_t       getatom(const char* atomstr);
+
 static void             ewmh_updateclients();
 
 static void             sigchld_handler(int32_t signum);
 
+static void             initglcontext();
+static void             drawdeco(client* cl);
+
 // This needs to be included after the function definitions
 #include "config.h"
+
+static LfState lf;
 
 
 /* Evaluates to the length (count of elements) in a given array */
@@ -139,7 +168,7 @@ setup() {
   sigemptyset(&sa.sa_mask);
   if (sigaction(SIGCHLD, &sa, NULL) == -1) {
     perror("sigaction");
-    terminate(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
 
   s.clients = NULL;
@@ -147,21 +176,21 @@ setup() {
   s.dsp = XOpenDisplay(NULL);
   if(!s.dsp) {
     fprintf(stderr, "rangar: cannot open X Display.\n");
-    terminate(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
   // s.conecting to the X server
   s.con = XGetXCBConnection(s.dsp);
   // Checking for errors
   if (xcb_connection_has_error(s.con) || !s.con) {
     fprintf(stderr, "ragnar: cannot open display.\n");
-    terminate(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
   
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s.dsp, XCBOwnsEventQueue);
 
   // Initialize OpenGL
-  render_initgl(&s);
+  initglcontext();
 
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
@@ -216,6 +245,37 @@ loop() {
     }
     free(ev);
   }
+}
+
+/**
+ * @brief Terminates the window manager 
+ *
+ * This function terminates the window manager by
+ * diss.conecting the s.conection to the X server and
+ * exiting the program.
+ */
+void 
+terminate() {
+  {
+    client* cl = s.clients;
+    client* next;
+    while(cl != NULL) {
+      next = cl->next;
+      releaseclient(cl->win);
+      cl = next; 
+    }
+  }
+  {
+    monitor* mon = s.monitors;
+    monitor* next;
+    while (mon != NULL) {
+      next = mon->next;
+      free(mon);
+      mon = next;
+    }
+  }
+  xcb_disconnect(s.con);
+  exit(EXIT_SUCCESS);
 }
 
 /**
@@ -439,7 +499,7 @@ raiseclient(client* cl) {
   uint32_t config[] = { XCB_STACK_MODE_ABOVE };
   // Change the configuration of the window to be above 
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_STACK_MODE, config);
-  xcb_configure_window(s.con, cl->deco.win, XCB_CONFIG_WINDOW_STACK_MODE, config);
+  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
   xcb_flush(s.con);
 }
 
@@ -465,6 +525,17 @@ killclient(client* cl) {
     s.focus = NULL;
   }
   xcb_flush(s.con);
+}
+
+/**
+ * @brief Kills the currently focused window 
+ */
+void
+killfocus() {
+  if(!s.focus) {
+    return;
+  }
+  killclient(s.focus);
 }
 
 /**
@@ -540,7 +611,7 @@ void
 hideclient(client* cl) {
   cl->ignoreunmap = true;
   xcb_unmap_window(s.con, cl->win);
-  xcb_unmap_window(s.con, cl->deco.win);
+  xcb_unmap_window(s.con, cl->decoration);
   const size_t state[] = {XCB_ICCCM_WM_STATE_ICONIC, XCB_NONE};
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, 
                       s.wm_atoms[WMstate], s.wm_atoms[WMstate], 32, 2, state); 
@@ -554,7 +625,7 @@ hideclient(client* cl) {
 void
 showclient(client* cl) {
   xcb_map_window(s.con, cl->win);
-  xcb_map_window(s.con, cl->deco.win);
+  xcb_map_window(s.con, cl->decoration);
   const size_t state[] = {XCB_ICCCM_WM_STATE_NORMAL, XCB_NONE};
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win,
                       s.wm_atoms[WMstate], s.wm_atoms[WMstate], 32, 2, state); 
@@ -576,51 +647,55 @@ updateclient(client* cl) {
   // Update decoration
   updatedecoration(cl);
 
+  if (!getclientname(s.con, cl->win, s.ewmh_atoms[EWMHname], cl->name, sizeof(cl->name))) {
+    getclientname(s.con, cl->win, XCB_ATOM_WM_NAME, cl->name, sizeof(cl->name));
+  }
   free(reply);
 }
 
 void 
 setupdecoration(client* cl) {
   area geom = cl->area; 
-
   Window root = DefaultRootWindow(s.dsp);
   XSetWindowAttributes attribs;
   attribs.colormap = XCreateColormap(s.dsp, s.root, s.glvisual->visual, AllocNone);
   attribs.event_mask = ExposureMask | StructureNotifyMask;
 
-  cl->deco.win = (xcb_window_t)XCreateWindow(s.dsp, root, geom.pos.x, geom.pos.y - titlebarheight, geom.size.x,
-                                 titlebarheight, 1, s.glvisual->depth, InputOutput, s.glvisual->visual,
-                                 CWColormap | CWEventMask, &attribs);
-  XSetWindowBorder(s.dsp, cl->deco.win, decorationcolor);
+  cl->decoration = (xcb_window_t)XCreateWindow(s.dsp, root, geom.pos.x, geom.pos.y - titlebarheight, geom.size.x,
+                                             titlebarheight, 1, s.glvisual->depth, InputOutput, s.glvisual->visual,
+                                             CWColormap | CWEventMask, &attribs);
 
   // Grab Buttons
   {
     unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
     // Grab Button 1
-    XGrabButton(s.dsp, Button1, AnyModifier, cl->deco.win, 
+    XGrabButton(s.dsp, Button1, AnyModifier, cl->decoration, 
                 False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
 
     // Grab Button 3
-    XGrabButton(s.dsp, Button3, AnyModifier, cl->deco.win, 
+    XGrabButton(s.dsp, Button3, AnyModifier, cl->decoration, 
                 False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
   }
 
   // Map the window
-  XMapWindow(s.dsp, cl->deco.win);
+  XMapWindow(s.dsp, cl->decoration);
   XFlush(s.dsp);
 
-  // Set GL Context to the decoration window
-  render_setcontext(cl->deco.win, &s);
+   {
+    GLXDrawable drawable = cl->decoration;
+    if(!glXMakeCurrent(s.dsp, drawable, s.glcontext)) {
+      fprintf(stderr, "ragnar: cannot make OpenGL context.\n");
+      exit(EXIT_FAILURE);
+    }
 
-  // Set Vsync
-  render_setvsync(cl->deco.win, rendervsync, &s);
+    if(!lf.init) {
+      lf = lf_init_x11(geom.size.x, titlebarheight);  
+      lf_free_font(&lf.theme.font);
+      lf.theme.font = lf_load_font("./fonts/Helvetica.ttf", 19);
+    }
 
-  // Initialize leif state
-  cl->deco.lf = lf_init_x11(geom.size.x, titlebarheight);
-
-  // Render the decoration
-  render_clientdecoration(cl, &s);
-
+    drawdeco(cl);
+  }
 }
 
 /**
@@ -640,9 +715,9 @@ updatedecoration(client* cl) {
   vals[1] = cl->area.pos.y - titlebarheight - cl->borderwidth;
   vals[2] = cl->area.size.x;
   vals[3] = titlebarheight - cl->borderwidth;
-  xcb_configure_window(s.con, cl->deco.win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y 
+  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y 
                        | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
-  xcb_map_window(s.con, cl->deco.win);
+  xcb_map_window(s.con, cl->decoration);
 }
 
 
@@ -1001,6 +1076,7 @@ evconfignotify(xcb_generic_event_t* ev) {
   if(!cl) return;
   updatedecoration(cl);
 }
+
 /**
  * @brief Handles a X property notify event for window properties by handling various Extended Window Manager Hints (EWMH). 
  *
@@ -1015,6 +1091,11 @@ evpropertynotify(xcb_generic_event_t* ev) {
     // Updating the window type if we receive a window type change event.
     if(prop_ev->atom == s.ewmh_atoms[EWMHwindowType]) {
       setwintype(cl);
+    }
+    if(prop_ev->atom == XCB_ATOM_WM_NAME || prop_ev->atom == s.ewmh_atoms[EWMHname]) {
+      if (!getclientname(s.con, cl->win, s.ewmh_atoms[EWMHname], cl->name, sizeof(cl->name))) {
+        getclientname(s.con, cl->win, XCB_ATOM_WM_NAME, cl->name, sizeof(cl->name));
+      }
     }
   }
   xcb_flush(s.con);
@@ -1065,19 +1146,55 @@ evdestroynotify(xcb_generic_event_t* ev) {
 void
 evexpose(xcb_generic_event_t* ev) {
   xcb_expose_event_t* expose_ev = (xcb_expose_event_t*)ev;
-
   client* cl = clientfromdecoration(expose_ev->window);
-  // Only render on decoration windows
-  if(!cl) {
+  if(!cl) return;
+  drawdeco(cl);
+}
+/**
+ * @brief Cycles the currently focused client 
+ */
+void
+cyclefocus() {
+  if (!s.clients || !s.focus)
     return;
+  client* next = NULL;
+  // Find the next client on the current monitor & desktop 
+  for(client* cl = s.focus->next; cl != NULL; cl = cl->next) {
+    if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
+      next = cl;
+      break;
+    }
   }
-  
-  // Make the context current only if it's not already
-  if (glXGetCurrentContext() != s.glcontext || glXGetCurrentDrawable() != cl->deco.win) {
-    glXMakeCurrent(s.dsp, cl->deco.win, s.glcontext);
+
+  // If there is a next client, just focus it
+  if (next != NULL) {
+    focusclient(next);
+    raiseclient(next);
   }
-  glClear(GL_COLOR_BUFFER_BIT);
-  glXSwapBuffers(s.dsp, cl->deco.win);
+  // If there is no next client, cycle back to the first client on the 
+  // current monitor & desktop
+  else {
+    for(client* cl = s.clients; cl != NULL; cl = cl->next) {
+      if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
+        next = cl;
+        break;
+      }
+    }
+    // If there is one, focus it
+    if (next != NULL) {
+      focusclient(next);
+      raiseclient(next);
+    }
+  }
+}
+
+/**
+ * @brief Raises the currently focused client
+ */
+void
+raisefocus() {
+  if(!s.focus) return;
+  raiseclient(s.focus);
 }
 
 /**
@@ -1210,7 +1327,7 @@ setfullscreen(client* cl, bool fullscreen) {
     cl->borderwidth = 0;
 
     // Hide client decoration in fullscreen mode
-    xcb_unmap_window(s.con, cl->deco.win);
+    xcb_unmap_window(s.con, cl->decoration);
   } else {
     xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
     // Set the client's area to the area before the last fullscreen occured 
@@ -1218,7 +1335,7 @@ setfullscreen(client* cl, bool fullscreen) {
     cl->borderwidth = winborderwidth;
 
     // Show client decoration again if the client is unfullscreened
-    xcb_map_window(s.con, cl->deco.win);
+    xcb_map_window(s.con, cl->decoration);
   }
   // Update client's border width
   setborderwidth(cl, cl->borderwidth);
@@ -1246,6 +1363,155 @@ switchclientdesktop(client* cl, int32_t desktop) {
   raiseclient(cl);
   hideclient(cl);
   xcb_flush(s.con);
+}
+
+/*
+ * @brief Returns the name/title of a given client 
+ * @param con The X Connection
+ * @param w The client window
+ * @param atom The atom to retrieve
+ * @param text The storage of the client's name 
+ * @param size The size of the clients name
+ * */
+int
+getclientname(xcb_connection_t* con, xcb_window_t w, xcb_atom_t atom, char* text, unsigned int size)
+{
+  xcb_get_property_cookie_t cookie;
+  xcb_get_property_reply_t* reply;
+  int result = 0;
+
+  if (!text || size == 0)
+    return 0;
+
+  text[0] = '\0';
+
+  cookie = xcb_get_property(con, 0, w, atom, XCB_GET_PROPERTY_TYPE_ANY, 0, size - 1);
+  reply = xcb_get_property_reply(con, cookie, NULL);
+
+  if (reply) {
+    if (reply->type == XCB_ATOM_STRING || reply->type == getatom("UTF8_STRING")) {
+      strncpy(text, (char *)xcb_get_property_value(reply), size - 1);
+      text[size - 1] = '\0';
+      result = 1;
+    }
+    free(reply);
+  }
+
+  return result;
+}
+
+/*
+ * Cycles the desktop, that the focused client is on, up
+ * */
+void
+cyclefocusdesktopup() {
+  if(!s.focus) return;
+  int32_t new_desktop = s.focus->desktop;
+  if(new_desktop + 1 < desktopcount) {
+    new_desktop++;
+  } else {
+    new_desktop = 0;
+  }
+  switchclientdesktop(s.focus, new_desktop);
+}
+
+/*
+ * Cycles the desktop, that the focused client is on, down 
+ * */
+void
+cyclefocusdesktopdown() {
+  if(!s.focus) return;
+  int32_t new_desktop = s.focus->desktop;
+  if(new_desktop - 1 >= 0) {
+    new_desktop--;
+  } else {
+    new_desktop = desktopcount - 1;
+  }
+  switchclientdesktop(s.focus, new_desktop);
+}
+
+/**
+ * @brief Toggles fullscreen mode on the currently focused client
+ */
+void togglefullscreen() {
+  if(!s.focus) return;
+  bool fs = !(s.focus->fullscreen);
+  setfullscreen(s.focus, fs); 
+}
+
+/**
+ * @brief Cycles the currently selected desktop index one desktop up 
+ */
+void
+cycledesktopup() {
+  int32_t newdesktop = s.curdesktop[s.monfocus->idx];
+  if(newdesktop + 1 < desktopcount) {
+    newdesktop++;
+  } else {
+    newdesktop = 0;
+  }
+  switchdesktop((passthrough_data){.i = newdesktop});
+}
+
+/**
+ * @brief Cycles the currently selected desktop index one desktop down 
+ */
+void
+cycledesktopdown() {
+  int32_t newdesktop = s.curdesktop[s.monfocus->idx];
+  if(newdesktop - 1 >= 0) {
+    newdesktop--;
+  } else {
+    newdesktop = desktopcount - 1;
+  }
+  switchdesktop((passthrough_data){.i = newdesktop});
+}
+
+
+/**
+ * @brief Switches the currently selected desktop index to the given 
+ * index and notifies EWMH that there was a desktop change
+ *
+ * @param data The .i member is used as the desktop to switch to
+ * */
+void
+switchdesktop(passthrough_data data) {
+  if(!s.monfocus) return;
+  if(data.i == s.curdesktop[s.monfocus->idx]) return;
+
+  // Notify EWMH for desktop change
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHcurrentDesktop],
+                      XCB_ATOM_CARDINAL, 32, 1, &data.i);
+
+  for (client* cl = s.clients; cl != NULL; cl = cl->next) {
+    if(cl->mon != s.monfocus) continue;
+    // Hide the clients on the current desktop
+    if(cl->desktop == s.curdesktop[s.monfocus->idx]) {
+      hideclient(cl);
+    // Show the clients on the desktop we want to switch to
+    } else if(cl->desktop == data.i) {
+      showclient(cl);
+    }
+  }
+
+  // Unfocus all selected clients
+  for(client* cl = s.clients; cl != NULL; cl = cl->next) {
+    unfocusclient(cl);
+  }
+
+  s.curdesktop[s.monfocus->idx] = data.i;
+  xcb_flush(s.con);
+}
+
+/**
+ * @brief Switches the desktop of the currently selected client to a given index 
+ *
+ * @param data The .i member is used as the desktop to switch to
+ * */
+void
+switchfocusdesktop(passthrough_data data) {
+  if(!s.focus) return;
+  switchclientdesktop(s.focus, data.i);
 }
 
 /**
@@ -1331,7 +1597,7 @@ loaddefaultcursor() {
   // Create the cursor context
   if (xcb_cursor_context_new(s.con, s.screen, &context) < 0) {
     fprintf(stderr, "ragnar: cannot create cursor context.\n");
-    terminate(EXIT_FAILURE);
+    terminate();
   }
   // Load the context
   xcb_cursor_t cursor = xcb_cursor_load_cursor(context, "arrow");
@@ -1397,7 +1663,7 @@ releaseclient(xcb_window_t win) {
        * from our list of clients*/ 
       *prev = cl->next;
       // Freeing memory allocated for client
-      xcb_destroy_window(s.con, cl->deco.win);
+      xcb_destroy_window(s.con, cl->decoration);
       free(cl);
       return;
     }
@@ -1438,7 +1704,7 @@ client*
 clientfromdecoration(xcb_window_t decoration) {
   client* cl;
   for(cl = s.clients; cl != NULL; cl = cl->next) {
-    if(cl->deco.win == decoration) {
+    if(cl->decoration == decoration) {
       return cl;
     }
   }
@@ -1467,8 +1733,8 @@ updatemons() {
   xcb_randr_get_screen_resources_current_reply_t *res_reply = xcb_randr_get_screen_resources_current_reply(s.con, res_cookie, NULL);
 
   if (!res_reply) {
-    fprintf(stderr, "ragnar: cannot get screen resources.\n");
-    terminate(EXIT_FAILURE);
+    fprintf(stderr, "ragnar: not get screen resources.\n");
+    terminate();
   }
 
   // Get number of connected monitors
@@ -1622,6 +1888,36 @@ getkeycodes(xcb_keysym_t keysym) {
 	return keycode;
 }
 
+/**
+ * @brief Runs a given command by forking the process and using execl.
+ *
+ * @param cmd The command to run 
+ */
+void
+runcmd(passthrough_data data) {
+  if (data.cmd == NULL) {
+    return;
+  }
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    // Child process
+    execl("/bin/sh", "sh", "-c", data.cmd, (char *)NULL);
+    // If execl fails
+    fprintf(stderr, "ragnar: failed to execute command.\n");
+    _exit(EXIT_FAILURE);
+  } else if (pid > 0) {
+    // Parent process
+    int32_t status;
+    waitpid(pid, &status, 0);
+    return;
+  } else {
+    // Fork failed
+    perror("fork");
+    fprintf(stderr, "ragnar: failed to execute command.\n");
+    return;
+  }
+}
 
 /**
  * @brief Retrieves an intern X atom by name.
@@ -1664,251 +1960,71 @@ sigchld_handler(int32_t signum) {
   while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
-
-/* ==== PUBLIC FUNCTIONS ==== */
-/**
- * @brief Terminates the window manager 
- *
- * This function terminates the window manager by
- * disconecting the connection to the X server and
- * exiting the program.
- *
- * @param exitcode The code to exit with
- */
 void 
-terminate(int32_t exitcode) {
-  {
-    client* cl = s.clients;
-    client* next;
-    while(cl != NULL) {
-      next = cl->next;
-      releaseclient(cl->win);
-      cl = next; 
-    }
+initglcontext() {
+  static int32_t visattribs[] = {
+    GLX_X_RENDERABLE, True,
+    GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+    GLX_RENDER_TYPE, GLX_RGBA_BIT,
+    GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
+    GLX_RED_SIZE, 8,
+    GLX_GREEN_SIZE, 8,
+    GLX_BLUE_SIZE, 8,
+    GLX_ALPHA_SIZE, 8,
+    GLX_DEPTH_SIZE, 24,
+    GLX_STENCIL_SIZE, 8,
+    GLX_DOUBLEBUFFER, True,
+    None
+  };
+
+  int fbcount;
+  GLXFBConfig* fbconfs = glXChooseFBConfig(s.dsp, DefaultScreen(s.dsp), visattribs, &fbcount);
+  if(!fbconfs) {
+    fprintf(stderr, "rangar: cannot retrieve an OpenGL framebuffer config.\n");
+    exit(EXIT_FAILURE);
   }
-  {
-    monitor* mon = s.monitors;
-    monitor* next;
-    while (mon != NULL) {
-      next = mon->next;
-      free(mon);
-      mon = next;
-    }
+
+  s.glfbconf = fbconfs[0];
+  XFree(fbconfs);
+
+  s.glvisual = glXGetVisualFromFBConfig(s.dsp, s.glfbconf);
+  if(!s.glvisual) {
+    fprintf(stderr, "ragnar: no appropriate OpenGL visual found.\n");
+    exit(EXIT_FAILURE);
   }
-  xcb_disconnect(s.con);
-  exit(exitcode);
+
+  s.glcontext = glXCreateContext(s.dsp, s.glvisual, NULL, GL_TRUE);
+  if(!s.glcontext) {
+    fprintf(stderr, "ragnar: failed to create an OpenGL context.\n");
+    exit(EXIT_FAILURE);
+  }
 }
 
-/* ==== CLIENT FUNCTIONS ==== */
-/**
- * @brief Wrapper for terminating with successfull 
- * exitcode
- */
 void
-terminate_success() {
-  terminate(EXIT_SUCCESS);
-}
-
-/**
- * @brief Cycles the currently focused client 
- */
-void
-cyclefocus() {
-  if (!s.clients || !s.focus)
-    return;
-  client* next = NULL;
-  // Find the next client on the current monitor & desktop 
-  for(client* cl = s.focus->next; cl != NULL; cl = cl->next) {
-    if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
-      next = cl;
-      break;
-    }
+drawdeco(client* cl) {
+  GLXDrawable drawable = cl->decoration;
+  if(!glXMakeCurrent(s.dsp, drawable, s.glcontext)) {
+    fprintf(stderr, "ragnar: cannot make OpenGL context.\n");
+    exit(EXIT_FAILURE);
   }
 
-  // If there is a next client, just focus it
-  if (next != NULL) {
-    focusclient(next);
-    raiseclient(next);
-  }
-  // If there is no next client, cycle back to the first client on the 
-  // current monitor & desktop
-  else {
-    for(client* cl = s.clients; cl != NULL; cl = cl->next) {
-      if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
-        next = cl;
-        break;
-      }
-    }
-    // If there is one, focus it
-    if (next != NULL) {
-      focusclient(next);
-      raiseclient(next);
-    }
-  }
-}
+  glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  lf_begin(&lf);
 
-/**
- * @brief Kills the currently focused window 
- */
-void
-killfocus() {
-  if(!s.focus) {
-    return;
-  }
-  killclient(s.focus);
-}
+  lf_resize_display(&lf, cl->area.size.x, titlebarheight); 
+  glViewport(0, 0, cl->area.size.x, titlebarheight);
 
-/**
- * @brief Raises the currently focused client
- */
-void
-raisefocus() {
-  if(!s.focus) return;
-  raiseclient(s.focus);
-}
-
-/**
- * @brief Toggles fullscreen mode on the currently focused client
- */
-void togglefullscreen() {
-  if(!s.focus) return;
-  bool fs = !(s.focus->fullscreen);
-  setfullscreen(s.focus, fs); 
-}
-
-/**
- * @brief Cycles the currently selected desktop index one desktop up 
- */
-void
-cycledesktopup() {
-  int32_t newdesktop = s.curdesktop[s.monfocus->idx];
-  if(newdesktop + 1 < desktopcount) {
-    newdesktop++;
-  } else {
-    newdesktop = 0;
-  }
-  switchdesktop((passthrough_data){.i = newdesktop});
-}
-
-/**
- * @brief Cycles the currently selected desktop index one desktop down 
- */
-void
-cycledesktopdown() {
-  int32_t newdesktop = s.curdesktop[s.monfocus->idx];
-  if(newdesktop - 1 >= 0) {
-    newdesktop--;
-  } else {
-    newdesktop = desktopcount - 1;
-  }
-  switchdesktop((passthrough_data){.i = newdesktop});
-}
-
-/*
- * Cycles the desktop of the focused client down 
- * */
-void
-cyclefocusdesktopup() {
-  if(!s.focus) return;
-  int32_t new_desktop = s.focus->desktop;
-  if(new_desktop + 1 < desktopcount) {
-    new_desktop++;
-  } else {
-    new_desktop = 0;
-  }
-  switchclientdesktop(s.focus, new_desktop);
-}
-
-/*
- * Cycles the desktop of the focused client down 
- * */
-void
-cyclefocusdesktopdown() {
-  if(!s.focus) return;
-  int32_t new_desktop = s.focus->desktop;
-  if(new_desktop - 1 >= 0) {
-    new_desktop--;
-  } else {
-    new_desktop = desktopcount - 1;
-  }
-  switchclientdesktop(s.focus, new_desktop);
-}
-
-/**
- * @brief Switches the currently selected desktop index to the given 
- * index and notifies EWMH that there was a desktop change
- *
- * @param data The .i member is used as the desktop to switch to
- * */
-void
-switchdesktop(passthrough_data data) {
-  if(!s.monfocus) return;
-  if(data.i == s.curdesktop[s.monfocus->idx]) return;
-
-  // Notify EWMH for desktop change
-  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHcurrentDesktop],
-                      XCB_ATOM_CARDINAL, 32, 1, &data.i);
-
-  for (client* cl = s.clients; cl != NULL; cl = cl->next) {
-    if(cl->mon != s.monfocus) continue;
-    // Hide the clients on the current desktop
-    if(cl->desktop == s.curdesktop[s.monfocus->idx]) {
-      hideclient(cl);
-    // Show the clients on the desktop we want to switch to
-    } else if(cl->desktop == data.i) {
-      showclient(cl);
-    }
-  }
-
-  // Unfocus all selected clients
-  for(client* cl = s.clients; cl != NULL; cl = cl->next) {
-    unfocusclient(cl);
-  }
-
-  s.curdesktop[s.monfocus->idx] = data.i;
-  xcb_flush(s.con);
-}
-
-/**
- * @brief Switches the desktop of the currently selected client to a given index 
- *
- * @param data The .i member is used as the desktop to switch to
- * */
-void
-switchfocusdesktop(passthrough_data data) {
-  if(!s.focus) return;
-  switchclientdesktop(s.focus, data.i);
-}
-
-/**
- * @brief Runs a given command by forking the process and using execl.
- *
- * @param cmd The command to run 
- */
-void
-runcmd(passthrough_data data) {
-  if (data.cmd == NULL) {
-    return;
-  }
-
-  pid_t pid = fork();
-  if (pid == 0) {
-    // Child process
-    execl("/bin/sh", "sh", "-c", data.cmd, (char *)NULL);
-    // If execl fails
-    fprintf(stderr, "ragnar: failed to execute command.\n");
-    terminate(EXIT_FAILURE);
-  } else if (pid > 0) {
-    // Parent process
-    int32_t status;
-    waitpid(pid, &status, 0);
-    return;
-  } else {
-    // Fork failed
-    perror("fork");
-    fprintf(stderr, "ragnar: failed to execute command.\n");
-    return;
-  }
+  LfUIElementProps props = lf.theme.text_props; 
+  props.margin_top = 7.5f;
+  lf_push_style_props(&lf, props);
+  lf_text(&lf, cl->name);
+  lf_pop_style_props(&lf);
+  float size = 20.0f;
+  float padding = 5.0f;
+  lf_rect_render(&lf, (vec2s){cl->area.size.x - size - padding, padding}, (vec2s){size, size}, LF_WHITE, LF_NO_COLOR, 0.0f, 5.0f);
+  lf_end(&lf);
+  glXSwapBuffers(s.dsp, cl->decoration);
 }
 
 int 
@@ -1920,6 +2036,7 @@ main() {
   // Enter the event loop
   loop();
   // Terminate after the loop
-  terminate_success();
+  terminate();
+  return EXIT_SUCCESS;
 }
 
