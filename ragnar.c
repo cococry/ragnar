@@ -1,38 +1,32 @@
+#include <GL/gl.h>
+#include <GL/glx.h>
+#include <X11/X.h>
+#include <X11/Xlib.h>
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
-#include <stdbool.h>
 #include <string.h>
 #include <sys/wait.h>
 
 #include <xcb/xcb.h>
-#include <xcb/xproto.h>
 #include <xcb/xcb_cursor.h>
-#include <xcb/xcb_keysyms.h>
 #include <xcb/xcb_icccm.h>
-#include <xcb/xcb_util.h>
-#include <xcb/xcb_keysyms.h>
-#include <xcb/xcb_icccm.h>
-#include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
 
-#include <GL/gl.h>
-#include <GL/glx.h>
-
-#include <X11/Xlib.h>
 #include <X11/Xlib-xcb.h>
-#include <X11/keysym.h>
 
 #include <leif/leif.h>
+#include <xcb/xproto.h>
 
 #include "structs.h"
+#include "render.h"
 
 static void             setup();
 static void             loop();
-static void             terminate();
+static void             terminate_success();
 
 static bool             pointinarea(v2 p, area a);
 static v2               cursorpos(bool* success);
@@ -90,12 +84,12 @@ static void             evconfignotify(xcb_generic_event_t* ev);
 static void             evpropertynotify(xcb_generic_event_t* ev);
 static void             evclientmessage(xcb_generic_event_t* ev);
 static void             evdestroynotify(xcb_generic_event_t* ev);
+static void             evexpose(xcb_generic_event_t* ev);
 
 static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
 static client*          clientfromwin(xcb_window_t win);
 static client*          clientfromdecoration(xcb_window_t decoration);
-
 
 static monitor*         addmon(area a, uint32_t idx); 
 static monitor*         monbyarea(area a);
@@ -112,8 +106,6 @@ static xcb_atom_t       getatom(const char* atomstr);
 static void             ewmh_updateclients();
 
 static void             sigchld_handler(int32_t signum);
-
-static void             initglcontext();
 
 // This needs to be included after the function definitions
 #include "config.h"
@@ -139,6 +131,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
   [XCB_CLIENT_MESSAGE]      = evclientmessage,
   [XCB_DESTROY_NOTIFY]      = evdestroynotify,
+  [XCB_EXPOSE]              = evexpose,
 };
 
 static State s;
@@ -162,7 +155,7 @@ setup() {
   sigemptyset(&sa.sa_mask);
   if (sigaction(SIGCHLD, &sa, NULL) == -1) {
     perror("sigaction");
-    exit(EXIT_FAILURE);
+    terminate(EXIT_FAILURE);
   }
 
   s.clients = NULL;
@@ -170,21 +163,21 @@ setup() {
   s.dsp = XOpenDisplay(NULL);
   if(!s.dsp) {
     fprintf(stderr, "rangar: cannot open X Display.\n");
-    exit(EXIT_FAILURE);
+    terminate(EXIT_FAILURE);
   }
   // s.conecting to the X server
   s.con = XGetXCBConnection(s.dsp);
   // Checking for errors
   if (xcb_connection_has_error(s.con) || !s.con) {
     fprintf(stderr, "ragnar: cannot open display.\n");
-    exit(EXIT_FAILURE);
+    terminate(EXIT_FAILURE);
   }
   
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s.dsp, XCBOwnsEventQueue);
 
   // Initialize OpenGL
-  initglcontext();
+  render_initgl(&s);
 
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
@@ -242,36 +235,13 @@ loop() {
 }
 
 /**
- * @brief Terminates the window manager 
- *
- * This function terminates the window manager by
- * diss.conecting the s.conection to the X server and
- * exiting the program.
+ * @brief Wrapper for terminating with successfull 
+ * exitcode
  */
-void 
-terminate() {
-  {
-    client* cl = s.clients;
-    client* next;
-    while(cl != NULL) {
-      next = cl->next;
-      releaseclient(cl->win);
-      cl = next; 
-    }
-  }
-  {
-    monitor* mon = s.monitors;
-    monitor* next;
-    while (mon != NULL) {
-      next = mon->next;
-      free(mon);
-      mon = next;
-    }
-  }
-  xcb_disconnect(s.con);
-  exit(EXIT_SUCCESS);
+void
+terminate_success() {
+  terminate(EXIT_SUCCESS);
 }
-
 /**
  * @brief Evaluates if a given point is inside a given area 
  *
@@ -648,47 +618,25 @@ void
 setupdecoration(client* cl) {
   area geom = cl->area; 
 
-  cl->decoration = xcb_generate_id(s.con);
-  uint32_t vals[2] = {s.screen->black_pixel, XCB_EVENT_MASK_STRUCTURE_NOTIFY};
-  xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->decoration, 
-                    s.root, geom.pos.x, geom.pos.y - titlebarheight, 
-                    geom.size.x, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-                    s.screen->root_visual, 
-                    XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-                    vals);
+  Window root = DefaultRootWindow(s.dsp);
+  XSetWindowAttributes attribs;
+  attribs.colormap = XCreateColormap(s.dsp, s.root, s.glvisual->visual, AllocNone);
+  attribs.event_mask = ExposureMask | StructureNotifyMask;
 
-  // Set up events
-  {
-    uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
-    xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s.root, XCB_NONE, 1, XCB_NONE);
-    xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s.root, XCB_NONE, 3, XCB_NONE);
+  cl->decoration = (xcb_window_t)XCreateWindow(s.dsp, root, geom.pos.x, geom.pos.y - titlebarheight, geom.size.x,
+                                 titlebarheight, 1, s.glvisual->depth, InputOutput, s.glvisual->visual,
+                                 CWColormap | CWEventMask, &attribs);
+
+  XMapWindow(s.dsp, cl->decoration);
+  XFlush(s.dsp);
+
+  if(!glXMakeCurrent(s.dsp, cl->decoration, s.glcontext)) {
+    fprintf(stderr, "ragnar_render: cannot make OpenGL context.\n");
+    terminate(EXIT_FAILURE);
   }
-  xcb_map_window(s.con, cl->decoration);
-  uint32_t config[] = { XCB_STACK_MODE_ABOVE };
-  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
-  xcb_flush(s.con);
-
-  {
-    GLXDrawable drawable = cl->decoration;
-    if(!glXMakeCurrent(s.dsp, drawable, s.glcontext)) {
-      fprintf(stderr, "ragnar: cannot make OpenGL context.\n");
-      exit(EXIT_FAILURE);
-    }
-
-    LfState lf = lf_init_x11(geom.size.x, titlebarheight);
-
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    lf_begin(&lf);
-    lf_text(&lf, "Hello");
-    lf_set_ptr_x_absolute(&lf, geom.size.x - 15 - 7.5f);
-    lf_rect_render(&lf, (vec2s){lf_get_ptr_x(&lf), 7.5f}, (vec2s){15, 15},   LF_WHITE, LF_NO_COLOR, 0.0f, 1.5);
-    lf_end(&lf);
-    glXSwapBuffers(s.dsp, cl->decoration);
-  }
+  glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glXSwapBuffers(s.dsp, cl->decoration);
 }
 
 /**
@@ -1130,6 +1078,24 @@ evdestroynotify(xcb_generic_event_t* ev) {
   releaseclient(destroy_ev->window);
 }
 
+void
+evexpose(xcb_generic_event_t* ev) {
+  xcb_expose_event_t* expose_ev = (xcb_expose_event_t*)ev;
+
+  client* cl = clientfromdecoration(expose_ev->window);
+  // Only render on decoration windows
+  if(!cl) {
+    return;
+  }
+  
+  // Make the context current only if it's not already
+  if (glXGetCurrentContext() != s.glcontext || glXGetCurrentDrawable() != cl->decoration) {
+    glXMakeCurrent(s.dsp, cl->decoration, s.glcontext);
+  }
+  glClear(GL_COLOR_BUFFER_BIT);
+  glXSwapBuffers(s.dsp, cl->decoration);
+}
+
 /**
  * @brief Cycles the currently focused client 
  */
@@ -1542,7 +1508,7 @@ loaddefaultcursor() {
   // Create the cursor context
   if (xcb_cursor_context_new(s.con, s.screen, &context) < 0) {
     fprintf(stderr, "ragnar: cannot create cursor context.\n");
-    terminate();
+    terminate(EXIT_FAILURE);
   }
   // Load the context
   xcb_cursor_t cursor = xcb_cursor_load_cursor(context, "arrow");
@@ -1678,8 +1644,8 @@ updatemons() {
   xcb_randr_get_screen_resources_current_reply_t *res_reply = xcb_randr_get_screen_resources_current_reply(s.con, res_cookie, NULL);
 
   if (!res_reply) {
-    fprintf(stderr, "ragnar: not get screen resources.\n");
-    terminate();
+    fprintf(stderr, "ragnar: cannot get screen resources.\n");
+    terminate(EXIT_FAILURE);
   }
 
   // Get number of connected monitors
@@ -1850,7 +1816,7 @@ runcmd(passthrough_data data) {
     execl("/bin/sh", "sh", "-c", data.cmd, (char *)NULL);
     // If execl fails
     fprintf(stderr, "ragnar: failed to execute command.\n");
-    _exit(EXIT_FAILURE);
+    terminate(EXIT_FAILURE);
   } else if (pid > 0) {
     // Parent process
     int32_t status;
@@ -1905,46 +1871,39 @@ sigchld_handler(int32_t signum) {
   while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
+
+/* ==== PUBLIC FUNCTIONS ==== */
+/**
+ * @brief Terminates the window manager 
+ *
+ * This function terminates the window manager by
+ * disconecting the connection to the X server and
+ * exiting the program.
+ *
+ * @param exitcode The code to exit with
+ */
 void 
-initglcontext() {
-  static int32_t visattribs[] = {
-    GLX_X_RENDERABLE, True,
-    GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
-    GLX_RENDER_TYPE, GLX_RGBA_BIT,
-    GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
-    GLX_RED_SIZE, 8,
-    GLX_GREEN_SIZE, 8,
-    GLX_BLUE_SIZE, 8,
-    GLX_ALPHA_SIZE, 8,
-    GLX_DEPTH_SIZE, 24,
-    GLX_STENCIL_SIZE, 8,
-    GLX_DOUBLEBUFFER, True,
-    None
-  };
-
-  int fbcount;
-  GLXFBConfig* fbconfs = glXChooseFBConfig(s.dsp, DefaultScreen(s.dsp), visattribs, &fbcount);
-  if(!fbconfs) {
-    fprintf(stderr, "rangar: cannot retrieve an OpenGL framebuffer config.\n");
-    exit(EXIT_FAILURE);
+terminate(int32_t exitcode) {
+  {
+    client* cl = s.clients;
+    client* next;
+    while(cl != NULL) {
+      next = cl->next;
+      releaseclient(cl->win);
+      cl = next; 
+    }
   }
-
-  s.glfbconf = fbconfs[0];
-  XFree(fbconfs);
-
-  XVisualInfo* visual = glXGetVisualFromFBConfig(s.dsp, s.glfbconf);
-  if(!visual) {
-    fprintf(stderr, "ragnar: no appropriate OpenGL visual found.\n");
-    exit(EXIT_FAILURE);
+  {
+    monitor* mon = s.monitors;
+    monitor* next;
+    while (mon != NULL) {
+      next = mon->next;
+      free(mon);
+      mon = next;
+    }
   }
-
-  s.glcontext = glXCreateContext(s.dsp, visual, NULL, GL_TRUE);
-  if(!s.glcontext) {
-    fprintf(stderr, "ragnar: failed to create an OpenGL context.\n");
-    exit(EXIT_FAILURE);
-  }
-
-  XFree(visual);
+  xcb_disconnect(s.con);
+  exit(exitcode);
 }
 
 int 
@@ -1956,7 +1915,6 @@ main() {
   // Enter the event loop
   loop();
   // Terminate after the loop
-  terminate();
-  return EXIT_SUCCESS;
+  terminate_success();
 }
 

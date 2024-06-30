@@ -1,4 +1,11 @@
 #pragma once
+#include <stdbool.h>
+
+#include <xcb/xcb_keysyms.h>
+
+#include <GL/glx.h>
+
+#include <X11/X.h>
 
 #define _XCB_EV_LAST 36 
 
@@ -254,7 +261,7 @@ typedef struct {
   xcb_screen_t* screen; 
 
   GLXContext glcontext;
-  GLXFBConfig glfbconf;
+  XVisualInfo* glvisual;
 
   client* clients;
   client* focus;
@@ -270,3 +277,5 @@ typedef struct {
 
   int32_t* curdesktop;
 } State;
+
+void terminate(int32_t exitcode);
