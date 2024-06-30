@@ -21,7 +21,7 @@ static const int32_t desktopcount  = 9;
 static const int32_t desktopinit   = 0;
 
 /* Window decoration */
-static const bool usedecoration = false;
+static const bool usedecoration = true;
 static const uint32_t titlebarheight = 30;
 
 #define TERMINAL_CMD  "alacritty &"

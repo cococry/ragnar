@@ -648,27 +648,30 @@ void
 setupdecoration(client* cl) {
   area geom = cl->area; 
 
-  cl->decoration = xcb_generate_id(s.con);
-  uint32_t vals[2] = {s.screen->black_pixel, XCB_EVENT_MASK_STRUCTURE_NOTIFY};
-  xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->decoration, 
-                    s.root, geom.pos.x, geom.pos.y - titlebarheight, 
-                    geom.size.x, titlebarheight, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT,
-                    s.screen->root_visual, 
-                    XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-                    vals);
+  Window root = DefaultRootWindow(s.dsp);
+  XSetWindowAttributes attribs;
+  attribs.colormap = XCreateColormap(s.dsp, s.root, s.glvisual->visual, AllocNone);
+  attribs.event_mask = ExposureMask | StructureNotifyMask;
 
-  // Set up events
+  cl->decoration = (xcb_window_t)XCreateWindow(s.dsp, root, geom.pos.x, geom.pos.y - titlebarheight, geom.size.x,
+                                             titlebarheight, 1, s.glvisual->depth, InputOutput, s.glvisual->visual,
+                                             CWColormap | CWEventMask, &attribs);
+
+  // Grab Buttons
   {
-    uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
-    xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s.root, XCB_NONE, 1, XCB_NONE);
-    xcb_grab_button(s.con, 0, cl->decoration, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s.root, XCB_NONE, 3, XCB_NONE);
+    unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
+    // Grab Button 1
+    XGrabButton(s.dsp, Button1, AnyModifier, cl->decoration, 
+                False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
+
+    // Grab Button 3
+    XGrabButton(s.dsp, Button3, AnyModifier, cl->decoration, 
+                False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
   }
-  xcb_map_window(s.con, cl->decoration);
-  uint32_t config[] = { XCB_STACK_MODE_ABOVE };
-  xcb_configure_window(s.con, cl->decoration, XCB_CONFIG_WINDOW_STACK_MODE, config);
-  xcb_flush(s.con);
+
+  // Map the window
+  XMapWindow(s.dsp, cl->decoration);
+  XFlush(s.dsp);
 
   {
     GLXDrawable drawable = cl->decoration;
@@ -1932,19 +1935,18 @@ initglcontext() {
   s.glfbconf = fbconfs[0];
   XFree(fbconfs);
 
-  XVisualInfo* visual = glXGetVisualFromFBConfig(s.dsp, s.glfbconf);
-  if(!visual) {
+  s.glvisual = glXGetVisualFromFBConfig(s.dsp, s.glfbconf);
+  if(!s.glvisual) {
     fprintf(stderr, "ragnar: no appropriate OpenGL visual found.\n");
     exit(EXIT_FAILURE);
   }
 
-  s.glcontext = glXCreateContext(s.dsp, visual, NULL, GL_TRUE);
+  s.glcontext = glXCreateContext(s.dsp, s.glvisual, NULL, GL_TRUE);
   if(!s.glcontext) {
     fprintf(stderr, "ragnar: failed to create an OpenGL context.\n");
     exit(EXIT_FAILURE);
   }
 
-  XFree(visual);
 }
 
 int 

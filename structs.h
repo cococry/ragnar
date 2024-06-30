@@ -255,6 +255,7 @@ typedef struct {
 
   GLXContext glcontext;
   GLXFBConfig glfbconf;
+  XVisualInfo* glvisual;
 
   client* clients;
   client* focus;
