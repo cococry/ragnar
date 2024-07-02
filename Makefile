@@ -1,13 +1,10 @@
 CC = cc
-
-# includes and flags
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
 LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
+SRC = src/*.c 
+BIN=ragnar
 
-SRC = ragnar.c render.c config.h
-OBJ = ${SRC:.c=.o}
-
-all: ragnar print_options 
+all: build print_options 
 
 print_options:
 	@echo ragnar build options:
@@ -16,13 +13,8 @@ print_options:
 	@echo "INCS   = ${INCS}"
 	@echo "CC     = ${CC}"
 
-.c.o:
-	${CC} -c ${CFLAGS} ${LIBS} ${INCS} $<
-
-${OBJ}: 
-
-ragnar: ${OBJ}
-	${CC} -o $@ ${OBJ} ${LIBS} ${INCS}
+build: 
+	${CC} -o ${BIN} ${SRC} ${LIBS} ${INCS}
 
 install:
 	cp -f ragnar /usr/bin
