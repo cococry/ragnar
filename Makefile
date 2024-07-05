@@ -1,10 +1,13 @@
 CC = cc
-CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
-LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
-SRC = src/*.c 
-BIN=ragnar
 
-all: build print_options 
+# includes and flags
+CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
+LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lX11 -lX11-xcb -lGL
+
+SRC = ragnar.c
+OBJ = ${SRC:.c=.o}
+
+all: ragnar print_options 
 
 print_options:
 	@echo ragnar build options:
@@ -13,8 +16,13 @@ print_options:
 	@echo "INCS   = ${INCS}"
 	@echo "CC     = ${CC}"
 
-build: 
-	${CC} -o ${BIN} ${SRC} ${LIBS} ${INCS}
+.c.o:
+	${CC} -c ${CFLAGS} ${LIBS} ${INCS} $<
+
+${OBJ}: 
+
+ragnar: ${OBJ}
+	${CC} -o $@ ${OBJ} ${LIBS} ${INCS}
 
 install:
 	cp -f ragnar /usr/bin
