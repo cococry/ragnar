@@ -2,7 +2,7 @@ CC = cc
 
 # includes and flags
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
-LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lX11 -lX11-xcb -lGL
+LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
 
 SRC = ragnar.c
 OBJ = ${SRC:.c=.o}

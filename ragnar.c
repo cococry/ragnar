@@ -44,6 +44,7 @@ static void             resizeclient(client* cl, v2 size);
 static void             moveresizeclient(client* cl, area a);
 static void             raiseclient(client* cl);
 static bool             clienthasdeleteatom(client *c);
+static char*            getclientname(client* cl);
 static void             killclient(client* cl);
 static void             killfocus();
 static void             focusclient(client* cl);
@@ -88,6 +89,7 @@ static void             evdestroynotify(xcb_generic_event_t* ev);
 static void             eventernotify(xcb_generic_event_t* ev);
 static void             evkeypress(xcb_generic_event_t* ev);
 static void             evbuttonpress(xcb_generic_event_t* ev);
+static void             evbuttonrelease(xcb_generic_event_t* ev);
 static void             evmotionnotify(xcb_generic_event_t* ev);
 static void             evconfigrequest(xcb_generic_event_t* ev);
 static void             evconfignotify(xcb_generic_event_t* ev);
@@ -99,7 +101,6 @@ static client*          addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
 static client*          clientfromwin(xcb_window_t win);
 static client*          clientfromtitlebar(xcb_window_t titlebar);
-
 
 static monitor*         addmon(area a, uint32_t idx); 
 static monitor*         monbyarea(area a);
@@ -118,6 +119,7 @@ static void             ewmh_updateclients();
 static void             sigchld_handler(int32_t signum);
 
 static void             initglcontext();
+static void             setglcontext(xcb_window_t win);
 
 // This needs to be included after the function definitions
 #include "config.h"
@@ -138,6 +140,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_ENTER_NOTIFY]        = eventernotify,
   [XCB_KEY_PRESS]           = evkeypress,
   [XCB_BUTTON_PRESS]        = evbuttonpress,
+  [XCB_BUTTON_RELEASE]      = evbuttonrelease,
   [XCB_MOTION_NOTIFY]       = evmotionnotify,
   [XCB_CONFIGURE_REQUEST]   = evconfigrequest,
   [XCB_CONFIGURE_NOTIFY]    = evconfignotify,
@@ -204,7 +207,6 @@ setup() {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
     XCB_EVENT_MASK_STRUCTURE_NOTIFY |
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-    XCB_EVENT_MASK_PROPERTY_CHANGE |
     XCB_EVENT_MASK_ENTER_WINDOW |
     XCB_EVENT_MASK_FOCUS_CHANGE | 
     XCB_EVENT_MASK_POINTER_MOTION
@@ -510,7 +512,15 @@ raiseclient(client* cl) {
 }
 
 
-bool clienthasdeleteatom(client *c) {
+/**
+ * @brief Checks if a client has a WM_DELETE atom set 
+ *
+ * @param cl The client to check delete atom for
+ *
+ * @return Whether or not the given client has a WM_DELETE atom 
+ */
+bool 
+clienthasdeleteatom(client *c) {
 	bool ret = false;
 	xcb_icccm_get_wm_protocols_reply_t reply;
 
@@ -524,6 +534,35 @@ bool clienthasdeleteatom(client *c) {
 	}
 
 	return ret;
+}
+
+/**
+ * @brief Retrieves the name of a given client (allocates memory) 
+ *
+ * @param cl The client to retrieve a name from  
+ *
+ * @return The name of the given client  
+ */
+char* 
+getclientname(client* cl) {
+    xcb_icccm_get_text_property_reply_t prop;
+    // Try to get _NET_WM_NAME
+    xcb_get_property_cookie_t cookie = xcb_icccm_get_text_property(s.con, cl->win, XCB_ATOM_WM_NAME);
+    if (xcb_icccm_get_text_property_reply(s.con, cookie, &prop, NULL)) {
+        char* name = strndup(prop.name, prop.name_len);
+        xcb_icccm_get_text_property_reply_wipe(&prop);
+        return name;
+    }
+
+    // If _NET_WM_NAME is not available, try WM_NAME
+    cookie = xcb_icccm_get_text_property(s.con, cl->win, XCB_ATOM_WM_NAME);
+    if (xcb_icccm_get_text_property_reply(s.con, cookie, &prop, NULL)) {
+        char *name = strndup(prop.name, prop.name_len);
+        xcb_icccm_get_text_property_reply_wipe(&prop);
+        return name;
+    }
+
+    return NULL;
 }
 
 /**
@@ -776,7 +815,7 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Setup listened events for the mapped window
   {
-    uint32_t evmask[] = {  XCB_EVENT_MASK_ENTER_WINDOW }; 
+    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_PROPERTY_CHANGE };
     xcb_change_window_attributes_checked(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
   }
 
@@ -820,6 +859,9 @@ evmaprequest(xcb_generic_event_t* ev) {
   if(pointinarea(cursor, cl->area)) {
     focusclient(cl);
   }
+  bool success;
+  cl->area = winarea(cl->frame, &success);
+  if(!success) return;
   if(s.monfocus) {
     // Spawn the window in the center of the focused monitor
     moveclient(cl, (v2){
@@ -827,8 +869,6 @@ evmaprequest(xcb_generic_event_t* ev) {
       s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
 
-  // Send configure event to the client
-  configclient(cl);
   // Map the window
   xcb_map_window(s.con, map_ev->window);
   xcb_flush(s.con);
@@ -957,6 +997,15 @@ evbuttonpress(xcb_generic_event_t* ev) {
   if(!cl) {
     cl = clientfromtitlebar(button_ev->event);
     if(!cl) return;
+    v2 cursorpos = (v2){ .x = (float)button_ev->root_x - cl->area.pos.x, (float)button_ev->root_y - cl->area.pos.y };
+    area closebtnarea = (area){
+      .pos = cl->closebutton,
+      .size = (v2){15, 15}
+    };
+    if(pointinarea(cursorpos, closebtnarea)) {
+      killclient(cl);
+      return;
+    }
     focusclient(cl);
   } else {
     // Focusing client 
@@ -984,6 +1033,19 @@ evbuttonpress(xcb_generic_event_t* ev) {
   xcb_flush(s.con);
 }
 
+void
+evbuttonrelease(xcb_generic_event_t* ev) {
+  xcb_button_release_event_t* button_ev = (xcb_button_release_event_t*)ev;
+
+  client* cl = clientfromtitlebar(button_ev->event);
+  if(!cl) return;
+
+  if(button_ev->root_y <= 0) {
+    setfullscreen(cl, true);
+  }
+  xcb_flush(s.con);
+}
+
 /**
  * @brief Handles a X motion notify event by moving the clients window if left mouse 
  * button is held and resizing the clients window if right mouse is held. 
@@ -993,13 +1055,12 @@ evbuttonpress(xcb_generic_event_t* ev) {
 void
 evmotionnotify(xcb_generic_event_t* ev) {
   xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
-  if(!(motion_ev->state & XCB_BUTTON_MASK_1 || motion_ev->state & XCB_BUTTON_MASK_3)) return;
-
   if(motion_ev->event == s.root) {
     // Update the focused monitor to the monitor under the cursor
     s.monfocus = cursormon();
     return;
   }
+  if(!(motion_ev->state & XCB_BUTTON_MASK_1 || motion_ev->state & XCB_BUTTON_MASK_3)) return;
   s.monfocus = cursormon();
 
   // Position of the cursor in the drag event
@@ -1013,6 +1074,11 @@ evmotionnotify(xcb_generic_event_t* ev) {
   client* cl = clientfromwin(motion_ev->event);
   if(!cl) {
     if(!(cl = clientfromtitlebar(motion_ev->event))) return;
+    if(cl->fullscreen) {
+      setfullscreen(cl, false);
+      s.grabwin = cl->area;
+      movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
+    }
     moveclient(cl, movedest);
     xcb_flush(s.con);
     return;
@@ -1048,7 +1114,6 @@ evmotionnotify(xcb_generic_event_t* ev) {
 void 
 evconfigrequest(xcb_generic_event_t* ev) {
   xcb_configure_request_event_t *config_ev = (xcb_configure_request_event_t *)ev;
-
 
   client* cl = clientfromwin(config_ev->window);
   if(!cl) {
@@ -1090,8 +1155,16 @@ evconfigrequest(xcb_generic_event_t* ev) {
   } else {
     {
       uint16_t mask = 0;
-      uint32_t values[5];
+      uint32_t values[7];
       uint32_t i = 0;
+      if (config_ev->value_mask & XCB_CONFIG_WINDOW_X) {
+        mask |= XCB_CONFIG_WINDOW_X;
+        values[i++] = config_ev->x;
+      }
+      if (config_ev->value_mask & XCB_CONFIG_WINDOW_Y) {
+        mask |= XCB_CONFIG_WINDOW_Y;
+        values[i++] = config_ev->y;
+      }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
         mask |= XCB_CONFIG_WINDOW_WIDTH;
         values[i++] = config_ev->width;
@@ -1144,7 +1217,15 @@ evconfigrequest(xcb_generic_event_t* ev) {
       }
       xcb_configure_window(s.con, cl->win, mask, values);
     }
-    cl->area.size = (v2){config_ev->width, config_ev->height};
+    bool success;
+    cl->area = winarea(cl->frame, &success);
+    if(!success) return;
+    if(s.monfocus) {
+      // Spawn the window in the center of the focused monitor
+      moveclient(cl, (v2){
+        s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
+        s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
+    }
     updatetitlebar(cl);
     configclient(cl);
   }
@@ -1182,6 +1263,12 @@ evpropertynotify(xcb_generic_event_t* ev) {
     // Updating the window type if we receive a window type change event.
     if(prop_ev->atom == s.ewmh_atoms[EWMHwindowType]) {
       setwintype(cl);
+    }
+    if(prop_ev->atom == s.ewmh_atoms[EWMHname]) {
+      if(cl->name)
+        free(cl->name);
+      cl->name = getclientname(cl);
+      rendertitlebar(cl);
     }
   }
   xcb_flush(s.con);
@@ -1692,10 +1779,13 @@ setuptitlebar(client* cl) {
                 False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
   }
   {
-    GLXDrawable drawable = cl->titlebar;
-    if(!glXMakeCurrent(s.dsp, drawable, s.glcontext)) {
-      fprintf(stderr, "ragnar: cannot make OpenGL context.\n");
-      terminate();
+    setglcontext(cl->titlebar);
+
+    if(!s.ui.init) {
+      s.ui = lf_init_x11(cl->area.pos.x, titlebarheight);
+      lf_free_font(&s.ui.theme.font);
+      s.ui.theme.font = lf_load_font("/usr/share/fonts/TTF/VictorMono-BoldItalic.ttf", 24);
+      s.closeicon = lf_load_texture("./icons/close.png", LF_TEX_FILTER_LINEAR, false);
     }
     rendertitlebar(cl);
   }
@@ -1704,14 +1794,55 @@ setuptitlebar(client* cl) {
 void
 rendertitlebar(client* cl) {
   if(!usedecoration) return;
-  // Make OpenGL context
-  if(!glXMakeCurrent(s.dsp, cl->titlebar, s.glcontext)) {
-    fprintf(stderr, "ragnar: cannot make OpenGL context.\n");
-    terminate();
-  }
+  if(cl->desktop != s.curdesktop[s.monfocus->idx]) return;
+  setglcontext(cl->titlebar);
+ 
   // Clear background
-  glClearColor(0.2f, 0.3f, 0.8f, 1.0f);
+  {
+    LfColor color = lf_color_from_hex(titlebarcolor);
+    vec4s zto = lf_color_to_zto(color);
+    glClearColor(zto.r, zto.g, zto.b, zto.a);
+  }
   glClear(GL_COLOR_BUFFER_BIT);
+
+  lf_resize_display(&s.ui, cl->area.size.x, titlebarheight);
+  glViewport(0, 0, cl->area.size.x, titlebarheight);
+
+  lf_begin(&s.ui);
+  {
+    // Get client name
+    bool namevalid = (cl->name && strlen(cl->name));
+    char* displayname = (namevalid ? cl->name : "Broken client");
+    // Center text
+    float textwidth = lf_text_dimension(&s.ui, displayname).x;
+    lf_set_ptr_x_absolute(&s.ui, (cl->area.size.x - textwidth) / 2.0f);
+
+    // Display text and remove margin
+    LfUIElementProps props = s.ui.theme.text_props;
+    props.margin_left = 0.0f;
+    lf_push_style_props(&s.ui, props);
+    lf_text(&s.ui, displayname); 
+    lf_pop_style_props(&s.ui);
+  }
+  {
+    uint32_t width = 12;
+    float margin = 15;
+    LfUIElementProps props = s.ui.theme.button_props;
+    lf_set_ptr_x_absolute(&s.ui, cl->area.size.x - width - margin);
+
+    props.color = LF_NO_COLOR;
+    props.padding = 0;
+    props.margin_top = (titlebarheight - width) / 2.0f;
+    props.border_width = 0;
+    props.margin_left = 0;
+    props.margin_right = 0;
+    lf_push_style_props(&s.ui, props);
+    cl->closebutton = (v2){lf_get_ptr_x(&s.ui), lf_get_ptr_y(&s.ui)};
+    lf_image_button(&s.ui, ((LfTexture){.id = s.closeicon.id, .width = width, .height = width}));
+    lf_pop_style_props(&s.ui);
+  }
+  lf_end(&s.ui);
+  
   glXSwapBuffers(s.dsp, cl->titlebar);
 }
 
@@ -1757,6 +1888,7 @@ addclient(xcb_window_t win) {
   cl->borderwidth = winborderwidth;
   cl->fullscreen = false;
   cl->floating = false;
+  cl->name = getclientname(cl);
 
   // Create frame window for the client
   frameclient(cl);
@@ -2128,6 +2260,16 @@ initglcontext() {
   }
 }
 
+void
+setglcontext(xcb_window_t win) {
+  GLXDrawable curdrawable = glXGetCurrentDrawable();
+
+  if (curdrawable != (GLXDrawable)win) {
+    if (!glXMakeCurrent(s.dsp, (GLXDrawable)win, s.glcontext)) {
+      fprintf(stderr, "ragnar: failed to make the GLX context current.\n");
+    }
+  }
+}
 
 int 
 main() {

@@ -21,10 +21,11 @@ static const int32_t desktopcount  = 9;
 static const int32_t desktopinit   = 0;
 
 /* Decoration */
-static const bool     usedecoration   = false;
+static const bool     usedecoration   = true;
 static uint32_t       titlebarheight  = 30;
+static const int32_t  titlebarcolor   = 0x111111;
 
-#define TERMINAL_CMD  "alacritty &"
+#define TERMINAL_CMD  "kitty &"
 #define MENU_CMD      "~/.config/rofi/launchers/type-3/launcher.sh &"
 #define BROWSER_CMD   "brave &"
 

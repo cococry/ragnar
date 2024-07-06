@@ -1,5 +1,7 @@
 #pragma once
 
+#include <leif/leif.h>
+
 #define _XCB_EV_LAST 36 
 
 typedef enum {
@@ -211,6 +213,8 @@ struct client {
   bool fullscreen, floating;
   xcb_window_t win, frame, titlebar;
 
+  v2 closebutton;
+
   client* next;
 
   size_t borderwidth;
@@ -219,6 +223,8 @@ struct client {
   int32_t desktop;
 
   bool urgent, ignoreunmap;
+
+  char* name;
 };
 
 typedef enum {
@@ -253,6 +259,9 @@ typedef struct {
   Display* dsp; 
   XVisualInfo* glvis;
   GLXContext glcontext;
+
+  LfState ui;
+  LfTexture closeicon;
 
   client* clients;
   client* focus;
