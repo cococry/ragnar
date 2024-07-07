@@ -239,6 +239,7 @@ typedef enum {
   EWMHwindowTypeDialog, 
   EWMHclientList,
   EWMHcurrentDesktop,
+  EWMHnumberOfDesktops,
   EWMHcount
 } ewmh_atom;
 
@@ -253,6 +254,7 @@ typedef enum {
 
 typedef struct {
   xcb_connection_t* con;
+  xcb_ewmh_connection_t ewmh;
   xcb_window_t root;
   xcb_screen_t* screen; 
 

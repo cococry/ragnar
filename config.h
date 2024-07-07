@@ -2,9 +2,9 @@
 #include "structs.h"
 
 /* Window properties */
-static const int32_t winborderwidth           = 1;
-static const int32_t winbordercolor           = 0x5e5e5e;
-static const int32_t winbordercolor_selected  = 0xcccccc;
+static const int32_t winborderwidth           = 3;
+static const int32_t winbordercolor           = 0x000000;
+static const int32_t winbordercolor_selected  = 0x555555;
 
 
 // Main modifier that is used to execute all window manager keybindings
@@ -23,11 +23,16 @@ static const int32_t desktopinit   = 0;
 /* Decoration */
 static const bool     usedecoration   = true;
 static uint32_t       titlebarheight  = 30;
-static const int32_t  titlebarcolor   = 0x111111;
+static const int32_t  titlebarcolor   = 0xffffff;
+static const int32_t  fontcolor       = 0x000000;
+static const char*    fontpath        = "/usr/share/ragnarwm/fonts/VictorMono-BoldItalic.ttf";
+static const char*    closeiconpath   = "/usr/share/ragnarwm/icons/close.png";
+static const uint32_t iconcolor       = 0x00000;
 
-#define TERMINAL_CMD  "kitty &"
-#define MENU_CMD      "~/.config/rofi/launchers/type-3/launcher.sh &"
-#define BROWSER_CMD   "brave &"
+#define TERMINAL_CMD    "kitty &"
+#define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
+#define BROWSER_CMD     "brave &"
+#define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */
 static const keybind keybinds[] = {
@@ -69,5 +74,6 @@ static const keybind keybinds[] = {
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd,                  { .cmd = TERMINAL_CMD }},
   {modkey,     KeyS,       runcmd,                  { .cmd = MENU_CMD }},
-  {modkey,     KeyW,       runcmd,                  { .cmd = BROWSER_CMD }}
+  {modkey,     KeyW,       runcmd,                  { .cmd = BROWSER_CMD }},
+  {modkey,     KeyE,       runcmd,                  { .cmd = SCREENSHOT_CMD }}
 };

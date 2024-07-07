@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +10,7 @@
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 #include <xcb/xcb_cursor.h>
+#include <xcb/xcb_ewmh.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_util.h>
@@ -18,6 +18,7 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
+#include <xcb/composite.h>
 
 #include <X11/keysym.h>
 #include <X11/Xlib-xcb.h>
@@ -150,6 +151,21 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
 };
 
 static State s;
+void writeLineToFile(const char *filename, const char *line) {
+    // Open the file for writing
+    FILE *file = fopen(filename, "a");
+    if (file == NULL) {
+        // Handle error
+        perror("Error opening file");
+        return;
+    }
+
+    // Write the line to the file
+    fprintf(file, "%s\n", line);
+
+    // Close the file
+    fclose(file);
+}
 
 /**
  * @brief Sets up the WM state and the X server 
@@ -573,8 +589,6 @@ getclientname(client* cl) {
  */
 void
 killclient(client* cl) {
-  // Unframe the client
-  unframeclient(cl);
   // If the client specifically has a delete atom set, send a delete event  
   if(clienthasdeleteatom(cl)) {
     xcb_client_message_event_t ev;
@@ -668,6 +682,7 @@ setxfocus(client* cl) {
  */
 void
 frameclient(client* cl) {
+  writeLineToFile("/home/cococry/.ragnarlog", "Framed client.");
   {
     cl->frame = xcb_generate_id(s.con);
     uint32_t mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
@@ -708,6 +723,8 @@ frameclient(client* cl) {
   xcb_flush(s.con);
 
 }
+
+
 /**
  * @brief Destroys and unmaps the frame window of a given client 
  * which consequently removes the client's window from the display
@@ -807,11 +824,11 @@ evmaprequest(xcb_generic_event_t* ev) {
     return;
   }
   free(wa_reply);
-
   // Don't handle already managed clients 
   if(clientfromwin(map_ev->window) != NULL) {
     return;
   }
+  writeLineToFile("/home/cococry/.ragnarlog", "Mapped client.");
 
   // Setup listened events for the mapped window
   {
@@ -991,46 +1008,60 @@ evkeypress(xcb_generic_event_t* ev) {
  */
 void
 evbuttonpress(xcb_generic_event_t* ev) {
-  xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
+    xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
 
-  client* cl = clientfromwin(button_ev->event);
-  if(!cl) {
-    cl = clientfromtitlebar(button_ev->event);
-    if(!cl) return;
-    v2 cursorpos = (v2){ .x = (float)button_ev->root_x - cl->area.pos.x, (float)button_ev->root_y - cl->area.pos.y };
-    area closebtnarea = (area){
-      .pos = cl->closebutton,
-      .size = (v2){15, 15}
-    };
-    if(pointinarea(cursorpos, closebtnarea)) {
-      killclient(cl);
-      return;
+    // Get the window attributes
+    xcb_get_window_attributes_cookie_t attr_cookie = xcb_get_window_attributes(s.con, button_ev->event);
+    xcb_get_window_attributes_reply_t* attr_reply = xcb_get_window_attributes_reply(s.con, attr_cookie, NULL);
+
+    if (attr_reply) {
+        if (attr_reply->override_redirect) {
+            free(attr_reply);
+            return; // Do nothing if override_redirect is set
+        }
+        free(attr_reply);
+    } else {
+        // Handle error, unable to get window attributes
+        return;
     }
-    focusclient(cl);
-  } else {
-    // Focusing client 
-    if(cl != s.focus) {
-      // Unfocus the previously focused window to ensure that there is only
-      // one focused (highlighted) window at a time.
-      if(s.focus) {
-        unfocusclient(s.focus);
-      }
-      focusclient(cl);
+
+    client* cl = clientfromwin(button_ev->event);
+    if (!cl) {
+        cl = clientfromtitlebar(button_ev->event);
+        if (!cl) return;
+        v2 cursorpos = (v2){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
+        area closebtnarea = (area){
+            .pos = cl->closebutton,
+            .size = (v2){15, 15}
+        };
+        if (pointinarea(cursorpos, closebtnarea)) {
+            killclient(cl);
+            return;
+        }
+        focusclient(cl);
+    } else {
+        // Focusing client 
+        if (cl != s.focus) {
+            // Unfocus the previously focused window to ensure that there is only
+            // one focused (highlighted) window at a time.
+            if (s.focus) {
+                unfocusclient(s.focus);
+            }
+            focusclient(cl);
+        }
     }
-  }
-  bool success;
-  area area = winarea(cl->frame, &success);
-  // Assert that it worked
-  assert(success && "Failed to get window area.");
+    bool success;
+    area area = winarea(cl->frame, &success);
+    if(!success) return;
 
-  cl->area = area;
-  // Setting grab position
-  s.grabwin = cl->area;
-  s.grabcursor = (v2){.x = (float)button_ev->root_x, (float)button_ev->root_y};
+    cl->area = area;
+    // Setting grab position
+    s.grabwin = cl->area;
+    s.grabcursor = (v2){.x = (float)button_ev->root_x, .y = (float)button_ev->root_y};
 
-  // Raising the client to the top of the stack
-  raiseclient(cl);
-  xcb_flush(s.con);
+    // Raising the client to the top of the stack
+    raiseclient(cl);
+    xcb_flush(s.con);
 }
 
 void
@@ -1155,16 +1186,8 @@ evconfigrequest(xcb_generic_event_t* ev) {
   } else {
     {
       uint16_t mask = 0;
-      uint32_t values[7];
+      uint32_t values[5];
       uint32_t i = 0;
-      if (config_ev->value_mask & XCB_CONFIG_WINDOW_X) {
-        mask |= XCB_CONFIG_WINDOW_X;
-        values[i++] = config_ev->x;
-      }
-      if (config_ev->value_mask & XCB_CONFIG_WINDOW_Y) {
-        mask |= XCB_CONFIG_WINDOW_Y;
-        values[i++] = config_ev->y;
-      }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
         mask |= XCB_CONFIG_WINDOW_WIDTH;
         values[i++] = config_ev->width;
@@ -1674,6 +1697,7 @@ setupatoms() {
   s.ewmh_atoms[EWMHwindowTypeDialog]  = getatom("_NET_WM_WINDOW_TYPE_DIALOG");
   s.ewmh_atoms[EWMHclientList]        = getatom("_NET_CLIENT_LIST");
   s.ewmh_atoms[EWMHcurrentDesktop]    = getatom("_NET_CURRENT_DESKTOP");
+  s.ewmh_atoms[EWMHnumberOfDesktops]  = getatom("_NET_NUMBER_OF_DESKTOPS");
 
   xcb_atom_t utf8str = getatom("UTF8_STRING");
 
@@ -1685,6 +1709,10 @@ setupatoms() {
   // Set _NET_WM_CHECK property on the wmcheckwin
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, wmcheckwin, s.ewmh_atoms[EWMHcheck],
                       XCB_ATOM_WINDOW, 32, 1, &wmcheckwin);
+
+  // Set number of desktops (_NET_NUMBER_OF_DESKTOPS)
+  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHnumberOfDesktops],
+                      XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
 
   // Set _NET_WM_NAME property on the wmcheckwin
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, wmcheckwin, s.ewmh_atoms[EWMHname],
@@ -1784,8 +1812,9 @@ setuptitlebar(client* cl) {
     if(!s.ui.init) {
       s.ui = lf_init_x11(cl->area.pos.x, titlebarheight);
       lf_free_font(&s.ui.theme.font);
-      s.ui.theme.font = lf_load_font("/usr/share/fonts/TTF/VictorMono-BoldItalic.ttf", 24);
-      s.closeicon = lf_load_texture("./icons/close.png", LF_TEX_FILTER_LINEAR, false);
+      s.ui.theme.font = lf_load_font(fontpath, 24);
+      s.ui.theme.text_props.text_color = lf_color_from_hex(fontcolor);
+      s.closeicon = lf_load_texture(closeiconpath, LF_TEX_FILTER_LINEAR, false);
     }
     rendertitlebar(cl);
   }
@@ -1838,7 +1867,9 @@ rendertitlebar(client* cl) {
     props.margin_right = 0;
     lf_push_style_props(&s.ui, props);
     cl->closebutton = (v2){lf_get_ptr_x(&s.ui), lf_get_ptr_y(&s.ui)};
+    lf_set_image_color(&s.ui, lf_color_from_hex(iconcolor));
     lf_image_button(&s.ui, ((LfTexture){.id = s.closeicon.id, .width = width, .height = width}));
+    lf_unset_image_color(&s.ui);
     lf_pop_style_props(&s.ui);
   }
   lf_end(&s.ui);
@@ -1881,8 +1912,7 @@ addclient(xcb_window_t win) {
   /* Get the window area */
   bool success;
   area area = winarea(win, &success);
-  // Assert that it worked
-  assert(success && "Failed to get window area.");
+  if(!success) return cl;
 
   cl->area = area;
   cl->borderwidth = winborderwidth;
@@ -1890,6 +1920,7 @@ addclient(xcb_window_t win) {
   cl->floating = false;
   cl->name = getclientname(cl);
 
+  writeLineToFile("/home/cococry/.ragnarlog", "Addded client.");
   // Create frame window for the client
   frameclient(cl);
 

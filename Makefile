@@ -2,7 +2,7 @@ CC = cc
 
 # includes and flags
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
-LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
+LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm 
 
 SRC = ragnar.c
 OBJ = ${SRC:.c=.o}
@@ -28,6 +28,9 @@ install:
 	cp -f ragnar /usr/bin
 	cp -f ragnar.desktop /usr/share/applications
 	cp -f ragnarstart /usr/bin
+	mkdir -p /usr/share/ragnarwm
+	cp -r ./fonts/ /usr/share/ragnarwm
+	cp -r ./icons/ /usr/share/ragnarwm
 	chmod 755 /usr/bin/ragnar
 
 clean:
