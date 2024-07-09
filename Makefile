@@ -26,6 +26,7 @@ ragnar: ${OBJ}
 
 install:
 	cp -f ragnar /usr/bin
+  mkdir -p /usr/share/xsessions
 	cp -f ragnar.desktop /usr/share/xsessions
 	cp -f ragnarstart /usr/bin
 	mkdir -p /usr/share/ragnarwm
