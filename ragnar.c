@@ -1990,6 +1990,7 @@ addclient(xcb_window_t win) {
   cl->fullscreen = false;
   cl->floating = false;
   cl->name = getclientname(cl);
+  cl->showtitlebar = usedecoration;
 
   // Create frame window for the client
   frameclient(cl);
