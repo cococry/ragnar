@@ -1,2 +1,2 @@
-nitrogen --restore &
+nitrogen /usr/share/ragnar/wallpapers/planets.png --set-zoom-fill --save
 boron &
