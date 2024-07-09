@@ -16,20 +16,24 @@ static const mousebtn movebtn     = LeftMouse;
 static const mousebtn resizebtn   = RightMouse;
 
 /* Desktops */
-static const int32_t desktopcount  = 9;
 // The desktop index that is selected on startup
 static const int32_t desktopinit   = 0;
+
+#define MAX_DESKTOPS 9
+static const char* desktopnames[MAX_DESKTOPS] = {
+  "1", "2", "3", "4", "5", "6", "7", "8", "9"
+};
 
 /* Decoration */
 static const bool     usedecoration   = true;
 static uint32_t       titlebarheight  = 30;
 static const int32_t  titlebarcolor   = 0xffffff;
 static const int32_t  fontcolor       = 0x000000;
-static const char*    fontpath        = "/usr/share/ragnarwm/fonts/VictorMono-BoldItalic.ttf";
+static const char*    fontpath        = "/usr/share/ragnarwm/fonts/LilexNerdFont-Bold.ttf";
 static const char*    closeiconpath   = "/usr/share/ragnarwm/icons/close.png";
 static const uint32_t iconcolor       = 0x00000;
 
-#define TERMINAL_CMD    "kitty &"
+#define TERMINAL_CMD    "alacritty &"
 #define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
 #define BROWSER_CMD     "brave &"
 #define SCREENSHOT_CMD  "flameshot gui &"
@@ -68,8 +72,6 @@ static const keybind keybinds[] = {
   {modkey | Shift,     Key7,       switchfocusdesktop,           { .i = 6 }},
   {modkey | Shift,     Key8,       switchfocusdesktop,           { .i = 7 }},
   {modkey | Shift,     Key9,       switchfocusdesktop,           { .i = 8 }},
-  {modkey | Shift,     KeyP,       cyclefocusdesktopupsticky,     { NULL }},
-  {modkey | Shift,     KeyO,       cyclefocusdesktopdownsticky,   { NULL }},
 
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd,                  { .cmd = TERMINAL_CMD }},

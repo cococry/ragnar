@@ -198,12 +198,30 @@ typedef struct {
 
 typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 
+static void             terminate();
+static void             cyclefocus();
+static void             killfocus();
+static void             togglefullscreen();
+static void             raisefocus();
+static void             cycledesktopup(); 
+static void             cycledesktopdown();
+static void             cyclefocusdesktopup();
+static void             cyclefocusdesktopdown();
+static void             switchdesktop(passthrough_data data); 
+static void             switchfocusdesktop(passthrough_data data);
+static void             runcmd(passthrough_data data);
+
+#include "config.h"
+
 typedef struct monitor monitor;
 
 struct monitor {
   area area;
   monitor* next;
   uint32_t idx;
+
+  char* activedesktops[MAX_DESKTOPS];
+  uint32_t desktopcount;
 };
 
 typedef struct client client;
@@ -212,6 +230,8 @@ struct client {
   area area, area_prev;
   bool fullscreen, floating;
   xcb_window_t win, frame, titlebar;
+
+  bool showtitlebar;
 
   v2 closebutton;
 
@@ -222,7 +242,7 @@ struct client {
   monitor* mon;
   int32_t desktop;
 
-  bool urgent, ignoreunmap;
+  bool urgent, ignoreunmap; 
 
   char* name;
 };
@@ -240,6 +260,7 @@ typedef enum {
   EWMHclientList,
   EWMHcurrentDesktop,
   EWMHnumberOfDesktops,
+  EWMHdesktopNames,
   EWMHcount
 } ewmh_atom;
 
@@ -250,7 +271,6 @@ typedef enum {
   WMtakeFocus,
   WMcount
 } wm_atom;
-
 
 typedef struct {
   xcb_connection_t* con;
