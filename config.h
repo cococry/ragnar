@@ -34,8 +34,8 @@ static const char*    closeiconpath   = "/usr/share/ragnarwm/icons/close.png";
 static const uint32_t iconcolor       = 0x00000;
 
 #define TERMINAL_CMD    "alacritty &"
-#define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
-#define BROWSER_CMD     "brave &"
+#define MENU_CMD        "rofi -show drun &"
+#define BROWSER_CMD     "chromium &"
 #define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */
