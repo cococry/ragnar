@@ -26,7 +26,7 @@ ragnar: ${OBJ}
 
 install:
 	cp -f ragnar /usr/bin
-	cp -f ragnar.desktop /usr/share/applications
+	cp -f ragnar.desktop /usr/share/xsessions
 	cp -f ragnarstart /usr/bin
 	mkdir -p /usr/share/ragnarwm
 	cp -r ./fonts/ /usr/share/ragnarwm
@@ -38,7 +38,7 @@ clean:
 
 uninstall:
 	rm -f /usr/bin/ragnar
-	rm -f /usr/share/applications/ragnar.desktop
+	rm -f /usr/share/xsessions/ragnar.desktop
 	rm -f /usr/bin/ragnarstart
 
 .PHONY: all print_options clean install uninstall freetype
