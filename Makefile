@@ -1,7 +1,7 @@
 CC = cc
 
 # includes and flags
-CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
+CFLAGS = -Wall -Wextra -pedantic
 LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm 
 
 SRC = ragnar.c

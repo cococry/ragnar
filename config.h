@@ -3,8 +3,8 @@
 
 /* Window properties */
 static const int32_t winborderwidth           = 3;
-static const int32_t winbordercolor           = 0x000000;
-static const int32_t winbordercolor_selected  = 0x555555;
+static const int32_t winbordercolor           = 0x252233;
+static const int32_t winbordercolor_selected  = 0x737578;
 
 
 // Main modifier that is used to execute all window manager keybindings
@@ -27,15 +27,15 @@ static const char* desktopnames[MAX_DESKTOPS] = {
 /* Decoration */
 static const bool     usedecoration   = true;
 static uint32_t       titlebarheight  = 30;
-static const int32_t  titlebarcolor   = 0xffffff;
-static const int32_t  fontcolor       = 0x000000;
+static const int32_t  titlebarcolor   = 0x191724;
+static const int32_t  fontcolor       = 0xffffff;
 static const char*    fontpath        = "/usr/share/ragnarwm/fonts/LilexNerdFont-Bold.ttf";
 static const char*    closeiconpath   = "/usr/share/ragnarwm/icons/close.png";
-static const uint32_t iconcolor       = 0x00000;
+static const uint32_t iconcolor       = 0xffffff;
 
 #define TERMINAL_CMD    "alacritty &"
 #define MENU_CMD        "rofi -show drun &"
-#define BROWSER_CMD     "chromium &"
+#define BROWSER_CMD     "brave &"
 #define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */
@@ -46,6 +46,7 @@ static const keybind keybinds[] = {
   {modkey,     KeyTab,     cyclefocus,              { NULL }},
   {modkey,     KeyQ,       killfocus,               { NULL }},
   {modkey,     KeyF,       togglefullscreen,        { NULL }},
+  {modkey,     KeyG,       toggletitlebars,         { NULL }},
   {modkey,     KeyR,       raisefocus,              { NULL }},
   /* Desktops */
   {modkey,     KeyD,       cycledesktopup,          { NULL }},

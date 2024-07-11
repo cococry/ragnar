@@ -201,6 +201,7 @@ typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 static void             terminate();
 static void             cyclefocus();
 static void             killfocus();
+static void 		toggletitlebars();
 static void             togglefullscreen();
 static void             raisefocus();
 static void             cycledesktopup(); 
@@ -293,6 +294,8 @@ typedef struct {
 
   monitor* monitors;
   monitor* monfocus;
+
+  bool titlebar_visibility;
 
   xcb_atom_t wm_atoms[WMcount]; 
   xcb_atom_t ewmh_atoms[EWMHcount];

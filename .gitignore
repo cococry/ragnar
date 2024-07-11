@@ -2,3 +2,4 @@ ragnar
 ragnar.o
 ragnarstart
 *.patch
+config.h

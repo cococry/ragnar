@@ -56,6 +56,7 @@ static void             hideclient(client* cl);
 static void             showclient(client* cl);
 static bool             raiseevent(client* cl, xcb_atom_t protocol);
 static void             setwintype(client* cl);
+static void             setwinvsync(GLXDrawable drawable, bool vsync);
 static void             seturgent(client* cl, bool urgent);
 static xcb_atom_t       getclientprop(client* cl, xcb_atom_t prop);
 static void             setfullscreen(client* cl, bool fullscreen);
@@ -116,6 +117,9 @@ static void             setglcontext(xcb_window_t win);
 
 // This needs to be included after the function definitions
 #include "config.h"
+
+typedef void (*glXSwapIntervalEXTProc)(Display*, GLXDrawable, int);
+glXSwapIntervalEXTProc glXSwapIntervalEXT = NULL;
 
 
 /* Evaluates to the length (count of elements) in a given array */
@@ -184,6 +188,8 @@ setup() {
   if(!usedecoration) {
     titlebarheight = 0;
   }
+
+  s.titlebar_visibility = usedecoration;
 
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s.dsp, XCBOwnsEventQueue);
@@ -423,7 +429,6 @@ moveclient(client* cl, v2 pos) {
 
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(cl);
-  uploaddesktopnames();
   s.monfocus = cl->mon;
 }
 
@@ -444,9 +449,9 @@ resizeclient(client* cl, v2 size) {
   // Resize the window by configuring it's width and height property
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
   xcb_configure_window(s.con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
-  xcb_flush(s.con);
 
   updatetitlebar(cl);
+  xcb_flush(s.con);
 
   cl->area.size = size;
 }
@@ -479,14 +484,13 @@ moveresizeclient(client* cl, area a) {
                        XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values);
   xcb_configure_window(s.con, cl->win, 
                        XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values_content);
+  updatetitlebar(cl);
   xcb_flush(s.con);
 
   cl->area = a;
 
-  updatetitlebar(cl);
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(cl);
-  uploaddesktopnames();
   s.monfocus = cl->mon; 
 }
 
@@ -1010,7 +1014,7 @@ evbuttonpress(xcb_generic_event_t* ev) {
         v2 cursorpos = (v2){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
         area closebtnarea = (area){
             .pos = cl->closebutton,
-            .size = (v2){15, 15}
+            .size = (v2){30, 30}
         };
         if (pointinarea(cursorpos, closebtnarea)) {
             killclient(cl);
@@ -1093,6 +1097,11 @@ evmotionnotify(xcb_generic_event_t* ev) {
     xcb_flush(s.con);
     return;
   }
+
+  if(cl->fullscreen) {
+    showtitlebar(cl);
+  } 
+
   // Unset fullscreen
   cl->fullscreen = false;
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
@@ -1296,6 +1305,7 @@ evclientmessage(xcb_generic_event_t* ev) {
        msg_ev->data.data32[2] == s.ewmh_atoms[EWMHfullscreen]) {
       // Set/unset client fullscreen 
       setfullscreen(cl, (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen)));
+      hidetitlebar(cl);
     }
   } else if(msg_ev->type == s.ewmh_atoms[EWMHactiveWindow]) {
     if(s.focus != cl && !cl->urgent) {
@@ -1406,11 +1416,25 @@ setwintype(client* cl) {
   xcb_atom_t wintype = getclientprop(cl, s.ewmh_atoms[EWMHwindowType]);
 
   if(state == s.ewmh_atoms[EWMHfullscreen]) {
+    hidetitlebar(cl);
     setfullscreen(cl, true);
   } 
   if(wintype == s.ewmh_atoms[EWMHwindowTypeDialog]) {
     cl->floating = true;
   }
+}
+
+void
+setwinvsync(GLXDrawable drawable, bool vsync) {
+	if (glXSwapIntervalEXT == NULL) {
+		glXSwapIntervalEXT = (glXSwapIntervalEXTProc)
+			glXGetProcAddressARB((const GLubyte*)"glXSwapIntervalEXT");
+	}
+	if (glXSwapIntervalEXT) {
+		glXSwapIntervalEXT(s.dsp, drawable, vsync);
+	} else {
+		fprintf(stderr, "ragnar: glXSwapIntervalEXT not supported.\n");
+	}
 }
 
 void
@@ -1616,6 +1640,18 @@ void togglefullscreen() {
     showtitlebar(s.focus);
   }
   setfullscreen(s.focus, fs); 
+}
+
+void 
+toggletitlebars() {
+  for(client* cl = s.clients; cl != NULL; cl = cl->next)  {
+    if(s.titlebar_visibility) {
+      hidetitlebar(cl);
+    } else {
+      showtitlebar(cl);
+    }
+  }
+  s.titlebar_visibility = !s.titlebar_visibility;
 }
 
 /**
@@ -1845,6 +1881,7 @@ setuptitlebar(client* cl) {
   }
   {
     setglcontext(cl->titlebar);
+    setwinvsync(cl->titlebar, false);
 
     if(!s.ui.init) {
       s.ui = lf_init_x11(cl->area.pos.x, titlebarheight);
@@ -1859,7 +1896,7 @@ setuptitlebar(client* cl) {
 
 void
 rendertitlebar(client* cl) {
-  if(!usedecoration) return;
+  if(!usedecoration || !s.titlebar_visibility) return;
   if(cl->desktop != s.curdesktop[s.monfocus->idx]) return;
   setglcontext(cl->titlebar);
  
@@ -1910,14 +1947,12 @@ rendertitlebar(client* cl) {
     lf_pop_style_props(&s.ui);
   }
   lf_end(&s.ui);
-  
   glXSwapBuffers(s.dsp, cl->titlebar);
-  glXWaitGL();
 }
 
 void
 updatetitlebar(client* cl) {
-  if(!usedecoration) return;
+  if(!usedecoration || !s.titlebar_visibility) return;
 
   bool success;
   // Update client geometry 
@@ -1990,7 +2025,7 @@ addclient(xcb_window_t win) {
   cl->fullscreen = false;
   cl->floating = false;
   cl->name = getclientname(cl);
-  cl->showtitlebar = usedecoration;
+  cl->showtitlebar = (usedecoration && s.titlebar_visibility);
 
   // Create frame window for the client
   frameclient(cl);
