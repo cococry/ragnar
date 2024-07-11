@@ -1303,9 +1303,14 @@ evclientmessage(xcb_generic_event_t* ev) {
     // If client requested fullscreen toggle
     if(msg_ev->data.data32[1] == s.ewmh_atoms[EWMHfullscreen] ||
        msg_ev->data.data32[2] == s.ewmh_atoms[EWMHfullscreen]) {
-      // Set/unset client fullscreen 
-      setfullscreen(cl, (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen)));
-      hidetitlebar(cl);
+      // Set/unset client fullscreen
+      bool requested_fs = (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen));
+      setfullscreen(cl, requested_fs);
+      if(requested_fs) {
+        hidetitlebar(cl);
+      } else {
+        showtitlebar(cl);
+      }
     }
   } else if(msg_ev->type == s.ewmh_atoms[EWMHactiveWindow]) {
     if(s.focus != cl && !cl->urgent) {
