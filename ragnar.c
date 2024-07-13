@@ -113,6 +113,7 @@ static int32_t          compstrs(const void* a, const void* b);
 
 static void             initglcontext();
 static void             setglcontext(xcb_window_t win);
+static bool             isglextsupported(const char* extlist, const char* ext);
 
 // This needs to be included after the function definitions
 #include "config.h"
@@ -141,6 +142,9 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_CLIENT_MESSAGE]      = evclientmessage,
   [XCB_EXPOSE]              = evexpose,
 };
+
+// Define the function pointer for glXSwapIntervalEXT
+typedef void (*glXSwapIntervalEXTProc)(Display *, GLXDrawable, int);
 
 static State s;
 
@@ -185,6 +189,8 @@ setup() {
     titlebarheight = 0;
   }
 
+  s.lastexposetime = (struct timespec){0, 0};
+
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s.dsp, XCBOwnsEventQueue);
   if(usedecoration) {
@@ -228,20 +234,27 @@ setup() {
 /**
  * @brief Event loop of the window manager 
  *
- * This function waits for X server events and 
+ * This function polls for X server events and 
  * handles them accoringly by calling the associated event handler.
  */
 void
 loop() {
   xcb_generic_event_t *ev;
-  while ((ev = xcb_wait_for_event(s.con))) {
-    uint8_t evcode = ev->response_type & ~0x80;
-    /* If the event we receive is listened for by our 
-     * event listeners, call the callback for the event. */
-    if(evcode < ARRLEN(evhandlers) && evhandlers[evcode]) {
-      evhandlers[evcode](ev);
+
+  while (1) {
+    // Poll for events without blocking
+    while ((ev = xcb_poll_for_event(s.con))) {
+      uint8_t evcode = ev->response_type & ~0x80;
+      /* If the event we receive is listened for by our 
+       * event listeners, call the callback for the event. */
+      if (evcode < ARRLEN(evhandlers) && evhandlers[evcode]) {
+        evhandlers[evcode](ev);
+      }
+      free(ev);
     }
-    free(ev);
+    
+    // Sleep for a short period to prevent high CPU usage
+    usleep(event_polling_rate_ms * 1000); 
   }
 }
 
@@ -374,7 +387,6 @@ setbordercolor(client* cl, uint32_t color) {
   }
   // Change the configuration for the border color of the clients window
   xcb_change_window_attributes_checked(s.con, cl->frame, XCB_CW_BORDER_PIXEL, &color);
-  xcb_flush(s.con);
 }
 
 /**
@@ -393,7 +405,6 @@ setborderwidth(client* cl, uint32_t width) {
   xcb_configure_window(s.con, cl->frame, XCB_CONFIG_WINDOW_BORDER_WIDTH, &(uint32_t){width});
   // Update the border width of the client
   cl->borderwidth = width;
-  xcb_flush(s.con);
 }
 
 /**
@@ -417,8 +428,6 @@ moveclient(client* cl, v2 pos) {
   cl->area.pos = pos;
 
   configclient(cl);
-  xcb_flush(s.con);
-
   updatetitlebar(cl);
 
   // Update focused monitor in case the window was moved onto another monitor
@@ -444,7 +453,6 @@ resizeclient(client* cl, v2 size) {
   // Resize the window by configuring it's width and height property
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
   xcb_configure_window(s.con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
-  xcb_flush(s.con);
 
   updatetitlebar(cl);
 
@@ -479,15 +487,15 @@ moveresizeclient(client* cl, area a) {
                        XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values);
   xcb_configure_window(s.con, cl->win, 
                        XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values_content);
-  xcb_flush(s.con);
 
+  // Update clients area
   cl->area = a;
-
-  updatetitlebar(cl);
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(cl);
   uploaddesktopnames();
+
   s.monfocus = cl->mon; 
+  updatetitlebar(cl);
 }
 
 /**
@@ -503,7 +511,6 @@ raiseclient(client* cl) {
   uint32_t config[] = { XCB_STACK_MODE_ABOVE };
   // Change the configuration of the window to be above 
   xcb_configure_window(s.con, cl->frame, XCB_CONFIG_WINDOW_STACK_MODE, config);
-  xcb_flush(s.con);
 }
 
 
@@ -584,7 +591,6 @@ killclient(client* cl) {
     xcb_set_close_down_mode(s.con, XCB_CLOSE_DOWN_DESTROY_ALL);
     xcb_kill_client(s.con, cl->win);
     xcb_ungrab_server(s.con);
-    xcb_flush(s.con);
   } 
 }
 
@@ -629,8 +635,6 @@ focusclient(client* cl) {
   s.focus = cl;
   uploaddesktopnames();
   s.monfocus = cursormon();
-
-  xcb_flush(s.con);
 }
 
 /**
@@ -699,8 +703,6 @@ frameclient(client* cl) {
 
   // Map the window on the screen
   xcb_map_window(s.con, cl->frame);
-  xcb_flush(s.con);
-
 }
 
 
@@ -717,7 +719,6 @@ unframeclient(client* cl) {
   xcb_reparent_window(s.con, cl->win, s.root, 0, 0);
   xcb_destroy_window(s.con, cl->titlebar);
   xcb_destroy_window(s.con, cl->frame);
-  xcb_flush(s.con);
 }
 void
 unfocusclient(client* cl) {
@@ -727,7 +728,6 @@ unfocusclient(client* cl) {
   setbordercolor(cl, winbordercolor);
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
   xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHactiveWindow]);
-  xcb_flush(s.con);
 }
 
 /**
@@ -839,6 +839,9 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Set window type of client (e.g dialog)
   setwintype(cl);
+
+  // Set OpenGL context to the titlebar of the Window
+  setglcontext(cl->titlebar);
 
   // Set client's monitor
   cl->mon = clientmon(cl);
@@ -1045,13 +1048,24 @@ evbuttonpress(xcb_generic_event_t* ev) {
 void
 evbuttonrelease(xcb_generic_event_t* ev) {
   xcb_button_release_event_t* button_ev = (xcb_button_release_event_t*)ev;
+  client* cl = clientfromwin(button_ev->event);
 
-  client* cl = clientfromtitlebar(button_ev->event);
+  if(cl && usedecoration) {
+    for(client* cl = s.clients; cl != NULL; cl = cl->next) {
+      if(cl->showtitlebar) {
+        rendertitlebar(cl);
+      }
+    }
+    return;
+  }
+
+  cl = clientfromtitlebar(button_ev->event);
   if(!cl) return;
 
   if(button_ev->root_y <= 0) {
     setfullscreen(cl, true);
   }
+  rendertitlebar(cl);
   xcb_flush(s.con);
 }
 
@@ -1064,6 +1078,28 @@ evbuttonrelease(xcb_generic_event_t* ev) {
 void
 evmotionnotify(xcb_generic_event_t* ev) {
   xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
+  // Throttle motiton notify events for performance and to avoid jiterring on certain 
+  // high polling-rate mouses. We are only doing this if OpenGL decoration is enabled as 
+  // rerendering the decoration too many times is the main bottleneck.
+  if(usedecoration) {
+    // Get the current time
+    struct timespec curtime;
+    clock_gettime(CLOCK_MONOTONIC, &curtime);
+
+    // Calculate the time difference between the current and last expose events
+    size_t diff = (curtime.tv_sec - s.lastexposetime.tv_sec) * 1000 +
+      (curtime.tv_nsec - s.lastexposetime.tv_nsec) / 1000000;
+
+    const uint32_t debounce = 1000 / motion_notify_debounce_fps;  
+    if (diff < debounce) {
+      // Skip handling this expose event
+      return;
+    }
+
+    // Update the last time
+    s.lastexposetime = curtime;
+  }
+
   if(motion_ev->event == s.root) {
     // Update the focused monitor to the monitor under the cursor
     monitor* mon = cursormon();
@@ -1093,11 +1129,14 @@ evmotionnotify(xcb_generic_event_t* ev) {
     xcb_flush(s.con);
     return;
   }
-  // Unset fullscreen
-  cl->fullscreen = false;
-  xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
-  cl->borderwidth = winborderwidth;
-  setborderwidth(cl, cl->borderwidth);
+  if(cl->fullscreen) {
+    // Unset fullscreen
+    cl->fullscreen = false;
+    xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
+    cl->borderwidth = winborderwidth;
+    setborderwidth(cl, cl->borderwidth);
+    showtitlebar(cl);
+  }
 
   // Move the window
   if(motion_ev->state & movebtn) {
@@ -1250,6 +1289,8 @@ evconfignotify(xcb_generic_event_t* ev) {
   client* cl = clientfromwin(config_ev->window);
   if(!cl) return;
   updatetitlebar(cl);
+
+  xcb_flush(s.con);
 }
 /**
  * @brief Handles a X property notify event for window properties by handling various Extended Window Manager Hints (EWMH). 
@@ -1266,11 +1307,13 @@ evpropertynotify(xcb_generic_event_t* ev) {
     if(prop_ev->atom == s.ewmh_atoms[EWMHwindowType]) {
       setwintype(cl);
     }
-    if(prop_ev->atom == s.ewmh_atoms[EWMHname]) {
-      if(cl->name)
-        free(cl->name);
-      cl->name = getclientname(cl);
-      rendertitlebar(cl);
+    if(usedecoration) {
+      if(prop_ev->atom == s.ewmh_atoms[EWMHname]) {
+        if(cl->name)
+          free(cl->name);
+        cl->name = getclientname(cl);
+        rendertitlebar(cl);
+      }
     }
   }
   xcb_flush(s.con);
@@ -1302,6 +1345,7 @@ evclientmessage(xcb_generic_event_t* ev) {
       seturgent(cl, true);
     }
   }
+  xcb_flush(s.con);
 }
 
 void
@@ -1521,7 +1565,6 @@ switchclientdesktop(client* cl, int32_t desktop) {
     unfocusclient(cl);
   }
   hideclient(cl);
-  xcb_flush(s.con);
 }
 
 void
@@ -1558,7 +1601,6 @@ uploaddesktopnames() {
                       data);
 
   free(data);
-  xcb_flush(s.con);
 }
 void
 createdesktop(uint32_t idx, monitor* mon) {
@@ -1693,7 +1735,6 @@ switchdesktop(passthrough_data data) {
   }
 
   s.curdesktop[s.monfocus->idx] = data.i;
-  xcb_flush(s.con);
 }
 
 /**
@@ -1828,8 +1869,8 @@ setuptitlebar(client* cl) {
   attribs.colormap = XCreateColormap(s.dsp, s.root, s.glvis->visual, AllocNone);
   attribs.event_mask = EnterWindowMask | ExposureMask | StructureNotifyMask;
   cl->titlebar = (xcb_window_t)XCreateWindow(s.dsp, root, 0, 0, cl->area.size.x,
-                                               titlebarheight, 0, s.glvis->depth, InputOutput, s.glvis->visual,
-                                               CWColormap | CWEventMask, &attribs);
+                                             titlebarheight, 0, s.glvis->depth, InputOutput, s.glvis->visual,
+                                             CWColormap | CWEventMask, &attribs);
   XReparentWindow(s.dsp, cl->titlebar, cl->frame, 0, 0);
   XMapWindow(s.dsp, cl->titlebar);
   // Grab Buttons
@@ -1843,8 +1884,25 @@ setuptitlebar(client* cl) {
     XGrabButton(s.dsp, Button3, AnyModifier, cl->titlebar, 
                 False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
   }
+
   {
     setglcontext(cl->titlebar);
+
+    const char* exts = glXQueryExtensionsString(s.dsp, DefaultScreen(s.dsp));
+    if (!isglextsupported(exts, "GLX_EXT_swap_control")) {
+      fprintf(stderr, "ragnar: GLX_EXT_swap_control is not supported.\n");
+      terminate();
+    }
+
+    // Load the glXSwapIntervalEXT function
+    glXSwapIntervalEXTProc glXSwapIntervalEXT = (glXSwapIntervalEXTProc)
+      glXGetProcAddressARB((const GLubyte *)"glXSwapIntervalEXT");
+    if (!glXSwapIntervalEXT) {
+      fprintf(stderr, "ragnar: failed to get glXSwapIntervalEXT function address.\n");
+      terminate();
+    }
+    // Disable VSync
+    glXSwapIntervalEXT(s.dsp, cl->titlebar, 0);
 
     if(!s.ui.init) {
       s.ui = lf_init_x11(cl->area.pos.x, titlebarheight);
@@ -1862,7 +1920,7 @@ rendertitlebar(client* cl) {
   if(!usedecoration) return;
   if(cl->desktop != s.curdesktop[s.monfocus->idx]) return;
   setglcontext(cl->titlebar);
- 
+
   // Clear background
   {
     LfColor color = lf_color_from_hex(titlebarcolor);
@@ -1878,7 +1936,7 @@ rendertitlebar(client* cl) {
   {
     // Get client name
     bool namevalid = (cl->name && strlen(cl->name));
-    char* displayname = (namevalid ? cl->name : "Broken client");
+    char* displayname = (namevalid ? cl->name : "No name"); 
     // Center text
     float textwidth = lf_text_dimension(&s.ui, displayname).x;
     lf_set_ptr_x_absolute(&s.ui, (cl->area.size.x - textwidth) / 2.0f);
@@ -1910,9 +1968,8 @@ rendertitlebar(client* cl) {
     lf_pop_style_props(&s.ui);
   }
   lf_end(&s.ui);
-  
+
   glXSwapBuffers(s.dsp, cl->titlebar);
-  glXWaitGL();
 }
 
 void
@@ -1930,7 +1987,6 @@ updatetitlebar(client* cl) {
   vals[1] = titlebarheight;
   xcb_configure_window(s.con, cl->titlebar, 
                        XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
-  xcb_map_window(s.con, cl->titlebar);
 }
 void
 hidetitlebar(client* cl) {
@@ -1946,7 +2002,6 @@ hidetitlebar(client* cl) {
                          XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
   }
   cl->showtitlebar = false;
-  xcb_flush(s.con);
 }
 
 void
@@ -1963,7 +2018,6 @@ showtitlebar(client* cl) {
                          XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
   }
   cl->showtitlebar = true;
-  xcb_flush(s.con);
 }
 
 /**
@@ -1989,7 +2043,8 @@ addclient(xcb_window_t win) {
   cl->borderwidth = winborderwidth;
   cl->fullscreen = false;
   cl->floating = false;
-  cl->name = getclientname(cl);
+  if(usedecoration)
+    cl->name = getclientname(cl);
   cl->showtitlebar = usedecoration;
 
   // Create frame window for the client
@@ -2059,6 +2114,7 @@ clientfromwin(xcb_window_t win) {
  */
 client*
 clientfromtitlebar(xcb_window_t titlebar) {
+  if(!usedecoration) return NULL;
   client* cl;
   for (cl = s.clients; cl != NULL; cl = cl->next) {
     // If the window is found in the clients, return the client
@@ -2381,13 +2437,33 @@ initglcontext() {
 
 void
 setglcontext(xcb_window_t win) {
-  GLXDrawable curdrawable = glXGetCurrentDrawable();
+  if(!usedecoration) return;
+  glXMakeCurrent(s.dsp, (GLXDrawable)win, s.glcontext);
+}
 
-  if (curdrawable != (GLXDrawable)win) {
-    if (!glXMakeCurrent(s.dsp, (GLXDrawable)win, s.glcontext)) {
-      fprintf(stderr, "ragnar: failed to make the GLX context current.\n");
+bool 
+isglextsupported(const char* extlist, const char* ext) {
+  const char* start;
+  const char* where, *terminator;
+
+  where = strchr(ext, ' ');
+  if (where || *ext == '\0')
+    return 0;
+
+  for (start = extlist;;) {
+    where = strstr(start, ext);
+    if (!where)
+      break;
+
+    terminator = where + strlen(ext);
+    if (where == start || *(where - 1) == ' ') {
+      if (*terminator == ' ' || *terminator == '\0') {
+        return 1;
+      }
     }
+    start = terminator;
   }
+  return 0;
 }
 
 int 

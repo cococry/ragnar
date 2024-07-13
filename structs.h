@@ -1,6 +1,7 @@
 #pragma once
 
 #include <leif/leif.h>
+#include <time.h>
 
 #define _XCB_EV_LAST 36 
 
@@ -277,6 +278,8 @@ typedef struct {
   xcb_ewmh_connection_t ewmh;
   xcb_window_t root;
   xcb_screen_t* screen; 
+
+  struct timespec lastexposetime; 
 
   Display* dsp; 
   XVisualInfo* glvis;

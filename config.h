@@ -79,3 +79,10 @@ static const keybind keybinds[] = {
   {modkey,     KeyW,       runcmd,                  { .cmd = BROWSER_CMD }},
   {modkey,     KeyE,       runcmd,                  { .cmd = SCREENSHOT_CMD }}
 };
+
+/* Advanced Configuration */
+
+// The FPS rate at which motion notify events are processed
+static const size_t motion_notify_debounce_fps = 60;
+// The delay between event polls (used to avoid high CPU usage)
+static const uint32_t event_polling_rate_ms = 10;
