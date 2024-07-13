@@ -591,7 +591,8 @@ killclient(client* cl) {
     xcb_set_close_down_mode(s.con, XCB_CLOSE_DOWN_DESTROY_ALL);
     xcb_kill_client(s.con, cl->win);
     xcb_ungrab_server(s.con);
-  } 
+  }
+  xcb_flush(s.con);
 }
 
 /**
@@ -1013,7 +1014,7 @@ evbuttonpress(xcb_generic_event_t* ev) {
         v2 cursorpos = (v2){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
         area closebtnarea = (area){
             .pos = cl->closebutton,
-            .size = (v2){15, 15}
+            .size = (v2){30, titlebarheight}
         };
         if (pointinarea(cursorpos, closebtnarea)) {
             killclient(cl);
