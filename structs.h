@@ -18,6 +18,11 @@ typedef enum {
   RightMouse  = XCB_BUTTON_MASK_3,
 } mousebtn;
 
+typedef enum {
+  LayoutFloating = 0,
+  LayoutTiledMaster
+} layout_type_t; 
+
 typedef struct {
   const char* cmd;
   int32_t i;
@@ -191,56 +196,61 @@ typedef enum {
 
 typedef struct {
   float x, y;
-} v2;
+} v2_t;
 
 typedef struct {
-  v2 pos, size;
-} area;
+  v2_t pos, size;
+} area_t;
 
 typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 
-static void             terminate();
-static void             cyclefocus();
-static void             killfocus();
-static void             togglefullscreen();
-static void             raisefocus();
-static void             cycledesktopup(); 
-static void             cycledesktopdown();
-static void             cyclefocusdesktopup();
-static void             cyclefocusdesktopdown();
-static void             switchdesktop(passthrough_data data); 
-static void             switchfocusdesktop(passthrough_data data);
-static void             runcmd(passthrough_data data);
+static void terminate();
+static void cyclefocus();
+static void killfocus();
+static void togglefullscreen();
+static void raisefocus();
+static void cycledesktopup(); 
+static void cycledesktopdown();
+static void cyclefocusdesktopup();
+static void cyclefocusdesktopdown();
+static void cyclefocusdesktopupsticky();
+static void cyclefocusdesktopdownsticky();
+static void switchdesktop(passthrough_data data); 
+static void switchfocusdesktop(passthrough_data data);
+static void runcmd(passthrough_data data);
+static void addfocustolayout();
+static void settiledmaster();
+static void setfloatingmode();
 
 #include "config.h"
 
-typedef struct monitor monitor;
+typedef struct monitor_t monitor_t;
 
-struct monitor {
-  area area;
-  monitor* next;
+struct monitor_t {
+  area_t area;
+  monitor_t* next;
   uint32_t idx;
 
   char* activedesktops[MAX_DESKTOPS];
   uint32_t desktopcount;
 };
 
-typedef struct client client;
+typedef struct client_t client_t;
 
-struct client {
-  area area, area_prev;
+struct client_t {
+  area_t area, area_prev;
   bool fullscreen, floating;
   xcb_window_t win, frame, titlebar;
 
   bool showtitlebar;
 
-  v2 closebutton;
+  v2_t closebutton;
 
-  client* next;
+  client_t* next;
 
   size_t borderwidth;
 
-  monitor* mon;
+  monitor_t* mon;
   int32_t desktop;
 
   bool urgent, ignoreunmap; 
@@ -263,7 +273,7 @@ typedef enum {
   EWMHnumberOfDesktops,
   EWMHdesktopNames,
   EWMHcount
-} ewmh_atom;
+} ewmh_atom_t;
 
 typedef enum {
   WMprotocols,
@@ -271,7 +281,7 @@ typedef enum {
   WMstate,
   WMtakeFocus,
   WMcount
-} wm_atom;
+} wm_atom_t;
 
 typedef struct {
   xcb_connection_t* con;
@@ -288,17 +298,19 @@ typedef struct {
   LfState ui;
   LfTexture closeicon;
 
-  client* clients;
-  client* focus;
+  client_t* clients;
+  client_t* focus;
 
-  v2 grabcursor;
-  area grabwin;
+  v2_t grabcursor;
+  area_t grabwin;
 
-  monitor* monitors;
-  monitor* monfocus;
+  monitor_t* monitors;
+  monitor_t* monfocus;
 
   xcb_atom_t wm_atoms[WMcount]; 
   xcb_atom_t ewmh_atoms[EWMHcount];
 
   int32_t* curdesktop;
-} State;
+
+  layout_type_t curlayout;
+} state_t;

@@ -32,47 +32,50 @@
 static void             setup();
 static void             loop();
 
-static bool             pointinarea(v2 p, area a);
-static v2               cursorpos(bool* success);
-static area             winarea(xcb_window_t win, bool* success);
-static float            getoverlaparea(area a, area b);
+static bool             pointinarea(v2_t p, area_t a);
+static v2_t             cursorpos(bool* success);
+static area_t           winarea(xcb_window_t win, bool* success);
+static float            getoverlaparea(area_t a, area_t b);
 
-static void             setbordercolor(client* cl, uint32_t color);
-static void             setborderwidth(client* cl, uint32_t width);
-static void             moveclient(client* cl, v2 pos);
-static void             resizeclient(client* cl, v2 size);
-static void             moveresizeclient(client* cl, area a);
-static void             raiseclient(client* cl);
-static bool             clienthasdeleteatom(client *c);
-static char*            getclientname(client* cl);
-static void             killclient(client* cl);
-static void             focusclient(client* cl);
-static void             setxfocus(client* cl);
-static void             frameclient(client* cl);
-static void             unframeclient(client* cl);
-static void             unfocusclient(client* cl);
-static void             configclient(client* cl);
-static void             hideclient(client* cl);
-static void             showclient(client* cl);
-static bool             raiseevent(client* cl, xcb_atom_t protocol);
-static void             setwintype(client* cl);
-static void             seturgent(client* cl, bool urgent);
-static xcb_atom_t       getclientprop(client* cl, xcb_atom_t prop);
-static void             setfullscreen(client* cl, bool fullscreen);
-static void             switchclientdesktop(client* cl, int32_t desktop);
+static void             setbordercolor(client_t* cl, uint32_t color);
+static void             setborderwidth(client_t* cl, uint32_t width);
+static void             moveclient(client_t* cl, v2_t pos);
+static void             resizeclient(client_t* cl, v2_t size);
+static void             moveresizeclient(client_t* cl, area_t a);
+static void             raiseclient(client_t* cl);
+static bool             clienthasdeleteatom(client_t* cl);
+static char*            getclientname(client_t* cl);
+static void             killclient(client_t* cl);
+static void             focusclient(client_t* cl);
+static void             setxfocus(client_t* cl);
+static void             frameclient(client_t* cl);
+static void             unframeclient(client_t* cl);
+static void             unfocusclient(client_t* cl);
+static void             configclient(client_t* cl);
+static void             hideclient(client_t* cl);
+static void             showclient(client_t* cl);
+static bool             raiseevent(client_t* cl, xcb_atom_t protocol);
+static void             setwintype(client_t* cl);
+static void             seturgent(client_t* cl, bool urgent);
+static xcb_atom_t       getclientprop(client_t* cl, xcb_atom_t prop);
+static void             setfullscreen(client_t* cl, bool fullscreen);
+static void             switchclientdesktop(client_t* cl, int32_t desktop);
+
+static void             makelayout(monitor_t* mon);
+static void             tiledmaster(monitor_t* mon);
 
 static void             uploaddesktopnames();
-static void             createdesktop(uint32_t idx, monitor* mon);
+static void             createdesktop(uint32_t idx, monitor_t* mon);
 
 static void             setupatoms();
 static void             grabkeybinds();
 static void             loaddefaultcursor();
 
-static void             setuptitlebar(client* cl);
-static void             rendertitlebar(client* cl);
-static void             updatetitlebar(client* cl);
-static void             hidetitlebar(client* cl);
-static void             showtitlebar(client* cl);
+static void             setuptitlebar(client_t* cl);
+static void             rendertitlebar(client_t* cl);
+static void             updatetitlebar(client_t* cl);
+static void             hidetitlebar(client_t* cl);
+static void             showtitlebar(client_t* cl);
 
 static void             evmaprequest(xcb_generic_event_t* ev);
 static void             evunmapnotify(xcb_generic_event_t* ev);
@@ -88,15 +91,15 @@ static void             evpropertynotify(xcb_generic_event_t* ev);
 static void             evclientmessage(xcb_generic_event_t* ev);
 static void             evexpose(xcb_generic_event_t* ev);
 
-static client*          addclient(xcb_window_t win);
+static client_t*        addclient(xcb_window_t win);
 static void             releaseclient(xcb_window_t win);
-static client*          clientfromwin(xcb_window_t win);
-static client*          clientfromtitlebar(xcb_window_t titlebar);
+static client_t*        clientfromwin(xcb_window_t win);
+static client_t*        clientfromtitlebar(xcb_window_t titlebar);
 
-static monitor*         addmon(area a, uint32_t idx); 
-static monitor*         monbyarea(area a);
-static monitor*         clientmon(client* cl);
-static monitor*         cursormon();
+static monitor_t*       addmon(area_t a, uint32_t idx); 
+static monitor_t*       monbyarea(area_t a);
+static monitor_t*       clientmon(client_t* cl);
+static monitor_t*       cursormon();
 static uint32_t         updatemons();
 
 static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
@@ -110,10 +113,11 @@ static void             sigchld_handler(int32_t signum);
 
 static bool             strinarr(char* array[], int count, const char* target);
 static int32_t          compstrs(const void* a, const void* b);
-
+static void             strtoascii(char* str); 
 static void             initglcontext();
 static void             setglcontext(xcb_window_t win);
 static bool             isglextsupported(const char* extlist, const char* ext);
+
 
 // This needs to be included after the function definitions
 #include "config.h"
@@ -146,7 +150,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
 // Define the function pointer for glXSwapIntervalEXT
 typedef void (*glXSwapIntervalEXTProc)(Display *, GLXDrawable, int);
 
-static State s;
+static state_t s;
 
 /**
  * @brief Sets up the WM state and the X server 
@@ -190,6 +194,8 @@ setup() {
   }
 
   s.lastexposetime = (struct timespec){0, 0};
+
+  s.curlayout = initlayout;
 
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s.dsp, XCBOwnsEventQueue);
@@ -268,8 +274,8 @@ loop() {
 void 
 terminate() {
   {
-    client* cl = s.clients;
-    client* next;
+    client_t* cl = s.clients;
+    client_t* next;
     while(cl != NULL) {
       next = cl->next;
       releaseclient(cl->win);
@@ -277,8 +283,8 @@ terminate() {
     }
   }
   {
-    monitor* mon = s.monitors;
-    monitor* next;
+    monitor_t* mon = s.monitors;
+    monitor_t* next;
     while (mon != NULL) {
       next = mon->next;
       free(mon);
@@ -298,7 +304,7 @@ terminate() {
  * @return If the point p is in the area, false if it is not in the area 
  */
 bool
-pointinarea(v2 p, area area) {
+pointinarea(v2_t p, area_t area) {
   return (p.x >= area.pos.x &&
   p.x < (area.pos.x + area.size.x) &&
   p.x >= area.pos.y &&
@@ -313,7 +319,7 @@ pointinarea(v2 p, area area) {
  *
  * @return The cursor position as a two dimensional vector 
  */
-v2 
+v2_t 
 cursorpos(bool* success) {
   // Query the pointer position
   xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(s.con, xcb_query_pointer(s.con, s.root), NULL);
@@ -321,10 +327,10 @@ cursorpos(bool* success) {
   if(!(*success)) {
     fprintf(stderr, "ragnar: failed to retrieve cursor position."); 
     free(reply);
-    return (v2){0};
+    return (v2_t){0};
   }
-  // Create a v2 for to store the position 
-  v2 cursor = (v2){.x = reply->root_x, .y = reply->root_y};
+  // Create a v2_t for to store the position 
+  v2_t cursor = (v2_t){.x = reply->root_x, .y = reply->root_y};
 
   // Check for errors
   free(reply);
@@ -340,7 +346,7 @@ cursorpos(bool* success) {
  *
  * @return The area of the given window 
  */
-area 
+area_t
 winarea(xcb_window_t win, bool* success) {
   // Retrieve the geometry of the window 
   xcb_get_geometry_reply_t *reply = xcb_get_geometry_reply(s.con, xcb_get_geometry(s.con, win), NULL);
@@ -348,10 +354,10 @@ winarea(xcb_window_t win, bool* success) {
   if(!(*success)) {
     fprintf(stderr, "ragnar: failed to retrieve cursor position."); 
     free(reply);
-    return (area){0};
+    return (area_t){0};
   }
   // Creating the area structure to store the geometry in
-  area a = (area){.pos = (v2){reply->x, reply->y}, .size = (v2){reply->width, reply->height}};
+  area_t a = (area_t){.pos = (v2_t){reply->x, reply->y}, .size = (v2_t){reply->width, reply->height}};
 
   // Error checking
   free(reply);
@@ -367,7 +373,7 @@ winarea(xcb_window_t win, bool* success) {
  * @return The overlap between the two areas 
  */
 float
-getoverlaparea(area a, area b) {
+getoverlaparea(area_t a, area_t b) {
     float x = MAX(0, MIN(a.pos.x + a.size.x, b.pos.x + b.size.x) - MAX(a.pos.x, b.pos.x));
     float y = MAX(0, MIN(a.pos.y + a.size.y, b.pos.y + b.size.y) - MAX(a.pos.y, b.pos.y));
     return x * y;
@@ -380,7 +386,7 @@ getoverlaparea(area a, area b) {
  * @param color The border color 
  */
 void
-setbordercolor(client* cl, uint32_t color) {
+setbordercolor(client_t* cl, uint32_t color) {
   // Return if the client is NULL
   if(!cl) {
     return;
@@ -397,7 +403,7 @@ setbordercolor(client* cl, uint32_t color) {
  * @param width The border width 
  */
 void
-setborderwidth(client* cl, uint32_t width) {
+setborderwidth(client_t* cl, uint32_t width) {
   if(!cl) {
     return;
   }
@@ -414,7 +420,7 @@ setborderwidth(client* cl, uint32_t width) {
  * @param pos The position to move the client to 
  */
 void
-moveclient(client* cl, v2 pos) {
+moveclient(client_t* cl, v2_t pos) {
   if(!cl) {
     return;
   }
@@ -443,7 +449,7 @@ moveclient(client* cl, v2 pos) {
  * @param pos The new size of the clients window 
  */
 void
-resizeclient(client* cl, v2 size) {
+resizeclient(client_t* cl, v2_t size) {
   if(!cl) {
     return;
   }
@@ -466,7 +472,7 @@ resizeclient(client* cl, v2 size) {
  * @param a The new area (position and size) for the client's window
  */
 void
-moveresizeclient(client* cl, area a) {
+moveresizeclient(client_t* cl, area_t a) {
   if (!cl) {
     return;
   }
@@ -504,7 +510,7 @@ moveresizeclient(client* cl, area a) {
  * @param cl The client to raise 
  */
 void
-raiseclient(client* cl) {
+raiseclient(client_t* cl) {
   if(!cl) {
     return;
   }
@@ -522,11 +528,11 @@ raiseclient(client* cl) {
  * @return Whether or not the given client has a WM_DELETE atom 
  */
 bool 
-clienthasdeleteatom(client *c) {
+clienthasdeleteatom(client_t* cl) {
 	bool ret = false;
 	xcb_icccm_get_wm_protocols_reply_t reply;
 
-	if(xcb_icccm_get_wm_protocols_reply(s.con, xcb_icccm_get_wm_protocols_unchecked(s.con, c->win, s.wm_atoms[WMprotocols]), &reply, NULL)) {
+	if(xcb_icccm_get_wm_protocols_reply(s.con, xcb_icccm_get_wm_protocols_unchecked(s.con, cl->win, s.wm_atoms[WMprotocols]), &reply, NULL)) {
 		for(uint32_t i = 0; !ret && i < reply.atoms_len; i++) {
 			if(reply.atoms[i] == s.wm_atoms[WMdelete]) {
 				ret = true;
@@ -546,7 +552,7 @@ clienthasdeleteatom(client *c) {
  * @return The name of the given client  
  */
 char* 
-getclientname(client* cl) {
+getclientname(client_t* cl) {
     xcb_icccm_get_text_property_reply_t prop;
     // Try to get _NET_WM_NAME
     xcb_get_property_cookie_t cookie = xcb_icccm_get_text_property(s.con, cl->win, XCB_ATOM_WM_NAME);
@@ -574,7 +580,8 @@ getclientname(client* cl) {
  * @param cl The client to kill 
  */
 void
-killclient(client* cl) {
+killclient(client_t* cl) {
+  cl->floating = true;
   // If the client specifically has a delete atom set, send a delete event  
   if(clienthasdeleteatom(cl)) {
     xcb_client_message_event_t ev;
@@ -592,6 +599,7 @@ killclient(client* cl) {
     xcb_kill_client(s.con, cl->win);
     xcb_ungrab_server(s.con);
   }
+  makelayout(s.monfocus);
   xcb_flush(s.con);
 }
 
@@ -612,7 +620,7 @@ killfocus() {
  * @param cl The client to focus
  */
 void
-focusclient(client* cl) {
+focusclient(client_t* cl) {
   if(!cl || cl->win == s.root) {
     return;
   }
@@ -646,7 +654,7 @@ focusclient(client* cl) {
  */
 
 void
-setxfocus(client* cl) {
+setxfocus(client_t* cl) {
   // Set input focus to client
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
 
@@ -666,7 +674,7 @@ setxfocus(client* cl) {
  * @param cl The client to create a frame window for 
  */
 void
-frameclient(client* cl) {
+frameclient(client_t* cl) {
   {
     cl->frame = xcb_generate_id(s.con);
     uint32_t mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
@@ -714,15 +722,16 @@ frameclient(client* cl) {
  * @param cl The client to unframe 
  */
 void
-unframeclient(client* cl) {
+unframeclient(client_t* cl) {
   xcb_unmap_window(s.con, cl->titlebar);
   xcb_unmap_window(s.con, cl->frame);
   xcb_reparent_window(s.con, cl->win, s.root, 0, 0);
   xcb_destroy_window(s.con, cl->titlebar);
   xcb_destroy_window(s.con, cl->frame);
+  xcb_flush(s.con);
 }
 void
-unfocusclient(client* cl) {
+unfocusclient(client_t* cl) {
   if (!cl) {
     return;
   }
@@ -737,7 +746,7 @@ unfocusclient(client* cl) {
  * @param cl The client to configure 
  */
 void
-configclient(client* cl) {
+configclient(client_t* cl) {
   if(!cl) {
     return;
   }
@@ -770,7 +779,7 @@ configclient(client* cl) {
  * @param cl The client to hide 
  */
 void
-hideclient(client* cl) {
+hideclient(client_t* cl) {
   cl->ignoreunmap = true;
   xcb_unmap_window(s.con, cl->frame);
 }
@@ -780,7 +789,7 @@ hideclient(client* cl) {
  * @param cl The client to show 
  */
 void
-showclient(client* cl) {
+showclient(client_t* cl) {
   xcb_map_window(s.con, cl->frame);
 }
 
@@ -827,11 +836,11 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Retrieving cursor position
   bool cursor_success;
-  v2 cursor = cursorpos(&cursor_success);
+  v2_t cursor = cursorpos(&cursor_success);
   if(!cursor_success) return;
 
   // Adding the mapped client to our linked list
-  client* cl = addclient(map_ev->window);
+  client_t* cl = addclient(map_ev->window);
 
   // Set initial border 
   setbordercolor(cl, winbordercolor);
@@ -848,9 +857,6 @@ evmaprequest(xcb_generic_event_t* ev) {
   cl->mon = clientmon(cl);
   cl->desktop = s.curdesktop[s.monfocus->idx];
 
-  // Set all clients floating for now (TODO)
-  cl->floating = true;
-
   // Update the EWMH client list
   ewmh_updateclients();
 
@@ -861,15 +867,18 @@ evmaprequest(xcb_generic_event_t* ev) {
   bool success;
   cl->area = winarea(cl->frame, &success);
   if(!success) return;
-  if(s.monfocus) {
+  if(s.monfocus && s.curlayout == LayoutFloating) {
     // Spawn the window in the center of the focused monitor
-    moveclient(cl, (v2){
+    moveclient(cl, (v2_t){
       s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
       s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
 
   // Map the window
   xcb_map_window(s.con, map_ev->window);
+
+  makelayout(cl->mon);
+
   xcb_flush(s.con);
 }
 /**
@@ -883,13 +892,14 @@ evunmapnotify(xcb_generic_event_t* ev) {
   // Retrieve the event
   xcb_unmap_notify_event_t* unmap_ev = (xcb_unmap_notify_event_t*)ev;
 
-  client* cl = clientfromwin(unmap_ev->window);
+  client_t* cl = clientfromwin(unmap_ev->window);
   if(cl && cl->ignoreunmap) {
     cl->ignoreunmap = false;
     return;
   }
   if(cl) {
     unframeclient(cl);
+    makelayout(cl->mon);
   } else {
     xcb_unmap_window(s.con, unmap_ev->window);
   }
@@ -900,13 +910,14 @@ evunmapnotify(xcb_generic_event_t* ev) {
   // Update the EWMH client list
   ewmh_updateclients();
 
+
   xcb_flush(s.con);
 }
 
 void 
 evdestroynotify(xcb_generic_event_t* ev) {
   xcb_destroy_notify_event_t* destroy_ev = (xcb_destroy_notify_event_t*)ev;
-  client* cl = clientfromwin(destroy_ev->window);
+  client_t* cl = clientfromwin(destroy_ev->window);
   if(!cl) {
     return;
   }
@@ -929,7 +940,7 @@ eventernotify(xcb_generic_event_t* ev) {
     return;
   }
 
-  client* cl = clientfromwin(enter_ev->event);
+  client_t* cl = clientfromwin(enter_ev->event);
 
   if(!cl) {
     if(!(cl = clientfromtitlebar(enter_ev->event)) && enter_ev->event != s.root) return;
@@ -943,7 +954,7 @@ eventernotify(xcb_generic_event_t* ev) {
     // Set Input focus to root
     xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
     /* Reset border color to unactive for every client */
-    client* cl;
+    client_t* cl;
     for (cl = s.clients; cl != NULL; cl = cl->next) {
       if(cl->fullscreen) {
         continue;
@@ -1007,14 +1018,14 @@ evbuttonpress(xcb_generic_event_t* ev) {
         return;
     }
 
-    client* cl = clientfromwin(button_ev->event);
+    client_t* cl = clientfromwin(button_ev->event);
     if (!cl) {
         cl = clientfromtitlebar(button_ev->event);
         if (!cl) return;
-        v2 cursorpos = (v2){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
-        area closebtnarea = (area){
+        v2_t cursorpos = (v2_t){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
+        area_t closebtnarea = (area_t){
             .pos = cl->closebutton,
-            .size = (v2){30, titlebarheight}
+            .size = (v2_t){30, titlebarheight}
         };
         if (pointinarea(cursorpos, closebtnarea)) {
             killclient(cl);
@@ -1033,13 +1044,13 @@ evbuttonpress(xcb_generic_event_t* ev) {
         }
     }
     bool success;
-    area area = winarea(cl->frame, &success);
+    area_t area = winarea(cl->frame, &success);
     if(!success) return;
 
     cl->area = area;
     // Setting grab position
     s.grabwin = cl->area;
-    s.grabcursor = (v2){.x = (float)button_ev->root_x, .y = (float)button_ev->root_y};
+    s.grabcursor = (v2_t){.x = (float)button_ev->root_x, .y = (float)button_ev->root_y};
 
     // Raising the client to the top of the stack
     raiseclient(cl);
@@ -1049,10 +1060,10 @@ evbuttonpress(xcb_generic_event_t* ev) {
 void
 evbuttonrelease(xcb_generic_event_t* ev) {
   xcb_button_release_event_t* button_ev = (xcb_button_release_event_t*)ev;
-  client* cl = clientfromwin(button_ev->event);
+  client_t* cl = clientfromwin(button_ev->event);
 
   if(cl && usedecoration) {
-    for(client* cl = s.clients; cl != NULL; cl = cl->next) {
+    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
       if(cl->showtitlebar) {
         rendertitlebar(cl);
       }
@@ -1103,7 +1114,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
 
   if(motion_ev->event == s.root) {
     // Update the focused monitor to the monitor under the cursor
-    monitor* mon = cursormon();
+    monitor_t* mon = cursormon();
     uploaddesktopnames();
     s.monfocus = mon;
     return;
@@ -1111,22 +1122,27 @@ evmotionnotify(xcb_generic_event_t* ev) {
   if(!(motion_ev->state & XCB_BUTTON_MASK_1 || motion_ev->state & XCB_BUTTON_MASK_3)) return;
 
   // Position of the cursor in the drag event
-  v2 dragpos    = (v2){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
+  v2_t dragpos    = (v2_t){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
   // Drag difference from the current drag event to the initial grab 
-  v2 dragdelta  = (v2){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
+  v2_t dragdelta  = (v2_t){.x = dragpos.x - s.grabcursor.x, .y = dragpos.y - s.grabcursor.y};
   // New position of the window
-  v2 movedest   = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
+  v2_t movedest   = (v2_t){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
 
 
-  client* cl = clientfromwin(motion_ev->event);
+  client_t* cl = clientfromwin(motion_ev->event);
   if(!cl) {
     if(!(cl = clientfromtitlebar(motion_ev->event))) return;
     if(cl->fullscreen) {
       setfullscreen(cl, false);
       s.grabwin = cl->area;
-      movedest = (v2){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
+      movedest = (v2_t){.x = (float)(s.grabwin.pos.x + dragdelta.x), .y = (float)(s.grabwin.pos.y + dragdelta.y)};
     }
     moveclient(cl, movedest);
+
+    // Remove the client from the layout when the user moved it 
+    cl->floating = true;
+    makelayout(cl->mon);
+
     xcb_flush(s.con);
     return;
   }
@@ -1146,12 +1162,17 @@ evmotionnotify(xcb_generic_event_t* ev) {
   // Resize the window
   else if(motion_ev->state & resizebtn) {
     // Resize delta (clamped)
-    v2 resizedelta  = (v2){.x = MAX(dragdelta.x, -s.grabwin.size.x), .y = MAX(dragdelta.y, -s.grabwin.size.y)};
+    v2_t resizedelta  = (v2_t){.x = MAX(dragdelta.x, -s.grabwin.size.x), .y = MAX(dragdelta.y, -s.grabwin.size.y)};
     // New window size
-    v2 sizedest = (v2){.x = s.grabwin.size.x + resizedelta.x, .y = s.grabwin.size.y + resizedelta.y};
+    v2_t sizedest = (v2_t){.x = s.grabwin.size.x + resizedelta.x, .y = s.grabwin.size.y + resizedelta.y};
 
     resizeclient(cl, sizedest);
   }
+  
+  // Remove the client from the layout when the user moved it 
+  cl->floating = true;
+  makelayout(cl->mon);
+
   xcb_flush(s.con);
 }
 
@@ -1165,7 +1186,7 @@ void
 evconfigrequest(xcb_generic_event_t* ev) {
   xcb_configure_request_event_t *config_ev = (xcb_configure_request_event_t *)ev;
 
-  client* cl = clientfromwin(config_ev->window);
+  client_t* cl = clientfromwin(config_ev->window);
   if(!cl) {
     uint16_t mask = 0;
     uint32_t values[7];
@@ -1262,12 +1283,7 @@ evconfigrequest(xcb_generic_event_t* ev) {
     bool success;
     cl->area = winarea(cl->frame, &success);
     if(!success) return;
-    if(s.monfocus) {
-      // Spawn the window in the center of the focused monitor
-      moveclient(cl, (v2){
-        s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
-        s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
-    }
+
     updatetitlebar(cl);
     configclient(cl);
   }
@@ -1287,7 +1303,7 @@ evconfignotify(xcb_generic_event_t* ev) {
   if(config_ev->window == s.root) {
     updatemons();
   }
-  client* cl = clientfromwin(config_ev->window);
+  client_t* cl = clientfromwin(config_ev->window);
   if(!cl) return;
   updatetitlebar(cl);
 
@@ -1301,7 +1317,7 @@ evconfignotify(xcb_generic_event_t* ev) {
 void
 evpropertynotify(xcb_generic_event_t* ev) {
   xcb_property_notify_event_t* prop_ev = (xcb_property_notify_event_t*)ev;
-  client* cl = clientfromwin(prop_ev->window);
+  client_t* cl = clientfromwin(prop_ev->window);
 
   if(cl) {
     // Updating the window type if we receive a window type change event.
@@ -1328,7 +1344,7 @@ evpropertynotify(xcb_generic_event_t* ev) {
 void
 evclientmessage(xcb_generic_event_t* ev) {
   xcb_client_message_event_t* msg_ev = (xcb_client_message_event_t*)ev;
-  client* cl = clientfromwin(msg_ev->window);
+  client_t* cl = clientfromwin(msg_ev->window);
 
   if(!cl) {
     return;
@@ -1339,7 +1355,13 @@ evclientmessage(xcb_generic_event_t* ev) {
     if(msg_ev->data.data32[1] == s.ewmh_atoms[EWMHfullscreen] ||
        msg_ev->data.data32[2] == s.ewmh_atoms[EWMHfullscreen]) {
       // Set/unset client fullscreen 
-      setfullscreen(cl, (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen)));
+      bool fs =  (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen));
+      setfullscreen(cl, fs);
+      if(fs) {
+        hidetitlebar(cl);
+      } else {
+        showtitlebar(cl);
+      }
     }
   } else if(msg_ev->type == s.ewmh_atoms[EWMHactiveWindow]) {
     if(s.focus != cl && !cl->urgent) {
@@ -1352,7 +1374,7 @@ evclientmessage(xcb_generic_event_t* ev) {
 void
 evexpose(xcb_generic_event_t* ev) {
   xcb_expose_event_t* expose_ev = (xcb_expose_event_t*)ev;
-  client* cl = clientfromtitlebar(expose_ev->window);
+  client_t* cl = clientfromtitlebar(expose_ev->window);
   if(!cl) return;
   rendertitlebar(cl);
 }
@@ -1364,9 +1386,9 @@ void
 cyclefocus() {
   if (!s.clients || !s.focus)
     return;
-  client* next = NULL;
+  client_t* next = NULL;
   // Find the next client on the current monitor & desktop 
-  for(client* cl = s.focus->next; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s.focus->next; cl != NULL; cl = cl->next) {
     if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
       next = cl;
       break;
@@ -1381,7 +1403,7 @@ cyclefocus() {
   // If there is no next client, cycle back to the first client on the 
   // current monitor & desktop
   else {
-    for(client* cl = s.clients; cl != NULL; cl = cl->next) {
+    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
       if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
         next = cl;
         break;
@@ -1412,7 +1434,7 @@ raisefocus() {
  * @param protocol The atom to store the event
  */
 bool
-raiseevent(client* cl, xcb_atom_t protocol) {
+raiseevent(client_t* cl, xcb_atom_t protocol) {
   bool exists = false;
   xcb_icccm_get_wm_protocols_reply_t reply;
 
@@ -1446,12 +1468,13 @@ raiseevent(client* cl, xcb_atom_t protocol) {
  * @param cl The client to set/update the window type of
  */
 void
-setwintype(client* cl) {
+setwintype(client_t* cl) {
   xcb_atom_t state = getclientprop(cl, s.ewmh_atoms[EWMHstate]);
   xcb_atom_t wintype = getclientprop(cl, s.ewmh_atoms[EWMHwindowType]);
 
   if(state == s.ewmh_atoms[EWMHfullscreen]) {
     setfullscreen(cl, true);
+    hidetitlebar(cl);
   } 
   if(wintype == s.ewmh_atoms[EWMHwindowTypeDialog]) {
     cl->floating = true;
@@ -1459,7 +1482,7 @@ setwintype(client* cl) {
 }
 
 void
-seturgent(client* cl, bool urgent) {
+seturgent(client_t* cl, bool urgent) {
   xcb_icccm_wm_hints_t wmh;
   cl->urgent = urgent;
 
@@ -1486,7 +1509,7 @@ seturgent(client* cl, bool urgent) {
  * @return The value of the given property on the given window
  */
 xcb_atom_t
-getclientprop(client* cl, xcb_atom_t prop) {
+getclientprop(client_t* cl, xcb_atom_t prop) {
   xcb_generic_error_t *error;
   xcb_atom_t atom = XCB_NONE;
   xcb_get_property_cookie_t cookie;
@@ -1519,7 +1542,7 @@ getclientprop(client* cl, xcb_atom_t prop) {
  * fullscreen or not
  */
 void
-setfullscreen(client* cl, bool fullscreen) {
+setfullscreen(client_t* cl, bool fullscreen) {
   if(!s.monfocus || !cl) return;
 
   cl->fullscreen = fullscreen;
@@ -1545,10 +1568,13 @@ setfullscreen(client* cl, bool fullscreen) {
   // Update the clients geometry 
   moveresizeclient(cl, cl->area);
 
+  // Send configure event to the client
   configclient(cl);
 
+  // Raise fullscreened clients
   raiseclient(cl);
 
+  // If the client is 'sudo fullscreen', fullscreen it on the WM
   if(cl->area.size.x >= cl->mon->area.size.x && cl->area.size.y >= cl->mon->area.size.y && !cl->fullscreen) {
     setfullscreen(cl, true);
   }
@@ -1560,7 +1586,7 @@ setfullscreen(client* cl, bool fullscreen) {
  * @param desktop The desktop to set the client of 
  */
 void
-switchclientdesktop(client* cl, int32_t desktop) {
+switchclientdesktop(client_t* cl, int32_t desktop) {
   cl->desktop = desktop;
   if(cl == s.focus) {
     unfocusclient(cl);
@@ -1568,6 +1594,71 @@ switchclientdesktop(client* cl, int32_t desktop) {
   hideclient(cl);
 }
 
+/**
+ * @brief Establishes the current tiling layout for the windows
+ * @param mon The monitor to use as the frame of the layout 
+ */
+void
+makelayout(monitor_t* mon) {
+  if(s.curlayout == LayoutFloating) return;
+  switch(s.curlayout) {
+    case LayoutTiledMaster: {
+      tiledmaster(mon);
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+ }
+
+/**
+ * @brief Establishes a tiled master layout for the windows that are 
+ * currently visible.
+ * @param mon The monitor to use as the frame of the layout 
+ */
+void 
+tiledmaster(monitor_t* mon) {
+  const uint32_t nmaster = 1; // TODO
+  uint32_t nslaves = 0;
+  {
+    uint32_t i = 0;
+    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+      if(cl->floating || cl->fullscreen ||
+        cl->desktop != s.curdesktop[mon->idx]) continue;
+      if(i >= nmaster) {
+        nslaves++;
+      }
+      i++;
+    }
+  }
+
+  uint32_t i = 0;
+  int32_t y = 0;
+  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || cl->fullscreen ||
+      cl->desktop != s.curdesktop[mon->idx]) continue;
+
+    bool ismaster = (i < nmaster);
+    float height = (mon->area.size.y / (ismaster ? nmaster : nslaves));
+    bool singleclient = !nslaves;
+
+    moveclient(cl, (v2_t){
+      ismaster ? mon->area.pos.x : mon->area.size.x / 2, 
+      y}); 
+    resizeclient(cl, (v2_t){
+      ((singleclient ? mon->area.size.x : mon->area.size.x / 2)) - winborderwidth * 2, 
+      height - winborderwidth * 2});
+    if(!ismaster) {
+      y += height;
+    }
+    i++;
+  }
+}
+
+/**
+ * @brief Uploads the active desktop names to EWMH 
+ */
 void
 uploaddesktopnames() {
   qsort(s.monfocus->activedesktops, s.monfocus->desktopcount, sizeof(const char*), compstrs);
@@ -1604,7 +1695,7 @@ uploaddesktopnames() {
   free(data);
 }
 void
-createdesktop(uint32_t idx, monitor* mon) {
+createdesktop(uint32_t idx, monitor_t* mon) {
   mon->activedesktops[mon->desktopcount] = malloc(strlen(desktopnames[idx]) + 1);
   if(mon->activedesktops[mon->desktopcount]) {
     strcpy(mon->activedesktops[mon->desktopcount], desktopnames[idx]);
@@ -1645,6 +1736,18 @@ cyclefocusdesktopdown() {
     new_desktop = MAX_DESKTOPS - 1;
   }
   switchclientdesktop(s.focus, new_desktop);
+}
+
+void 
+cyclefocusdesktopupsticky() {
+  cyclefocusdesktopup();
+  cycledesktopup();
+}
+
+void 
+cyclefocusdesktopdownsticky() {
+  cyclefocusdesktopdown();
+  cycledesktopdown();
 }
 
 /**
@@ -1719,7 +1822,7 @@ switchdesktop(passthrough_data data) {
 
 
 
-  for (client* cl = s.clients; cl != NULL; cl = cl->next) {
+  for (client_t* cl = s.clients; cl != NULL; cl = cl->next) {
     if(cl->mon != s.monfocus) continue;
     // Hide the clients on the current desktop
     if(cl->desktop == s.curdesktop[s.monfocus->idx]) {
@@ -1731,7 +1834,7 @@ switchdesktop(passthrough_data data) {
   }
 
   // Unfocus all selected clients
-  for(client* cl = s.clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
     unfocusclient(cl);
   }
 
@@ -1804,7 +1907,7 @@ setupatoms() {
 
   s.monfocus = cursormon();
   // Create initial desktop for all monitors 
-  for(monitor* mon = s.monitors; mon != NULL; mon = mon->next) {
+  for(monitor_t* mon = s.monitors; mon != NULL; mon = mon->next) {
     createdesktop(desktopinit, mon);
   }
 
@@ -1860,7 +1963,7 @@ loaddefaultcursor() {
 }
 
 void
-setuptitlebar(client* cl) {
+setuptitlebar(client_t* cl) {
  /* This function is written with Xlib not xcb, as the decoration window 
    * needs to be created with Xlib to get a working OpenGL context on it. */
   if(!usedecoration) return;
@@ -1917,7 +2020,7 @@ setuptitlebar(client* cl) {
 }
 
 void
-rendertitlebar(client* cl) {
+rendertitlebar(client_t* cl) {
   if(!usedecoration) return;
   if(cl->desktop != s.curdesktop[s.monfocus->idx]) return;
   setglcontext(cl->titlebar);
@@ -1938,6 +2041,10 @@ rendertitlebar(client* cl) {
     // Get client name
     bool namevalid = (cl->name && strlen(cl->name));
     char* displayname = (namevalid ? cl->name : "No name"); 
+    // Remove non-ASCII characters if configured 
+    if(!decoration_render_non_ascii) {
+      strtoascii(displayname);
+    }
     // Center text
     float textwidth = lf_text_dimension(&s.ui, displayname).x;
     lf_set_ptr_x_absolute(&s.ui, (cl->area.size.x - textwidth) / 2.0f);
@@ -1962,7 +2069,7 @@ rendertitlebar(client* cl) {
     props.margin_left = 0;
     props.margin_right = 0;
     lf_push_style_props(&s.ui, props);
-    cl->closebutton = (v2){lf_get_ptr_x(&s.ui), lf_get_ptr_y(&s.ui)};
+    cl->closebutton = (v2_t){lf_get_ptr_x(&s.ui), lf_get_ptr_y(&s.ui)};
     lf_set_image_color(&s.ui, lf_color_from_hex(iconcolor));
     lf_image_button(&s.ui, ((LfTexture){.id = s.closeicon.id, .width = width, .height = width}));
     lf_unset_image_color(&s.ui);
@@ -1974,7 +2081,7 @@ rendertitlebar(client* cl) {
 }
 
 void
-updatetitlebar(client* cl) {
+updatetitlebar(client_t* cl) {
   if(!usedecoration) return;
 
   bool success;
@@ -1990,7 +2097,7 @@ updatetitlebar(client* cl) {
                        XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
 }
 void
-hidetitlebar(client* cl) {
+hidetitlebar(client_t* cl) {
   xcb_unmap_window(s.con, cl->titlebar);
   {
     uint32_t vals[2] = {0, 0};
@@ -2006,7 +2113,7 @@ hidetitlebar(client* cl) {
 }
 
 void
-showtitlebar(client* cl) {
+showtitlebar(client_t* cl) {
   xcb_map_window(s.con, cl->titlebar);
   {
     uint32_t vals[2] = {0, titlebarheight};
@@ -2029,15 +2136,15 @@ showtitlebar(client* cl) {
  *
  * @return The newly created client
  */
-client*
+client_t*
 addclient(xcb_window_t win) {
   // Allocate client structure
-  client* cl = (client*)malloc(sizeof(*cl));
+  client_t* cl = (client_t*)malloc(sizeof(*cl));
   cl->win = win;
 
   /* Get the window area */
   bool success;
-  area area = winarea(win, &success);
+  area_t area = winarea(win, &success);
   if(!success) return cl;
 
   cl->area = area;
@@ -2065,8 +2172,8 @@ addclient(xcb_window_t win) {
  */
 void 
 releaseclient(xcb_window_t win) {
-  client** prev = &s.clients;
-  client* cl = s.clients;
+  client_t** prev = &s.clients;
+  client_t* cl = s.clients;
   /* Iterate throguh the clients to find the client thats 
    * associated with the window */
   while(cl) {
@@ -2093,9 +2200,9 @@ releaseclient(xcb_window_t win) {
  *
  * @return The client associated with the given window (NULL if no associated client)
  */
-client*
+client_t*
 clientfromwin(xcb_window_t win) {
-  client* cl;
+  client_t* cl;
   for (cl = s.clients; cl != NULL; cl = cl->next) {
     // If the window is found in the clients, return the client
     if(cl->win == win) {
@@ -2113,10 +2220,10 @@ clientfromwin(xcb_window_t win) {
  *
  * @return The client associated with the given titlbar window (NULL if no associated client)
  */
-client*
+client_t*
 clientfromtitlebar(xcb_window_t titlebar) {
   if(!usedecoration) return NULL;
-  client* cl;
+  client_t* cl;
   for (cl = s.clients; cl != NULL; cl = cl->next) {
     // If the window is found in the clients, return the client
     if(cl->titlebar == titlebar) {
@@ -2133,8 +2240,8 @@ clientfromtitlebar(xcb_window_t titlebar) {
  *
  * @return The newly created monitor 
  */
-monitor* addmon(area a, uint32_t idx) {
-  monitor* mon  = (monitor*)malloc(sizeof(*mon));
+monitor_t* addmon(area_t a, uint32_t idx) {
+  monitor_t* mon  = (monitor_t*)malloc(sizeof(*mon));
   mon->area     = a;
   mon->next     = s.monitors;
   mon->idx      = idx;
@@ -2173,11 +2280,11 @@ updatemons() {
 
       // If that worked, register the monitor if it isn't registered yet 
       if (crtc_reply) {
-        area monarea = (area){
-          .pos = (v2){
+        area_t monarea = (area_t){
+          .pos = (v2_t){
             crtc_reply->x, crtc_reply->y
           },
-          .size = (v2){
+          .size = (v2_t){
             crtc_reply->width, crtc_reply->height
           }
         };
@@ -2205,9 +2312,9 @@ updatemons() {
  *
  * @return The monitor associated with the given area (NULL if no associated monitor)
  */
-monitor*
-monbyarea(area a) {
-  monitor* mon;
+monitor_t*
+monbyarea(area_t a) {
+  monitor_t* mon;
   for (mon = s.monitors; mon != NULL; mon = mon->next) {
     if((mon->area.pos.x == a.pos.x && mon->area.pos.y == a.pos.y) &&
         (mon->area.size.x == a.size.x && mon->area.size.y == a.size.y)) {
@@ -2226,14 +2333,14 @@ monbyarea(area a) {
  * @return The monitor that the given client is contained in.
  * Returns the first monitor if the given client is not contained within
  */
-monitor*
-clientmon(client* cl) {
-  monitor* ret = s.monitors;
+monitor_t*
+clientmon(client_t* cl) {
+  monitor_t* ret = s.monitors;
   if (!cl) {
     return ret;
   }
 
-  monitor* mon;
+  monitor_t* mon;
   float biggest_overlap_area = -1.0f;
 
   for (mon = s.monitors; mon != NULL; mon = mon->next) {
@@ -2254,14 +2361,14 @@ clientmon(client* cl) {
  * @return The monitor that is under the cursor.
  * Returns the first monitor if there is no monitor under the cursor. 
  */
-monitor*
+monitor_t*
 cursormon() {
   bool success;
-  v2 cursor = cursorpos(&success);
+  v2_t cursor = cursorpos(&success);
   if(!success) {
     return s.monitors;
   }
-  monitor* mon;
+  monitor_t* mon;
   for (mon = s.monitors; mon != NULL; mon = mon->next) {
     if(pointinarea(cursor, mon->area)) {
       return mon;
@@ -2336,6 +2443,27 @@ runcmd(passthrough_data data) {
   }
 }
 
+void 
+addfocustolayout() {
+  s.focus->floating = false;
+  makelayout(s.focus->mon);
+}
+
+void 
+settiledmaster() {
+  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+    cl->floating = false;
+  }
+  s.curlayout = LayoutTiledMaster;
+  makelayout(s.monfocus);
+}
+
+void 
+setfloatingmode() {
+  s.curlayout = LayoutFloating;
+  makelayout(s.monfocus);
+}
+
 /**
  * @brief Retrieves an intern X atom by name.
  *
@@ -2362,7 +2490,7 @@ void
 ewmh_updateclients() {
   xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHclientList]);
 
-  client* cl;
+  client_t* cl;
   for (cl = s.clients; cl != NULL; cl = cl->next) {
     xcb_change_property(s.con, XCB_PROP_MODE_APPEND, s.root, s.ewmh_atoms[EWMHclientList],
                         XCB_ATOM_WINDOW, 32, 1, &cl->win);
@@ -2388,6 +2516,15 @@ strinarr(char* array[], int count, const char* target) {
   return false; // String not found
 }
 
+void 
+strtoascii(char* str) {
+  while(*str) {
+    if((unsigned char)*str >= 127) {
+      *str = non_ascii_replacement;
+    }
+    str++;
+  }
+}
 int32_t 
 compstrs(const void* a, const void* b) {
   return strcmp(*(const char **)a, *(const char **)b);
