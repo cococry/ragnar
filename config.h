@@ -5,6 +5,7 @@
 static const int32_t        winborderwidth            = 3;
 static const int32_t        winbordercolor            = 0x555555;
 static const int32_t        winbordercolor_selected   = 0x777777;
+static const int32_t        winlayoutgap              = 10;
 static const layout_type_t  initlayout                = LayoutTiledMaster;
 
 
@@ -98,3 +99,8 @@ static const uint32_t event_polling_rate_ms = 10;
 static const uint32_t decoration_render_non_ascii = false;
 // The character that is rendered instead of a non-ASCII character 
 static const char non_ascii_replacement = ' ';
+
+// The maximum number of struts that are noticed by the layouts
+// (Struts define the area that a window takes up) This is usefull for 
+// docks, bars etc. as the layout keeps space for them.
+#define MAX_STRUTS 8

@@ -202,6 +202,10 @@ typedef struct {
   v2_t pos, size;
 } area_t;
 
+typedef struct {
+  uint32_t left, right, top, bottom;
+} strut_t;
+
 typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 
 static void terminate();
@@ -311,4 +315,7 @@ typedef struct {
   int32_t* curdesktop;
 
   layout_type_t curlayout;
+
+  strut_t winstruts[MAX_STRUTS];
+  uint32_t nwinstruts;
 } state_t;

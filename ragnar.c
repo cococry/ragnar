@@ -104,6 +104,8 @@ static uint32_t         updatemons();
 
 static xcb_keysym_t     getkeysym(xcb_keycode_t keycode);
 static xcb_keycode_t*   getkeycodes(xcb_keysym_t keysym);
+static strut_t          readstrut(xcb_window_t win);
+static void             getwinstruts();
 
 static xcb_atom_t       getatom(const char* atomstr);
 
@@ -217,17 +219,23 @@ setup() {
     XCB_EVENT_MASK_POINTER_MOTION
   };
   xcb_change_window_attributes_checked(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
-
+  
+  // Load the default root cursor image
   loaddefaultcursor();
 
   // Grab the window manager's keybinds
   grabkeybinds();
+
 
   // Handle monitor setup 
   uint32_t registered_monitors = updatemons();
 
   // Setup atoms for EWMH and so on
   setupatoms();
+
+  // Gather strut information 
+  s.nwinstruts = 0;
+  getwinstruts(s.root);
 
   s.curdesktop = malloc(sizeof(*s.curdesktop) * registered_monitors);
   if(s.curdesktop) {
@@ -1630,8 +1638,7 @@ tiledmaster(monitor_t* mon) {
   {
     uint32_t i = 0;
     for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-      if(cl->floating || cl->fullscreen ||
-        cl->desktop != s.curdesktop[mon->idx]) continue;
+      if(cl->floating || cl->desktop != s.curdesktop[mon->idx]) continue;
       if(i >= nmaster) {
         nslaves++;
       }
@@ -1640,23 +1647,45 @@ tiledmaster(monitor_t* mon) {
   }
 
   uint32_t i = 0;
-  int32_t y = 0;
+
+  uint32_t totalw = mon->area.size.x;
+  uint32_t totalh = mon->area.size.y;
+  int32_t startx = mon->area.pos.x;
+  int32_t starty = mon->area.pos.y;
+
+  // Apply strut information to the layout
+  for(uint32_t i = 0; i < s.nwinstruts; i++) {
+    if(s.winstruts[i].left != 0) {
+      startx += s.winstruts[i].left;
+      totalw -= s.winstruts[i].left;
+    }
+    if(s.winstruts[i].right != 0) {
+      totalw -= s.winstruts[i].right;
+    }
+    if(s.winstruts[i].top != 0) {
+      starty += s.winstruts[i].top;
+      totalh -= s.winstruts[i].top;
+    }
+    if(s.winstruts[i].bottom != 0) {
+      totalh -= s.winstruts[i].bottom;
+    }
+  }
   for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-    if(cl->floating || cl->fullscreen ||
-      cl->desktop != s.curdesktop[mon->idx]) continue;
+    if(cl->floating || cl->desktop != s.curdesktop[mon->idx]) continue;
 
     bool ismaster = (i < nmaster);
-    float height = (mon->area.size.y / (ismaster ? nmaster : nslaves));
+    float height = (totalh / (ismaster ? nmaster : nslaves));
     bool singleclient = !nslaves;
 
     moveclient(cl, (v2_t){
-      ismaster ? mon->area.pos.x : mon->area.size.x / 2, 
-      y}); 
+      (ismaster ? startx : (int32_t)(startx + totalw / 2)) + winlayoutgap, 
+      starty + winlayoutgap}); 
     resizeclient(cl, (v2_t){
-      ((singleclient ? mon->area.size.x : mon->area.size.x / 2)) - winborderwidth * 2, 
-      height - winborderwidth * 2});
+      (((singleclient ? totalw : totalw / 2)) - cl->borderwidth * 2) - winlayoutgap * 2, 
+      (height - cl->borderwidth * 2) - winlayoutgap * 2});
+
     if(!ismaster) {
-      y += height;
+      starty += height;
     }
     i++;
   }
@@ -2403,9 +2432,78 @@ getkeysym(xcb_keycode_t keycode) {
 xcb_keycode_t*
 getkeycodes(xcb_keysym_t keysym) {
   xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(s.con);
-	xcb_keycode_t *keycode = (!(keysyms) ? NULL : xcb_key_symbols_get_keycode(keysyms, keysym));
-	xcb_key_symbols_free(keysyms);
-	return keycode;
+  xcb_keycode_t *keycode = (!(keysyms) ? NULL : xcb_key_symbols_get_keycode(keysyms, keysym));
+  xcb_key_symbols_free(keysyms);
+  return keycode;
+
+}
+
+/**
+ * @brief Reads the _NET_WM_STRUT_PARTIAL atom of a given window and 
+ * uses the gathered strut information to populate a strut_t.
+ *
+ * @param win The window to retrieve the strut of 
+ *
+ * @return The strut of the window 
+ */
+strut_t
+readstrut(xcb_window_t win) {
+  strut_t strut = {0};
+  xcb_intern_atom_cookie_t cookie = xcb_intern_atom(s.con, 0, strlen("_NET_WM_STRUT_PARTIAL"), "_NET_WM_STRUT_PARTIAL");
+  xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(s.con, cookie, NULL);
+
+  if (!reply) {
+    fprintf(stderr, "ragnar: failed to get _NET_WM_STRUT_PARTIAL atom.\n");
+    return strut;
+  }
+
+  xcb_get_property_cookie_t propcookie = xcb_get_property(s.con, 0, win, reply->atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 16);
+  xcb_get_property_reply_t* propreply = xcb_get_property_reply(s.con, propcookie, NULL);
+
+  if (reply && xcb_get_property_value_length(propreply) >= 16) {
+    uint32_t* data = (uint32_t*)xcb_get_property_value(propreply);
+    strut.left    = data[0];
+    strut.right   = data[1];
+    strut.top     = data[2];
+    strut.bottom  = data[3];
+  } 
+
+  free(reply);
+  free(propreply);
+
+  return strut;
+}
+
+/**
+ * @brief Gathers the struts of all subwindows of a given window
+ *
+ * @param win The window to use as a root 
+ */
+void 
+getwinstruts(xcb_window_t win) {
+  xcb_query_tree_cookie_t cookie = xcb_query_tree(s.con, win);
+  xcb_query_tree_reply_t* reply = xcb_query_tree_reply(s.con, cookie, NULL);
+
+  if (!reply) {
+    fprintf(stderr, "ragnar: failed to get the query tree for window 0x%08x.\n", win);
+    return;
+  }
+
+  xcb_window_t* childs = xcb_query_tree_children(reply);
+  uint32_t nchilds = xcb_query_tree_children_length(reply);
+
+  for (uint32_t i = 0; i < nchilds; i++) {
+    xcb_window_t child = childs[i];
+    strut_t strut = readstrut(child);
+    if(!(strut.left == 0 && strut.right == 0 && 
+      strut.top == 0 && strut.bottom == 0) &&
+      s.nwinstruts + 1 <= MAX_STRUTS) {
+      s.winstruts[s.nwinstruts++] = strut;
+    }
+    getwinstruts(child);
+  }
+
+  free(reply);
 }
 
 /**
