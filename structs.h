@@ -213,8 +213,6 @@ static void cycledesktopup();
 static void cycledesktopdown();
 static void cyclefocusdesktopup();
 static void cyclefocusdesktopdown();
-static void cyclefocusdesktopupsticky();
-static void cyclefocusdesktopdownsticky();
 static void switchdesktop(passthrough_data data); 
 static void switchfocusdesktop(passthrough_data data);
 static void runcmd(passthrough_data data);

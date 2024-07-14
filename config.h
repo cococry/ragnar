@@ -54,9 +54,6 @@ static const keybind keybinds[] = {
   {modkey,     KeyP,       cyclefocusdesktopup,     { NULL }},
   {modkey,     KeyO,       cyclefocusdesktopdown,   { NULL }},
 
-  {modkey | Shift, KeyP,    cyclefocusdesktopupsticky,     { NULL }},
-  {modkey | Shift, KeyO,    cyclefocusdesktopdownsticky,   { NULL }},
-
   /* Switch desktop hotkeys */
   {modkey,     Key1,       switchdesktop,               { .i = 0 }},
   {modkey,     Key2,       switchdesktop,               { .i = 1 }},

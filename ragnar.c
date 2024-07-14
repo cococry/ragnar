@@ -1587,6 +1587,11 @@ setfullscreen(client_t* cl, bool fullscreen) {
  */
 void
 switchclientdesktop(client_t* cl, int32_t desktop) {
+  // Create the desktop if it was not created yet
+  if(!strinarr(s.monfocus->activedesktops, s.monfocus->desktopcount, desktopnames[desktop])) {
+    createdesktop(desktop, s.monfocus);
+  }
+
   cl->desktop = desktop;
   if(cl == s.focus) {
     unfocusclient(cl);
@@ -1736,18 +1741,6 @@ cyclefocusdesktopdown() {
     new_desktop = MAX_DESKTOPS - 1;
   }
   switchclientdesktop(s.focus, new_desktop);
-}
-
-void 
-cyclefocusdesktopupsticky() {
-  cyclefocusdesktopup();
-  cycledesktopup();
-}
-
-void 
-cyclefocusdesktopdownsticky() {
-  cyclefocusdesktopdown();
-  cycledesktopdown();
 }
 
 /**
