@@ -1597,6 +1597,7 @@ switchclientdesktop(client_t* cl, int32_t desktop) {
     unfocusclient(cl);
   }
   hideclient(cl);
+  makelayout(cl->mon);
 }
 
 /**
@@ -1832,6 +1833,8 @@ switchdesktop(passthrough_data data) {
   }
 
   s.curdesktop[s.monfocus->idx] = data.i;
+
+  makelayout(s.monfocus);
 }
 
 /**
