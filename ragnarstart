@@ -1,4 +1,4 @@
 setxkbmap de &
-nitrogen --restore &
 boron &
+nitrogen --restore &
 picom -b --experimental-backends &

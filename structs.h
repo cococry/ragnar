@@ -223,6 +223,7 @@ static void runcmd(passthrough_data data);
 static void addfocustolayout();
 static void settiledmaster();
 static void setfloatingmode();
+static void updatebarslayout();
 
 #include "config.h"
 
@@ -255,7 +256,7 @@ struct client_t {
   monitor_t* mon;
   int32_t desktop;
 
-  bool urgent, ignoreunmap; 
+  bool urgent, ignoreunmap, ignoreexpose; 
 
   char* name;
 };
@@ -291,11 +292,12 @@ typedef struct {
   xcb_window_t root;
   xcb_screen_t* screen; 
 
-  struct timespec lastexposetime; 
+  float lastexposetime, lastmotiontime; 
 
   Display* dsp; 
   XVisualInfo* glvis;
   GLXContext glcontext;
+  bool initgl;
 
   LfState ui;
   LfTexture closeicon;
@@ -318,4 +320,5 @@ typedef struct {
 
   strut_t winstruts[MAX_STRUTS];
   uint32_t nwinstruts;
+
 } state_t;

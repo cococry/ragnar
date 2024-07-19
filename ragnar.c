@@ -118,7 +118,6 @@ static int32_t          compstrs(const void* a, const void* b);
 static void             strtoascii(char* str); 
 static void             initglcontext();
 static void             setglcontext(xcb_window_t win);
-static bool             isglextsupported(const char* extlist, const char* ext);
 
 
 // This needs to be included after the function definitions
@@ -149,8 +148,6 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_EXPOSE]              = evexpose,
 };
 
-// Define the function pointer for glXSwapIntervalEXT
-typedef void (*glXSwapIntervalEXTProc)(Display *, GLXDrawable, int);
 
 static state_t s;
 
@@ -195,16 +192,16 @@ setup() {
     titlebarheight = 0;
   }
 
-  s.lastexposetime = (struct timespec){0, 0};
+  s.lastexposetime = 0;
+  s.lastmotiontime = 0;
 
   s.curlayout = initlayout;
 
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s.dsp, XCBOwnsEventQueue);
-  if(usedecoration) {
-    // Initialize OpenGL
-    initglcontext();
-  }
+
+  s.initgl = false;
+
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s.con)).data;
   s.root = screen->root;
   s.screen = screen;
@@ -257,7 +254,7 @@ loop() {
 
   while (1) {
     // Poll for events without blocking
-    while ((ev = xcb_poll_for_event(s.con))) {
+    while ((ev = xcb_wait_for_event(s.con))) {
       uint8_t evcode = ev->response_type & ~0x80;
       /* If the event we receive is listened for by our 
        * event listeners, call the callback for the event. */
@@ -266,9 +263,6 @@ loop() {
       }
       free(ev);
     }
-    
-    // Sleep for a short period to prevent high CPU usage
-    usleep(event_polling_rate_ms * 1000); 
   }
 }
 
@@ -718,8 +712,6 @@ frameclient(client_t* cl) {
   }
   configclient(cl);
 
-  // Map the window on the screen
-  xcb_map_window(s.con, cl->frame);
 }
 
 
@@ -746,6 +738,8 @@ unfocusclient(client_t* cl) {
   setbordercolor(cl, winbordercolor);
   xcb_set_input_focus(s.con, XCB_INPUT_FOCUS_POINTER_ROOT, s.root, XCB_CURRENT_TIME);
   xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHactiveWindow]);
+
+  cl->ignoreexpose = false;
 }
 
 /**
@@ -858,9 +852,6 @@ evmaprequest(xcb_generic_event_t* ev) {
   // Set window type of client (e.g dialog)
   setwintype(cl);
 
-  // Set OpenGL context to the titlebar of the Window
-  setglcontext(cl->titlebar);
-
   // Set client's monitor
   cl->mon = clientmon(cl);
   cl->desktop = s.curdesktop[s.monfocus->idx];
@@ -882,10 +873,13 @@ evmaprequest(xcb_generic_event_t* ev) {
       s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
 
+  makelayout(cl->mon);
+
   // Map the window
   xcb_map_window(s.con, map_ev->window);
 
-  makelayout(cl->mon);
+  // Map the window on the screen
+  xcb_map_window(s.con, cl->frame);
 
   xcb_flush(s.con);
 }
@@ -1022,7 +1016,7 @@ evbuttonpress(xcb_generic_event_t* ev) {
         }
         free(attr_reply);
     } else {
-        // Handle error, unable to get window attributes
+        // Unable to get window attributes
         return;
     }
 
@@ -1060,6 +1054,8 @@ evbuttonpress(xcb_generic_event_t* ev) {
     s.grabwin = cl->area;
     s.grabcursor = (v2_t){.x = (float)button_ev->root_x, .y = (float)button_ev->root_y};
 
+    cl->ignoreexpose = false;
+
     // Raising the client to the top of the stack
     raiseclient(cl);
     xcb_flush(s.con);
@@ -1085,6 +1081,7 @@ evbuttonrelease(xcb_generic_event_t* ev) {
   if(button_ev->root_y <= 0) {
     setfullscreen(cl, true);
   }
+  cl->ignoreexpose = false;
   rendertitlebar(cl);
   xcb_flush(s.con);
 }
@@ -1101,24 +1098,11 @@ evmotionnotify(xcb_generic_event_t* ev) {
   // Throttle motiton notify events for performance and to avoid jiterring on certain 
   // high polling-rate mouses. We are only doing this if OpenGL decoration is enabled as 
   // rerendering the decoration too many times is the main bottleneck.
-  if(usedecoration) {
-    // Get the current time
-    struct timespec curtime;
-    clock_gettime(CLOCK_MONOTONIC, &curtime);
-
-    // Calculate the time difference between the current and last expose events
-    size_t diff = (curtime.tv_sec - s.lastexposetime.tv_sec) * 1000 +
-      (curtime.tv_nsec - s.lastexposetime.tv_nsec) / 1000000;
-
-    const uint32_t debounce = 1000 / motion_notify_debounce_fps;  
-    if (diff < debounce) {
-      // Skip handling this expose event
-      return;
-    }
-
-    // Update the last time
-    s.lastexposetime = curtime;
+  uint32_t curtime = motion_ev->time;
+  if((curtime - s.lastmotiontime) <= (1000 / motion_notify_debounce_fps)) {
+    return;
   }
+  s.lastmotiontime = curtime;
 
   if(motion_ev->event == s.root) {
     // Update the focused monitor to the monitor under the cursor
@@ -1127,7 +1111,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
     s.monfocus = mon;
     return;
   }
-  if(!(motion_ev->state & XCB_BUTTON_MASK_1 || motion_ev->state & XCB_BUTTON_MASK_3)) return;
+  if(!(motion_ev->state & resizebtn || motion_ev->state & movebtn)) return;
 
   // Position of the cursor in the drag event
   v2_t dragpos    = (v2_t){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
@@ -1147,10 +1131,11 @@ evmotionnotify(xcb_generic_event_t* ev) {
     }
     moveclient(cl, movedest);
 
-    // Remove the client from the layout when the user moved it 
-    cl->floating = true;
-    makelayout(cl->mon);
-
+    if(!cl->floating) {
+      // Remove the client from the layout when the user moved it 
+      cl->floating = true;
+      makelayout(cl->mon);
+    }
     xcb_flush(s.con);
     return;
   }
@@ -1175,11 +1160,14 @@ evmotionnotify(xcb_generic_event_t* ev) {
     v2_t sizedest = (v2_t){.x = s.grabwin.size.x + resizedelta.x, .y = s.grabwin.size.y + resizedelta.y};
 
     resizeclient(cl, sizedest);
+    cl->ignoreexpose = true;
   }
   
-  // Remove the client from the layout when the user moved it 
-  cl->floating = true;
-  makelayout(cl->mon);
+  if(!cl->floating) {
+    // Remove the client from the layout when the user moved it 
+    cl->floating = true;
+    makelayout(cl->mon);
+  }
 
   xcb_flush(s.con);
 }
@@ -1383,8 +1371,9 @@ void
 evexpose(xcb_generic_event_t* ev) {
   xcb_expose_event_t* expose_ev = (xcb_expose_event_t*)ev;
   client_t* cl = clientfromtitlebar(expose_ev->window);
-  if(!cl) return;
+  if(cl->ignoreexpose && !dynamic_rerender_on_resize) return;
   rendertitlebar(cl);
+  xcb_flush(s.con);
 }
 
 /**
@@ -1989,59 +1978,73 @@ loaddefaultcursor() {
 
 void
 setuptitlebar(client_t* cl) {
- /* This function is written with Xlib not xcb, as the decoration window 
-   * needs to be created with Xlib to get a working OpenGL context on it. */
   if(!usedecoration) return;
+
+  // Initialize OpenGL
+  if(!s.initgl) {
+    initglcontext();
+    s.initgl = true;
+  }
+
+  Colormap colormap = DefaultColormap(s.dsp, DefaultScreen(s.dsp));
+
+  // Initialize background color
+  XColor color;
+  color.red   = ((titlebarcolor >> 16) & 0xFF) * 256; 
+  color.green = ((titlebarcolor >> 8) & 0xFF) * 256;  
+  color.blue  = (titlebarcolor & 0xFF) * 256;
+  color.flags = DoRed | DoGreen | DoBlue;
+
+  // Allocate the color in the colormap
+  if (!XAllocColor(s.dsp, colormap, &color)) {
+    fprintf(stderr, "ragnar: unable to allocate X color.\n");
+    return;
+  }
+
 
   Window root = DefaultRootWindow(s.dsp);
   XSetWindowAttributes attribs;
-  attribs.colormap = XCreateColormap(s.dsp, s.root, s.glvis->visual, AllocNone);
+  attribs.colormap = XCreateColormap(s.dsp, s.root, s.glvis->visual, AllocNone); 
   attribs.event_mask = EnterWindowMask | ExposureMask | StructureNotifyMask;
+  attribs.background_pixel = color.pixel;
+
   cl->titlebar = (xcb_window_t)XCreateWindow(s.dsp, root, 0, 0, cl->area.size.x,
-                                             titlebarheight, 0, s.glvis->depth, InputOutput, s.glvis->visual,
-                                             CWColormap | CWEventMask, &attribs);
+		  titlebarheight, 0, s.glvis->depth, InputOutput, s.glvis->visual,
+		  CWColormap | CWEventMask | CWBackPixel, &attribs);
   XReparentWindow(s.dsp, cl->titlebar, cl->frame, 0, 0);
   XMapWindow(s.dsp, cl->titlebar);
+  XSync(s.dsp, false);
   // Grab Buttons
   {
-    unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
-    // Grab Button 1
-    XGrabButton(s.dsp, Button1, AnyModifier, cl->titlebar, 
-                False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
+	  unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
+	  // Grab Button 1
+	  XGrabButton(s.dsp, Button1, AnyModifier, cl->titlebar, 
+			  False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
 
-    // Grab Button 3
-    XGrabButton(s.dsp, Button3, AnyModifier, cl->titlebar, 
-                False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
+	  // Grab Button 3
+	  XGrabButton(s.dsp, Button3, AnyModifier, cl->titlebar, 
+			  False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
   }
 
-  {
-    setglcontext(cl->titlebar);
+  // Set OpenGL context
+  setglcontext(cl->titlebar);
 
-    const char* exts = glXQueryExtensionsString(s.dsp, DefaultScreen(s.dsp));
-    if (!isglextsupported(exts, "GLX_EXT_swap_control")) {
-      fprintf(stderr, "ragnar: GLX_EXT_swap_control is not supported.\n");
-      terminate();
-    }
-
-    // Load the glXSwapIntervalEXT function
-    glXSwapIntervalEXTProc glXSwapIntervalEXT = (glXSwapIntervalEXTProc)
-      glXGetProcAddressARB((const GLubyte *)"glXSwapIntervalEXT");
-    if (!glXSwapIntervalEXT) {
-      fprintf(stderr, "ragnar: failed to get glXSwapIntervalEXT function address.\n");
-      terminate();
-    }
-    // Disable VSync
-    glXSwapIntervalEXT(s.dsp, cl->titlebar, 0);
-
-    if(!s.ui.init) {
-      s.ui = lf_init_x11(cl->area.pos.x, titlebarheight);
-      lf_free_font(&s.ui.theme.font);
-      s.ui.theme.font = lf_load_font(fontpath, 24);
-      s.ui.theme.text_props.text_color = lf_color_from_hex(fontcolor);
-      s.closeicon = lf_load_texture(closeiconpath, LF_TEX_FILTER_LINEAR, false);
-    }
-    rendertitlebar(cl);
+  // Set GL swap interval which disables or enables vsync 
+  PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT = 
+    (PFNGLXSWAPINTERVALEXTPROC) glXGetProcAddress((const GLubyte*)"glXSwapIntervalEXT");
+  if (glXSwapIntervalEXT) {
+    glXSwapIntervalEXT(s.dsp, cl->titlebar, 0); // Set swap interval to 0 to disable V-Sync
+  } else {
+    fprintf(stderr, "GLX_EXT_swap_control not supported\n");
   }
+  if(!s.ui.init) {
+    s.ui = lf_init_x11(cl->area.pos.x, titlebarheight);
+    lf_free_font(&s.ui.theme.font);
+    s.ui.theme.font = lf_load_font(fontpath, 24);
+    s.ui.theme.text_props.text_color = lf_color_from_hex(fontcolor);
+    s.closeicon = lf_load_texture(closeiconpath, LF_TEX_FILTER_LINEAR, false);
+  }
+  rendertitlebar(cl);
 }
 
 void
@@ -2062,6 +2065,7 @@ rendertitlebar(client_t* cl) {
   glViewport(0, 0, cl->area.size.x, titlebarheight);
 
   lf_begin(&s.ui);
+  // Render client name
   {
     // Get client name
     bool namevalid = (cl->name && strlen(cl->name));
@@ -2081,6 +2085,7 @@ rendertitlebar(client_t* cl) {
     lf_text(&s.ui, displayname); 
     lf_pop_style_props(&s.ui);
   }
+  // Render close button
   {
     uint32_t width = 12;
     float margin = 15;
@@ -2558,6 +2563,14 @@ setfloatingmode() {
   makelayout(s.monfocus);
 }
 
+void
+updatebarslayout() {
+  // Gather strut information 
+  s.nwinstruts = 0;
+  getwinstruts(s.root);
+  makelayout(s.monfocus);
+}
+
 /**
  * @brief Retrieves an intern X atom by name.
  *
@@ -2629,74 +2642,34 @@ compstrs(const void* a, const void* b) {
  * */
 void 
 initglcontext() {
-  static int32_t visattribs[] = {
-    GLX_X_RENDERABLE, True,
-    GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
-    GLX_RENDER_TYPE, GLX_RGBA_BIT,
-    GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
-    GLX_RED_SIZE, 8,
-    GLX_GREEN_SIZE, 8,
-    GLX_BLUE_SIZE, 8,
-    GLX_ALPHA_SIZE, 8,
-    GLX_DEPTH_SIZE, 24,
-    GLX_STENCIL_SIZE, 8,
-    GLX_DOUBLEBUFFER, True,
-    None
-  };
+  /* Create an OpenGL context */
+  GLint attribs[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None };
 
-  int fbcount;
-  GLXFBConfig* fbconfs = glXChooseFBConfig(s.dsp, DefaultScreen(s.dsp), visattribs, &fbcount);
-  if(!fbconfs) {
-    fprintf(stderr, "rangar: cannot retrieve an OpenGL framebuffer config.\n");
-    terminate();
+  int screen_num = DefaultScreen(s.dsp);
+  s.glvis = glXChooseVisual(s.dsp, screen_num, attribs);
+  if (!s.glvis) {
+    fprintf(stderr, "ragnar: no appropriate OpenGL visual found\n");
+    return;
   }
 
-  GLXFBConfig glfbconf = fbconfs[0];
-  XFree(fbconfs);
-
-  s.glvis = glXGetVisualFromFBConfig(s.dsp, glfbconf);
-  if(!s.glvis) {
-    fprintf(stderr, "ragnar: no appropriate OpenGL visual found.\n");
-    terminate();
-  }
-
-  s.glcontext = glXCreateContext(s.dsp, s.glvis, NULL, GL_TRUE);
-  if(!s.glvis) {
-    fprintf(stderr, "ragnar: failed to create an OpenGL context.\n");
-    terminate();
-  }
+  s.glcontext = glXCreateContext(s.dsp, s.glvis, NULL, GL_TRUE); 
 }
 
 void
 setglcontext(xcb_window_t win) {
-  if(!usedecoration) return;
-  glXMakeCurrent(s.dsp, (GLXDrawable)win, s.glcontext);
-}
+  // Get the current drawable and context
+  GLXDrawable curwin = glXGetCurrentDrawable();
+  GLXContext curcontext = glXGetCurrentContext();
 
-bool 
-isglextsupported(const char* extlist, const char* ext) {
-  const char* start;
-  const char* where, *terminator;
-
-  where = strchr(ext, ' ');
-  if (where || *ext == '\0')
-    return 0;
-
-  for (start = extlist;;) {
-    where = strstr(start, ext);
-    if (!where)
-      break;
-
-    terminator = where + strlen(ext);
-    if (where == start || *(where - 1) == ' ') {
-      if (*terminator == ' ' || *terminator == '\0') {
-        return 1;
-      }
+  // Check if the current drawable and context match the desired ones
+  if (curwin != win || curcontext != s.glcontext) {
+    // Make the given window and context the current drawable
+    if (!glXMakeCurrent(s.dsp, win, s.glcontext)) {
+      fprintf(stderr, "ragnar: failed to make OpenGL window context.\n");
     }
-    start = terminator;
   }
-  return 0;
 }
+
 
 int 
 main() {
@@ -2710,4 +2683,3 @@ main() {
   terminate();
   return EXIT_SUCCESS;
 }
-

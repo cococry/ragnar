@@ -2,10 +2,10 @@
 #include "structs.h"
 
 /* Window properties */
-static const int32_t        winborderwidth            = 3;
+static const int32_t        winborderwidth            = 1;
 static const int32_t        winbordercolor            = 0x555555;
 static const int32_t        winbordercolor_selected   = 0x777777;
-static const int32_t        winlayoutgap              = 10;
+static const int32_t        winlayoutgap              = 5;
 static const layout_type_t  initlayout                = LayoutTiledMaster;
 
 
@@ -37,7 +37,7 @@ static const uint32_t iconcolor       = 0xeeeeee;
 
 #define TERMINAL_CMD    "alacritty &"
 #define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
-#define BROWSER_CMD     "firefox &"
+#define BROWSER_CMD     "brave &"
 #define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */
@@ -79,7 +79,8 @@ static const keybind keybinds[] = {
   /* Layout shortcuts */
   {modkey | Shift,  KeyT,       settiledmaster,    { NULL }},
   {modkey | Shift,  KeyR,       setfloatingmode,   { NULL }},
-  {modkey,          KeySpace,   addfocustolayout,   { NULL }},
+  {modkey,          KeySpace,   addfocustolayout,  { NULL }},
+  {modkey | Shift,  KeyB,   	updatebarslayout,  { NULL }},
 
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd, { .cmd = TERMINAL_CMD }},
@@ -92,13 +93,17 @@ static const keybind keybinds[] = {
 
 // The FPS rate at which motion notify events are processed
 static const size_t motion_notify_debounce_fps = 60;
-// The delay between event polls (used to avoid high CPU usage)
-static const uint32_t event_polling_rate_ms = 10;
 // Specifies if non ASCII characters should be rendered on the titlebar 
 // Turning this on can lead to unexpected behaviour in some clients.
 static const uint32_t decoration_render_non_ascii = false;
 // The character that is rendered instead of a non-ASCII character 
 static const char non_ascii_replacement = ' ';
+// Specifies if clients that are interactivly resized should re-render their
+// decoration dynamically for every resize or just rerender once the interactive 
+// resize operation has finished. Setting this to false can help with performance on 
+// either low end system or some versions of propriatary NVIDIA drivers as they cannot 
+// handle multiple OpenGL contexts well.
+static const bool dynamic_rerender_on_resize = true;
 
 // The maximum number of struts that are noticed by the layouts
 // (Struts define the area that a window takes up) This is usefull for 
