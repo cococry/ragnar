@@ -44,6 +44,7 @@ static void             resizeclient(client_t* cl, v2_t size);
 static void             moveresizeclient(client_t* cl, area_t a);
 static void             raiseclient(client_t* cl);
 static bool             clienthasdeleteatom(client_t* cl);
+static bool             clientonscreen(client_t* cl, monitor_t* mon);
 static char*            getclientname(client_t* cl);
 static void             killclient(client_t* cl);
 static void             focusclient(client_t* cl);
@@ -62,6 +63,7 @@ static void             setfullscreen(client_t* cl, bool fullscreen);
 static void             switchclientdesktop(client_t* cl, int32_t desktop);
 
 static void             makelayout(monitor_t* mon);
+static void             cycleuplayout(monitor_t* mon);
 static void             tiledmaster(monitor_t* mon);
 
 static void             uploaddesktopnames();
@@ -544,6 +546,19 @@ clienthasdeleteatom(client_t* cl) {
 	}
 
 	return ret;
+}
+
+/**
+ * @brief Checks if a client is on a given monitor and if it is 
+ * currently visible (on the current desktop) 
+ *
+ * @param cl The client to check visibility for 
+ *
+ * @return Whether or not the given client is visible and on the given monitor 
+ */
+bool 
+clientonscreen(client_t* cl, monitor_t* mon) {
+  return cl->mon == mon && cl->desktop == s.curdesktop[cl->mon->idx];
 }
 
 /**
@@ -1377,16 +1392,16 @@ evexpose(xcb_generic_event_t* ev) {
 }
 
 /**
- * @brief Cycles the currently focused client 
+ * @brief Cycles the currently focused client one down 
  */
 void
-cyclefocus() {
+cyclefocusdown() {
   if (!s.clients || !s.focus)
     return;
   client_t* next = NULL;
   // Find the next client on the current monitor & desktop 
   for(client_t* cl = s.focus->next; cl != NULL; cl = cl->next) {
-    if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
+    if(clientonscreen(cl, s.monfocus)) {
       next = cl;
       break;
     }
@@ -1401,7 +1416,7 @@ cyclefocus() {
   // current monitor & desktop
   else {
     for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-      if(cl->mon == s.monfocus && cl->desktop == s.curdesktop[s.monfocus->idx]) {
+      if(clientonscreen(cl, s.monfocus)) {
         next = cl;
         break;
       }
@@ -1414,6 +1429,45 @@ cyclefocus() {
   }
 }
 
+/**
+ * @brief Cycles the currently focused client one up
+ */
+void
+cyclefocusup() {
+  // Return if there are no clients or no focus
+  if (!s.clients || !s.focus)
+    return;
+
+  client_t* next = NULL;
+  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+    // Check if the client after the iterating client is the focused
+    // client, making it the client after the focus.
+    if(clientonscreen(cl, s.monfocus) && cl->next == s.focus) {
+      next = cl;
+      break;
+    }
+    // Check if the current client is the focused client 
+    // and cycling to the last client that is onscreen to wrap 
+    // around.
+    if(clientonscreen(cl, s.monfocus) && cl == s.focus) {
+      for(client_t* cl2 = s.clients; cl2 != NULL; cl2 = cl2->next) {
+        if(clientonscreen(cl2, s.monfocus) &&
+          (!cl2->next || (cl2->next && 
+          cl2->next->desktop != s.curdesktop[s.monfocus->idx]))) {
+          next = cl2;
+          break;
+        }
+      }
+      break;
+    }
+  }
+  if(!next) {
+    next = s.focus;
+  }
+
+  focusclient(next);
+  raiseclient(next);
+}
 /**
  * @brief Raises the currently focused client
  */
@@ -1614,6 +1668,11 @@ makelayout(monitor_t* mon) {
     }
   }
  }
+
+void 
+cycleuplayout(monitor_t* mon) {
+
+}
 
 /**
  * @brief Establishes a tiled master layout for the windows that are 

@@ -209,7 +209,8 @@ typedef struct {
 typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 
 static void terminate();
-static void cyclefocus();
+static void cyclefocusup();
+static void cyclefocusdown();
 static void killfocus();
 static void togglefullscreen();
 static void raisefocus();

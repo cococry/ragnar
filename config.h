@@ -37,18 +37,19 @@ static const uint32_t iconcolor       = 0xeeeeee;
 
 #define TERMINAL_CMD    "alacritty &"
 #define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
-#define BROWSER_CMD     "brave &"
+#define BROWSER_CMD     "firefox &"
 #define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */
 static const keybind keybinds[] = {
 /* Modifier   | Key       | Callback              | Command */ 
-  {modkey,     KeyEscape,  terminate,               { NULL }},
+  {modkey,          KeyEscape,  terminate,          { NULL }},
   /* Clients */
-  {modkey,     KeyTab,     cyclefocus,              { NULL }},
-  {modkey,     KeyQ,       killfocus,               { NULL }},
-  {modkey,     KeyF,       togglefullscreen,        { NULL }},
-  {modkey,     KeyR,       raisefocus,              { NULL }},
+  {modkey,          KeyTab,     cyclefocusdown,     { NULL }},
+  {modkey | Shift,  KeyTab,     cyclefocusup,       { NULL }},
+  {modkey,          KeyQ,       killfocus,          { NULL }},
+  {modkey,          KeyF,       togglefullscreen,   { NULL }},
+  {modkey,          KeyR,       raisefocus,         { NULL }},
   /* Desktops */
   {modkey,     KeyD,       cycledesktopup,          { NULL }},
   {modkey,     KeyA,       cycledesktopdown,        { NULL }},
