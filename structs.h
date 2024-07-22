@@ -225,6 +225,8 @@ static void addfocustolayout();
 static void settiledmaster();
 static void setfloatingmode();
 static void updatebarslayout();
+static void cycleuplayout();
+static void cycledownlayout();
 
 #include "config.h"
 

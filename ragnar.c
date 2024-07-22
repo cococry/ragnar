@@ -63,7 +63,6 @@ static void             setfullscreen(client_t* cl, bool fullscreen);
 static void             switchclientdesktop(client_t* cl, int32_t desktop);
 
 static void             makelayout(monitor_t* mon);
-static void             cycleuplayout(monitor_t* mon);
 static void             tiledmaster(monitor_t* mon);
 
 static void             uploaddesktopnames();
@@ -1407,10 +1406,10 @@ cyclefocusdown() {
     }
   }
 
-  // If there is a next client, just focus it
   if (next != NULL) {
     focusclient(next);
     raiseclient(next);
+    return;
   }
   // If there is no next client, cycle back to the first client on the 
   // current monitor & desktop
@@ -1421,11 +1420,13 @@ cyclefocusdown() {
         break;
       }
     }
-    // If there is one, focus it
-    if (next != NULL) {
-      focusclient(next);
-      raiseclient(next);
-    }
+  }
+
+
+  // If there is a next client, just focus it
+  if (next != NULL) {
+    focusclient(next);
+    raiseclient(next);
   }
 }
 
@@ -1670,8 +1671,34 @@ makelayout(monitor_t* mon) {
  }
 
 void 
-cycleuplayout(monitor_t* mon) {
+cycleuplayout() {
 
+}
+
+void
+cycledownlayout() {
+  if (!s.clients || !s.focus)
+    return;
+  client_t* next = NULL;
+  // Find the next client on the current monitor & desktop 
+  for(client_t* cl = s.focus->next; cl != NULL; cl = cl->next) {
+    if(clientonscreen(cl, s.monfocus)) {
+      next = cl;
+      break;
+    }
+  }
+  // If there is no next client, cycle back to the first client on the 
+  // current monitor & desktop
+  if(!next) {
+    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+      if(clientonscreen(cl, s.monfocus)) {
+        next = cl;
+        break;
+      }
+    }
+  }
+  // TODO: Swap clients
+  makelayout(s.monfocus);
 }
 
 /**

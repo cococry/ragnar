@@ -81,7 +81,9 @@ static const keybind keybinds[] = {
   {modkey | Shift,  KeyT,       settiledmaster,    { NULL }},
   {modkey | Shift,  KeyR,       setfloatingmode,   { NULL }},
   {modkey,          KeySpace,   addfocustolayout,  { NULL }},
-  {modkey | Shift,  KeyB,   	updatebarslayout,  { NULL }},
+  {modkey | Shift,  KeyB,   	  updatebarslayout,  { NULL }},
+  {modkey,  KeyJ,   	          cycledownlayout,  { NULL }},
+  {modkey,  KeyK,   	          cycleuplayout,  { NULL }},
 
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd, { .cmd = TERMINAL_CMD }},
