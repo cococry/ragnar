@@ -5,7 +5,7 @@
 static const int32_t        winborderwidth            = 1;
 static const int32_t        winbordercolor            = 0x555555;
 static const int32_t        winbordercolor_selected   = 0x777777;
-static const int32_t        winlayoutgap              = 5;
+static const int32_t        winlayoutgap              = 0;
 static const layout_type_t  initlayout                = LayoutTiledMaster;
 
 
@@ -31,13 +31,13 @@ static const bool     usedecoration   = true;
 static uint32_t       titlebarheight  = 30;
 static const int32_t  titlebarcolor   = 0x282828;
 static const int32_t  fontcolor       = 0xeeeeee;
-static const char*    fontpath        = "/usr/share/ragnarwm/fonts/LilexNerdFont-Bold.ttf";
+static const char*    fontpath        = "/usr/share/ragnarwm/fonts/LilexNerdFont-Medium.ttf";
 static const char*    closeiconpath   = "/usr/share/ragnarwm/icons/close.png";
 static const uint32_t iconcolor       = 0xeeeeee;
 
 #define TERMINAL_CMD    "alacritty &"
 #define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
-#define BROWSER_CMD     "firefox &"
+#define BROWSER_CMD     "brave &"
 #define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */

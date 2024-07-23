@@ -58,12 +58,15 @@ static void             showclient(client_t* cl);
 static bool             raiseevent(client_t* cl, xcb_atom_t protocol);
 static void             setwintype(client_t* cl);
 static void             seturgent(client_t* cl, bool urgent);
+static client_t*	nextvisible(bool tiled);
+static client_t*	prevvisible(bool tiled);
 static xcb_atom_t       getclientprop(client_t* cl, xcb_atom_t prop);
 static void             setfullscreen(client_t* cl, bool fullscreen);
 static void             switchclientdesktop(client_t* cl, int32_t desktop);
 
 static void             makelayout(monitor_t* mon);
 static void             tiledmaster(monitor_t* mon);
+static void 		swapclients(client_t* c1, client_t* c2);
 
 static void             uploaddesktopnames();
 static void             createdesktop(uint32_t idx, monitor_t* mon);
@@ -210,14 +213,14 @@ setup() {
   /* Setting event mask for root window */
   uint32_t evmask[] = {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-    XCB_EVENT_MASK_STRUCTURE_NOTIFY |
-    XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-    XCB_EVENT_MASK_ENTER_WINDOW |
-    XCB_EVENT_MASK_FOCUS_CHANGE | 
-    XCB_EVENT_MASK_POINTER_MOTION
+      XCB_EVENT_MASK_STRUCTURE_NOTIFY |
+      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+      XCB_EVENT_MASK_ENTER_WINDOW |
+      XCB_EVENT_MASK_FOCUS_CHANGE | 
+      XCB_EVENT_MASK_POINTER_MOTION
   };
   xcb_change_window_attributes_checked(s.con, s.root, XCB_CW_EVENT_MASK, evmask);
-  
+
   // Load the default root cursor image
   loaddefaultcursor();
 
@@ -260,7 +263,7 @@ loop() {
       /* If the event we receive is listened for by our 
        * event listeners, call the callback for the event. */
       if (evcode < ARRLEN(evhandlers) && evhandlers[evcode]) {
-        evhandlers[evcode](ev);
+	evhandlers[evcode](ev);
       }
       free(ev);
     }
@@ -309,9 +312,9 @@ terminate() {
 bool
 pointinarea(v2_t p, area_t area) {
   return (p.x >= area.pos.x &&
-  p.x < (area.pos.x + area.size.x) &&
-  p.x >= area.pos.y &&
-  p.y < (area.pos.y + area.size.y));
+      p.x < (area.pos.x + area.size.x) &&
+      p.x >= area.pos.y &&
+      p.y < (area.pos.y + area.size.y));
 }
 
 /**
@@ -377,9 +380,9 @@ winarea(xcb_window_t win, bool* success) {
  */
 float
 getoverlaparea(area_t a, area_t b) {
-    float x = MAX(0, MIN(a.pos.x + a.size.x, b.pos.x + b.size.x) - MAX(a.pos.x, b.pos.x));
-    float y = MAX(0, MIN(a.pos.y + a.size.y, b.pos.y + b.size.y) - MAX(a.pos.y, b.pos.y));
-    return x * y;
+  float x = MAX(0, MIN(a.pos.x + a.size.x, b.pos.x + b.size.x) - MAX(a.pos.x, b.pos.x));
+  float y = MAX(0, MIN(a.pos.y + a.size.y, b.pos.y + b.size.y) - MAX(a.pos.y, b.pos.y));
+  return x * y;
 }
 
 /**
@@ -492,10 +495,10 @@ moveresizeclient(client_t* cl, area_t a) {
 
   // Move and resize the window by configuring its x, y, width, and height properties
   xcb_configure_window(s.con, cl->frame, 
-                       XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | 
-                       XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values);
+      XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | 
+      XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values);
   xcb_configure_window(s.con, cl->win, 
-                       XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values_content);
+      XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values_content);
 
   // Update clients area
   cl->area = a;
@@ -532,19 +535,19 @@ raiseclient(client_t* cl) {
  */
 bool 
 clienthasdeleteatom(client_t* cl) {
-	bool ret = false;
-	xcb_icccm_get_wm_protocols_reply_t reply;
+  bool ret = false;
+  xcb_icccm_get_wm_protocols_reply_t reply;
 
-	if(xcb_icccm_get_wm_protocols_reply(s.con, xcb_icccm_get_wm_protocols_unchecked(s.con, cl->win, s.wm_atoms[WMprotocols]), &reply, NULL)) {
-		for(uint32_t i = 0; !ret && i < reply.atoms_len; i++) {
-			if(reply.atoms[i] == s.wm_atoms[WMdelete]) {
-				ret = true;
-			}
-		}
-		xcb_icccm_get_wm_protocols_reply_wipe(&reply);
-	}
+  if(xcb_icccm_get_wm_protocols_reply(s.con, xcb_icccm_get_wm_protocols_unchecked(s.con, cl->win, s.wm_atoms[WMprotocols]), &reply, NULL)) {
+    for(uint32_t i = 0; !ret && i < reply.atoms_len; i++) {
+      if(reply.atoms[i] == s.wm_atoms[WMdelete]) {
+	ret = true;
+      }
+    }
+    xcb_icccm_get_wm_protocols_reply_wipe(&reply);
+  }
 
-	return ret;
+  return ret;
 }
 
 /**
@@ -569,24 +572,24 @@ clientonscreen(client_t* cl, monitor_t* mon) {
  */
 char* 
 getclientname(client_t* cl) {
-    xcb_icccm_get_text_property_reply_t prop;
-    // Try to get _NET_WM_NAME
-    xcb_get_property_cookie_t cookie = xcb_icccm_get_text_property(s.con, cl->win, XCB_ATOM_WM_NAME);
-    if (xcb_icccm_get_text_property_reply(s.con, cookie, &prop, NULL)) {
-        char* name = strndup(prop.name, prop.name_len);
-        xcb_icccm_get_text_property_reply_wipe(&prop);
-        return name;
-    }
+  xcb_icccm_get_text_property_reply_t prop;
+  // Try to get _NET_WM_NAME
+  xcb_get_property_cookie_t cookie = xcb_icccm_get_text_property(s.con, cl->win, XCB_ATOM_WM_NAME);
+  if (xcb_icccm_get_text_property_reply(s.con, cookie, &prop, NULL)) {
+    char* name = strndup(prop.name, prop.name_len);
+    xcb_icccm_get_text_property_reply_wipe(&prop);
+    return name;
+  }
 
-    // If _NET_WM_NAME is not available, try WM_NAME
-    cookie = xcb_icccm_get_text_property(s.con, cl->win, XCB_ATOM_WM_NAME);
-    if (xcb_icccm_get_text_property_reply(s.con, cookie, &prop, NULL)) {
-        char *name = strndup(prop.name, prop.name_len);
-        xcb_icccm_get_text_property_reply_wipe(&prop);
-        return name;
-    }
+  // If _NET_WM_NAME is not available, try WM_NAME
+  cookie = xcb_icccm_get_text_property(s.con, cl->win, XCB_ATOM_WM_NAME);
+  if (xcb_icccm_get_text_property_reply(s.con, cookie, &prop, NULL)) {
+    char *name = strndup(prop.name, prop.name_len);
+    xcb_icccm_get_text_property_reply_wipe(&prop);
+    return name;
+  }
 
-    return NULL;
+  return NULL;
 }
 
 /**
@@ -641,6 +644,8 @@ focusclient(client_t* cl) {
     return;
   }
 
+  s.ignore_enter_layout = false;
+
   // Unfocus the previously focused window to ensure that there is only
   // one focused (highlighted) window at a time.
   if(s.focus) {
@@ -676,7 +681,7 @@ setxfocus(client_t* cl) {
 
   // Set active window hint
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHactiveWindow],
-                      XCB_ATOM_WINDOW, 32, 1, &cl->win);
+      XCB_ATOM_WINDOW, 32, 1, &cl->win);
 
   // Raise take-focus event
   raiseevent(cl, s.wm_atoms[WMtakeFocus]);
@@ -696,17 +701,17 @@ frameclient(client_t* cl) {
     uint32_t mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
     uint32_t values[2] = {1, 
       XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-      XCB_EVENT_MASK_STRUCTURE_NOTIFY |
-      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-      XCB_EVENT_MASK_PROPERTY_CHANGE |
-      XCB_EVENT_MASK_ENTER_WINDOW |
-      XCB_EVENT_MASK_FOCUS_CHANGE |
-      XCB_EVENT_MASK_BUTTON_PRESS};
+	XCB_EVENT_MASK_STRUCTURE_NOTIFY |
+	XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+	XCB_EVENT_MASK_PROPERTY_CHANGE |
+	XCB_EVENT_MASK_ENTER_WINDOW |
+	XCB_EVENT_MASK_FOCUS_CHANGE |
+	XCB_EVENT_MASK_BUTTON_PRESS};
 
     xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->frame, s.root,
-                      cl->area.pos.x, cl->area.pos.y, cl->area.size.x, cl->area.size.y,
-                      1, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT,
-                      mask, values);
+	cl->area.pos.x, cl->area.pos.y, cl->area.size.x, cl->area.size.y,
+	1, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT,
+	mask, values);
 
   }
 
@@ -836,7 +841,7 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Setup listened events for the mapped window
   {
-    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_PROPERTY_CHANGE };
+    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_PROPERTY_CHANGE };
     xcb_change_window_attributes_checked(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
   }
 
@@ -844,11 +849,10 @@ evmaprequest(xcb_generic_event_t* ev) {
   {
     uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
     xcb_grab_button(s.con, 0, map_ev->window, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s.root, XCB_NONE, 1, winmod);
+	s.root, XCB_NONE, 1, winmod);
     xcb_grab_button(s.con, 0, map_ev->window, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s.root, XCB_NONE, 3, winmod);
+	s.root, XCB_NONE, 3, winmod);
   }
-
 
   // Retrieving cursor position
   bool cursor_success;
@@ -873,27 +877,29 @@ evmaprequest(xcb_generic_event_t* ev) {
   // Update the EWMH client list
   ewmh_updateclients();
 
-  // If the cursor is on the mapped window when it spawned, focus it.
-  if(pointinarea(cursor, cl->area)) {
-    focusclient(cl);
-  }
   bool success;
   cl->area = winarea(cl->frame, &success);
   if(!success) return;
-  if(s.monfocus && s.curlayout == LayoutFloating) {
+
+  if(s.monfocus) {
     // Spawn the window in the center of the focused monitor
     moveclient(cl, (v2_t){
-      s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
-      s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
+	s.monfocus->area.pos.x + (s.monfocus->area.size.x - cl->area.size.x) / 2.0f, 
+	s.monfocus->area.pos.y + (s.monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
 
-  makelayout(cl->mon);
+  makelayout(s.monfocus);
 
   // Map the window
   xcb_map_window(s.con, map_ev->window);
 
   // Map the window on the screen
   xcb_map_window(s.con, cl->frame);
+
+  // If the cursor is on the mapped window when it spawned, focus it.
+  if(pointinarea(cursor, cl->area)) {
+    focusclient(cl);
+  }
 
   xcb_flush(s.con);
 }
@@ -950,13 +956,15 @@ evdestroynotify(xcb_generic_event_t* ev) {
 void 
 eventernotify(xcb_generic_event_t* ev) {
   xcb_enter_notify_event_t *enter_ev = (xcb_enter_notify_event_t*)ev;
+  if(s.ignore_enter_layout) return;
 
   if((enter_ev->mode != XCB_NOTIFY_MODE_NORMAL || enter_ev->detail == XCB_NOTIFY_DETAIL_INFERIOR)
-    && enter_ev->event != s.root) {
+      && enter_ev->event != s.root) {
     return;
   }
 
   client_t* cl = clientfromwin(enter_ev->event);
+
 
   if(!cl) {
     if(!(cl = clientfromtitlebar(enter_ev->event)) && enter_ev->event != s.root) return;
@@ -973,7 +981,7 @@ eventernotify(xcb_generic_event_t* ev) {
     client_t* cl;
     for (cl = s.clients; cl != NULL; cl = cl->next) {
       if(cl->fullscreen) {
-        continue;
+	continue;
       }
       setbordercolor(cl, winbordercolor);
       setborderwidth(cl, winborderwidth);
@@ -1002,7 +1010,7 @@ evkeypress(xcb_generic_event_t* ev) {
     // If it was pressed, call the callback of the keybind
     if ((keysym == keybinds[i].key) && (e->state == keybinds[i].modmask)) {
       if(keybinds[i].cb) {
-        keybinds[i].cb(keybinds[i].data);
+	keybinds[i].cb(keybinds[i].data);
       }
     }
   }
@@ -1017,62 +1025,62 @@ evkeypress(xcb_generic_event_t* ev) {
  */
 void
 evbuttonpress(xcb_generic_event_t* ev) {
-    xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
+  xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
 
-    // Get the window attributes
-    xcb_get_window_attributes_cookie_t attr_cookie = xcb_get_window_attributes(s.con, button_ev->event);
-    xcb_get_window_attributes_reply_t* attr_reply = xcb_get_window_attributes_reply(s.con, attr_cookie, NULL);
+  // Get the window attributes
+  xcb_get_window_attributes_cookie_t attr_cookie = xcb_get_window_attributes(s.con, button_ev->event);
+  xcb_get_window_attributes_reply_t* attr_reply = xcb_get_window_attributes_reply(s.con, attr_cookie, NULL);
 
-    if (attr_reply) {
-        if (attr_reply->override_redirect) {
-            free(attr_reply);
-            return; // Do nothing if override_redirect is set
-        }
-        free(attr_reply);
-    } else {
-        // Unable to get window attributes
-        return;
+  if (attr_reply) {
+    if (attr_reply->override_redirect) {
+      free(attr_reply);
+      return; // Do nothing if override_redirect is set
     }
+    free(attr_reply);
+  } else {
+    // Unable to get window attributes
+    return;
+  }
 
-    client_t* cl = clientfromwin(button_ev->event);
-    if (!cl) {
-        cl = clientfromtitlebar(button_ev->event);
-        if (!cl) return;
-        v2_t cursorpos = (v2_t){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
-        area_t closebtnarea = (area_t){
-            .pos = cl->closebutton,
-            .size = (v2_t){30, titlebarheight}
-        };
-        if (pointinarea(cursorpos, closebtnarea)) {
-            killclient(cl);
-            return;
-        }
-        focusclient(cl);
-    } else {
-        // Focusing client 
-        if (cl != s.focus) {
-            // Unfocus the previously focused window to ensure that there is only
-            // one focused (highlighted) window at a time.
-            if (s.focus) {
-                unfocusclient(s.focus);
-            }
-            focusclient(cl);
-        }
+  client_t* cl = clientfromwin(button_ev->event);
+  if (!cl) {
+    cl = clientfromtitlebar(button_ev->event);
+    if (!cl) return;
+    v2_t cursorpos = (v2_t){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
+    area_t closebtnarea = (area_t){
+      .pos = cl->closebutton,
+	.size = (v2_t){30, titlebarheight}
+    };
+    if (pointinarea(cursorpos, closebtnarea)) {
+      killclient(cl);
+      return;
     }
-    bool success;
-    area_t area = winarea(cl->frame, &success);
-    if(!success) return;
+    focusclient(cl);
+  } else {
+    // Focusing client 
+    if (cl != s.focus) {
+      // Unfocus the previously focused window to ensure that there is only
+      // one focused (highlighted) window at a time.
+      if (s.focus) {
+	unfocusclient(s.focus);
+      }
+      focusclient(cl);
+    }
+  }
+  bool success;
+  area_t area = winarea(cl->frame, &success);
+  if(!success) return;
 
-    cl->area = area;
-    // Setting grab position
-    s.grabwin = cl->area;
-    s.grabcursor = (v2_t){.x = (float)button_ev->root_x, .y = (float)button_ev->root_y};
+  cl->area = area;
+  // Setting grab position
+  s.grabwin = cl->area;
+  s.grabcursor = (v2_t){.x = (float)button_ev->root_x, .y = (float)button_ev->root_y};
 
-    cl->ignoreexpose = false;
+  cl->ignoreexpose = false;
 
-    // Raising the client to the top of the stack
-    raiseclient(cl);
-    xcb_flush(s.con);
+  // Raising the client to the top of the stack
+  raiseclient(cl);
+  xcb_flush(s.con);
 }
 
 void
@@ -1083,7 +1091,7 @@ evbuttonrelease(xcb_generic_event_t* ev) {
   if(cl && usedecoration) {
     for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
       if(cl->showtitlebar) {
-        rendertitlebar(cl);
+	rendertitlebar(cl);
       }
     }
     return;
@@ -1110,13 +1118,16 @@ void
 evmotionnotify(xcb_generic_event_t* ev) {
   xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
   // Throttle motiton notify events for performance and to avoid jiterring on certain 
-  // high polling-rate mouses. We are only doing this if OpenGL decoration is enabled as 
-  // rerendering the decoration too many times is the main bottleneck.
+  // high polling-rate mouses.   
   uint32_t curtime = motion_ev->time;
   if((curtime - s.lastmotiontime) <= (1000 / motion_notify_debounce_fps)) {
     return;
   }
   s.lastmotiontime = curtime;
+
+  if(s.ignore_enter_layout) {
+    s.ignore_enter_layout = false;
+  }
 
   if(motion_ev->event == s.root) {
     // Update the focused monitor to the monitor under the cursor
@@ -1176,7 +1187,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
     resizeclient(cl, sizedest);
     cl->ignoreexpose = true;
   }
-  
+
   if(!cl->floating) {
     // Remove the client from the layout when the user moved it 
     cl->floating = true;
@@ -1234,29 +1245,30 @@ evconfigrequest(xcb_generic_event_t* ev) {
     // Configure the window with the specified values
     xcb_configure_window(s.con, config_ev->window, mask, values);
   } else {
+    if(s.curlayout != LayoutFloating && !cl->floating) return;
     {
       uint16_t mask = 0;
       uint32_t values[5];
       uint32_t i = 0;
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
-        mask |= XCB_CONFIG_WINDOW_WIDTH;
-        values[i++] = config_ev->width;
+	mask |= XCB_CONFIG_WINDOW_WIDTH;
+	values[i++] = config_ev->width;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
-        mask |= XCB_CONFIG_WINDOW_HEIGHT;
-        values[i++] = config_ev->height;
+	mask |= XCB_CONFIG_WINDOW_HEIGHT;
+	values[i++] = config_ev->height;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
-        mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
-        values[i++] = config_ev->border_width;
+	mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
+	values[i++] = config_ev->border_width;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_SIBLING) {
-        mask |= XCB_CONFIG_WINDOW_SIBLING;
-        values[i++] = config_ev->sibling;
+	mask |= XCB_CONFIG_WINDOW_SIBLING;
+	values[i++] = config_ev->sibling;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) {
-        mask |= XCB_CONFIG_WINDOW_STACK_MODE;
-        values[i++] = config_ev->stack_mode;
+	mask |= XCB_CONFIG_WINDOW_STACK_MODE;
+	values[i++] = config_ev->stack_mode;
       }
       xcb_configure_window(s.con, cl->frame, mask, values);
     }
@@ -1269,24 +1281,24 @@ evconfigrequest(xcb_generic_event_t* ev) {
       values[i++] = 0;
       values[i++] = ((cl->showtitlebar) ?  titlebarheight : 0.0f);
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
-        mask |= XCB_CONFIG_WINDOW_WIDTH;
-        values[i++] = config_ev->width;
+	mask |= XCB_CONFIG_WINDOW_WIDTH;
+	values[i++] = config_ev->width;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
-        mask |= XCB_CONFIG_WINDOW_HEIGHT;
-        values[i++] = config_ev->height - ((cl->showtitlebar ? titlebarheight : 0.0f));
+	mask |= XCB_CONFIG_WINDOW_HEIGHT;
+	values[i++] = config_ev->height - ((cl->showtitlebar ? titlebarheight : 0.0f));
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
-        mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
-        values[i++] = config_ev->border_width;
+	mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
+	values[i++] = config_ev->border_width;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_SIBLING) {
-        mask |= XCB_CONFIG_WINDOW_SIBLING;
-        values[i++] = config_ev->sibling;
+	mask |= XCB_CONFIG_WINDOW_SIBLING;
+	values[i++] = config_ev->sibling;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) {
-        mask |= XCB_CONFIG_WINDOW_STACK_MODE;
-        values[i++] = config_ev->stack_mode;
+	mask |= XCB_CONFIG_WINDOW_STACK_MODE;
+	values[i++] = config_ev->stack_mode;
       }
       xcb_configure_window(s.con, cl->win, mask, values);
     }
@@ -1336,10 +1348,10 @@ evpropertynotify(xcb_generic_event_t* ev) {
     }
     if(usedecoration) {
       if(prop_ev->atom == s.ewmh_atoms[EWMHname]) {
-        if(cl->name)
-          free(cl->name);
-        cl->name = getclientname(cl);
-        rendertitlebar(cl);
+	if(cl->name)
+	  free(cl->name);
+	cl->name = getclientname(cl);
+	rendertitlebar(cl);
       }
     }
   }
@@ -1363,14 +1375,14 @@ evclientmessage(xcb_generic_event_t* ev) {
   if(msg_ev->type == s.ewmh_atoms[EWMHstate]) {
     // If client requested fullscreen toggle
     if(msg_ev->data.data32[1] == s.ewmh_atoms[EWMHfullscreen] ||
-       msg_ev->data.data32[2] == s.ewmh_atoms[EWMHfullscreen]) {
+	msg_ev->data.data32[2] == s.ewmh_atoms[EWMHfullscreen]) {
       // Set/unset client fullscreen 
       bool fs =  (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen));
       setfullscreen(cl, fs);
       if(fs) {
-        hidetitlebar(cl);
+	hidetitlebar(cl);
       } else {
-        showtitlebar(cl);
+	showtitlebar(cl);
       }
     }
   } else if(msg_ev->type == s.ewmh_atoms[EWMHactiveWindow]) {
@@ -1397,34 +1409,11 @@ void
 cyclefocusdown() {
   if (!s.clients || !s.focus)
     return;
-  client_t* next = NULL;
-  // Find the next client on the current monitor & desktop 
-  for(client_t* cl = s.focus->next; cl != NULL; cl = cl->next) {
-    if(clientonscreen(cl, s.monfocus)) {
-      next = cl;
-      break;
-    }
-  }
-
-  if (next != NULL) {
-    focusclient(next);
-    raiseclient(next);
-    return;
-  }
-  // If there is no next client, cycle back to the first client on the 
-  // current monitor & desktop
-  else {
-    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-      if(clientonscreen(cl, s.monfocus)) {
-        next = cl;
-        break;
-      }
-    }
-  }
-
+ 
+  client_t* next = nextvisible(false);
 
   // If there is a next client, just focus it
-  if (next != NULL) {
+  if (next) {
     focusclient(next);
     raiseclient(next);
   }
@@ -1438,36 +1427,13 @@ cyclefocusup() {
   // Return if there are no clients or no focus
   if (!s.clients || !s.focus)
     return;
+  
+  client_t* next = prevvisible(false);
 
-  client_t* next = NULL;
-  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-    // Check if the client after the iterating client is the focused
-    // client, making it the client after the focus.
-    if(clientonscreen(cl, s.monfocus) && cl->next == s.focus) {
-      next = cl;
-      break;
-    }
-    // Check if the current client is the focused client 
-    // and cycling to the last client that is onscreen to wrap 
-    // around.
-    if(clientonscreen(cl, s.monfocus) && cl == s.focus) {
-      for(client_t* cl2 = s.clients; cl2 != NULL; cl2 = cl2->next) {
-        if(clientonscreen(cl2, s.monfocus) &&
-          (!cl2->next || (cl2->next && 
-          cl2->next->desktop != s.curdesktop[s.monfocus->idx]))) {
-          next = cl2;
-          break;
-        }
-      }
-      break;
-    }
+  if(next) {
+    focusclient(next);
+    raiseclient(next);
   }
-  if(!next) {
-    next = s.focus;
-  }
-
-  focusclient(next);
-  raiseclient(next);
 }
 /**
  * @brief Raises the currently focused client
@@ -1549,6 +1515,62 @@ seturgent(client_t* cl, bool urgent) {
     wmh.flags &= ~XCB_ICCCM_WM_HINT_X_URGENCY;
   }
   xcb_icccm_set_wm_hints(s.con, cl->win, &wmh);
+}
+
+client_t* 
+nextvisible(bool tiled) {
+  client_t* next = NULL;
+  // Find the next client on the current monitor & desktop 
+  for(client_t* cl = s.focus->next; cl != NULL; cl = cl->next) {
+    bool checktiled = (tiled) ? !cl->floating : true;
+    if(checktiled && clientonscreen(cl, s.monfocus)) {
+      next = cl;
+      break;
+    }
+  }
+
+  // If there is no next client, cycle back to the first client on the 
+  // current monitor & desktop
+  if(!next) {
+    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+    bool checktiled = (tiled) ? !cl->floating : true;
+      if(checktiled && clientonscreen(cl, s.monfocus)) {
+	next = cl;
+	break;
+      }
+    }
+  }
+  return next;
+}
+
+client_t*
+prevvisible(bool tiled) {
+  client_t* prev = NULL;
+  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+    bool checktiled = (tiled) ? !cl->floating : true;
+    // Check if the client after the iterating client is the focused
+    // client, making it the client after the focus.
+    if(checktiled && clientonscreen(cl, s.monfocus) && cl->next == s.focus) {
+      prev = cl;
+      break;
+    }
+    // Check if the current client is the focused client 
+    // and cycling to the last client that is onscreen to wrap 
+    // around.
+    if(checktiled && clientonscreen(cl, s.monfocus) && cl == s.focus) {
+      for(client_t* cl2 = s.clients; cl2 != NULL; cl2 = cl2->next) {
+	bool checktiled2 = (tiled) ? !cl2->floating : true;
+	if(checktiled2 && clientonscreen(cl2, s.monfocus) &&
+	    (!cl2->next || (cl2->next && 
+			    cl2->next->desktop != s.curdesktop[s.monfocus->idx]))) {
+	  prev = cl2;
+	  break;
+	}
+      }
+      break;
+    }
+  }
+  return prev;
 }
 
 /**
@@ -1660,44 +1682,39 @@ void
 makelayout(monitor_t* mon) {
   if(s.curlayout == LayoutFloating) return;
   switch(s.curlayout) {
-    case LayoutTiledMaster: {
-      tiledmaster(mon);
-      break;
-    }
-    default: {
-      break;
-    }
+    case LayoutTiledMaster: 
+      {
+	tiledmaster(mon);
+	break;
+      }
+    default: 
+      {
+	break;
+      }
   }
- }
-
-void 
-cycleuplayout() {
-
 }
 
+/**
+ * @brief Cycles the focused window up in the layout list by
+ * swapping it with the client before the it.
+ */
+void 
+cycleuplayout() {
+  client_t* prev = prevvisible(true);
+  s.ignore_enter_layout = true;
+  swapclients(s.focus, prev);
+  makelayout(s.monfocus);
+}
+
+/**
+ * @brief Cycles the focused window down in the layout list by
+ * swapping it with the client after the it.
+ */
 void
 cycledownlayout() {
-  if (!s.clients || !s.focus)
-    return;
-  client_t* next = NULL;
-  // Find the next client on the current monitor & desktop 
-  for(client_t* cl = s.focus->next; cl != NULL; cl = cl->next) {
-    if(clientonscreen(cl, s.monfocus)) {
-      next = cl;
-      break;
-    }
-  }
-  // If there is no next client, cycle back to the first client on the 
-  // current monitor & desktop
-  if(!next) {
-    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-      if(clientonscreen(cl, s.monfocus)) {
-        next = cl;
-        break;
-      }
-    }
-  }
-  // TODO: Swap clients
+  client_t* next = nextvisible(true);
+  s.ignore_enter_layout = true;
+  swapclients(s.focus, next);
   makelayout(s.monfocus);
 }
 
@@ -1713,9 +1730,9 @@ tiledmaster(monitor_t* mon) {
   {
     uint32_t i = 0;
     for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-      if(cl->floating || cl->desktop != s.curdesktop[mon->idx]) continue;
+      if(cl->floating || cl->desktop != s.curdesktop[mon->idx] || cl->mon != mon) continue;
       if(i >= nmaster) {
-        nslaves++;
+	nslaves++;
       }
       i++;
     }
@@ -1746,24 +1763,64 @@ tiledmaster(monitor_t* mon) {
     }
   }
   for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-    if(cl->floating || cl->desktop != s.curdesktop[mon->idx]) continue;
+    if(cl->floating || cl->desktop != s.curdesktop[mon->idx] || cl->mon != mon) continue;
 
     bool ismaster = (i < nmaster);
     float height = (totalh / (ismaster ? nmaster : nslaves));
     bool singleclient = !nslaves;
 
     moveclient(cl, (v2_t){
-      (ismaster ? startx : (int32_t)(startx + totalw / 2)) + winlayoutgap, 
-      starty + winlayoutgap}); 
+	(ismaster ? startx : (int32_t)(startx + totalw / 2)) + winlayoutgap, 
+	starty + winlayoutgap}); 
     resizeclient(cl, (v2_t){
-      (((singleclient ? totalw : totalw / 2)) - cl->borderwidth * 2) - winlayoutgap * 2, 
-      (height - cl->borderwidth * 2) - winlayoutgap * 2});
+	(((singleclient ? totalw : totalw / 2)) - cl->borderwidth * 2) - winlayoutgap * 2, 
+	(height - cl->borderwidth * 2) - winlayoutgap * 2});
 
     if(!ismaster) {
       starty += height;
     }
     i++;
   }
+}
+void 
+swapclients(client_t* c1, client_t* c2) {
+  if (c1 == c2) {
+    return;
+  }
+
+  client_t *prev1 = NULL, *prev2 = NULL, *tmp = s.clients;
+
+  while (tmp && tmp != c1) {
+    prev1 = tmp;
+    tmp = tmp->next;
+  }
+
+  if (tmp == NULL) return;
+
+  tmp = s.clients;
+
+  while (tmp && tmp != c2) {
+    prev2 = tmp;
+    tmp = tmp->next;
+  }
+
+  if (tmp== NULL) return;
+
+  if (prev1) {
+    prev1->next = c2;
+  } else { 
+    s.clients = c2;
+  }
+
+  if (prev2) {
+    prev2->next = c1;
+  } else { 
+    s.clients = c1;
+  }
+
+  tmp = c1->next;
+  c1->next = c2->next;
+  c2->next = tmp;
 }
 
 /**
@@ -1794,13 +1851,13 @@ uploaddesktopnames() {
 
   // Set the _NET_DESKTOP_NAMES property
   xcb_change_property(s.con,
-                      XCB_PROP_MODE_REPLACE,
-                      root_window,
-                      s.ewmh_atoms[EWMHdesktopNames],
-                      XCB_ATOM_STRING,
-                      8,
-                      total_length,
-                      data);
+      XCB_PROP_MODE_REPLACE,
+      root_window,
+      s.ewmh_atoms[EWMHdesktopNames],
+      XCB_ATOM_STRING,
+      8,
+      total_length,
+      data);
 
   free(data);
 }
@@ -1814,7 +1871,7 @@ createdesktop(uint32_t idx, monitor_t* mon) {
   mon->desktopcount++;
   // Set number of desktops (_NET_NUMBER_OF_DESKTOPS)
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHnumberOfDesktops],
-                      XCB_ATOM_CARDINAL, 32, 1, &mon->desktopcount);
+      XCB_ATOM_CARDINAL, 32, 1, &mon->desktopcount);
   uploaddesktopnames();
 }
 
@@ -1916,7 +1973,7 @@ switchdesktop(passthrough_data data) {
   }
   // Notify EWMH for desktop change
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHcurrentDesktop],
-                      XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
+      XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
 
 
 
@@ -1925,7 +1982,7 @@ switchdesktop(passthrough_data data) {
     // Hide the clients on the current desktop
     if(cl->desktop == s.curdesktop[s.monfocus->idx]) {
       hideclient(cl);
-    // Show the clients on the desktop we want to switch to
+      // Show the clients on the desktop we want to switch to
     } else if(cl->desktop == data.i) {
       showclient(cl);
     }
@@ -1958,13 +2015,13 @@ switchfocusdesktop(passthrough_data data) {
 void
 setupatoms() {
   s.wm_atoms[WMprotocols]             = getatom("WM_PROTOCOLS");
-	s.wm_atoms[WMdelete]                = getatom("WM_DELETE_WINDOW");
-	s.wm_atoms[WMstate]                 = getatom("WM_STATE");
-	s.wm_atoms[WMtakeFocus]             = getatom("WM_TAKE_FOCUS");
-	s.ewmh_atoms[EWMHactiveWindow]      = getatom("_NET_ACTIVE_WINDOW");
-	s.ewmh_atoms[EWMHsupported]         = getatom("_NET_SUPPORTED");
-	s.ewmh_atoms[EWMHname]              = getatom("_NET_WM_NAME");
-	s.ewmh_atoms[EWMHstate]             = getatom("_NET_WM_STATE");
+  s.wm_atoms[WMdelete]                = getatom("WM_DELETE_WINDOW");
+  s.wm_atoms[WMstate]                 = getatom("WM_STATE");
+  s.wm_atoms[WMtakeFocus]             = getatom("WM_TAKE_FOCUS");
+  s.ewmh_atoms[EWMHactiveWindow]      = getatom("_NET_ACTIVE_WINDOW");
+  s.ewmh_atoms[EWMHsupported]         = getatom("_NET_SUPPORTED");
+  s.ewmh_atoms[EWMHname]              = getatom("_NET_WM_NAME");
+  s.ewmh_atoms[EWMHstate]             = getatom("_NET_WM_STATE");
   s.ewmh_atoms[EWMHstateHidden]       = getatom("_NET_WM_STATE_HIDDEN");
   s.ewmh_atoms[EWMHcheck]             = getatom("_NET_SUPPORTING_WM_CHECK");
   s.ewmh_atoms[EWMHfullscreen]        = getatom("_NET_WM_STATE_FULLSCREEN");
@@ -1978,29 +2035,29 @@ setupatoms() {
   xcb_atom_t utf8str = getatom("UTF8_STRING");
 
   xcb_window_t wmcheckwin = xcb_generate_id(s.con);
-    xcb_create_window(s.con, XCB_COPY_FROM_PARENT, wmcheckwin, s.root, 
-                      0, 0, 1, 1, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
-                      XCB_COPY_FROM_PARENT, 0, NULL);
+  xcb_create_window(s.con, XCB_COPY_FROM_PARENT, wmcheckwin, s.root, 
+      0, 0, 1, 1, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
+      XCB_COPY_FROM_PARENT, 0, NULL);
 
   // Set _NET_WM_CHECK property on the wmcheckwin
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, wmcheckwin, s.ewmh_atoms[EWMHcheck],
-                      XCB_ATOM_WINDOW, 32, 1, &wmcheckwin);
+      XCB_ATOM_WINDOW, 32, 1, &wmcheckwin);
 
   // Set _NET_WM_NAME property on the wmcheckwin
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, wmcheckwin, s.ewmh_atoms[EWMHname],
-                      utf8str, 8, strlen("ragnar"), "ragnar");
+      utf8str, 8, strlen("ragnar"), "ragnar");
 
   // Set _NET_WM_CHECK property on the root window
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHcheck],
-                      XCB_ATOM_WINDOW, 32, 1, &wmcheckwin);
+      XCB_ATOM_WINDOW, 32, 1, &wmcheckwin);
 
   // Set _NET_CURRENT_DESKTOP property on the root window
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHcurrentDesktop],
-                      XCB_ATOM_CARDINAL, 32, 1, &desktopinit);
+      XCB_ATOM_CARDINAL, 32, 1, &desktopinit);
 
   // Set _NET_SUPPORTED property on the root window
   xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, s.root, s.ewmh_atoms[EWMHsupported],
-                      XCB_ATOM_ATOM, 32, EWMHcount, s.ewmh_atoms);
+      XCB_ATOM_ATOM, 32, EWMHcount, s.ewmh_atoms);
 
   // Delete _NET_CLIENT_LIST property from the root window
   xcb_delete_property(s.con, s.root, s.ewmh_atoms[EWMHclientList]);
@@ -2026,15 +2083,15 @@ grabkeybinds() {
 
   // Grab every keybind
   size_t numkeybinds = sizeof(keybinds) / sizeof(keybinds[0]);
-	for (size_t i = 0; i < numkeybinds; ++i) {
+  for (size_t i = 0; i < numkeybinds; ++i) {
     // Get the keycode for the keysym of the keybind
-		xcb_keycode_t *keycode = getkeycodes(keybinds[i].key);
+    xcb_keycode_t *keycode = getkeycodes(keybinds[i].key);
     // Grab the key if it is valid 
-		if (keycode != NULL) {
-			xcb_grab_key(s.con, 1, s.root, keybinds[i].modmask, *keycode,
-				XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
-		}
-	}
+    if (keycode != NULL) {
+      xcb_grab_key(s.con, 1, s.root, keybinds[i].modmask, *keycode,
+	  XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+    }
+  }
   xcb_flush(s.con);
 }
 /**
@@ -2095,21 +2152,21 @@ setuptitlebar(client_t* cl) {
   attribs.background_pixel = color.pixel;
 
   cl->titlebar = (xcb_window_t)XCreateWindow(s.dsp, root, 0, 0, cl->area.size.x,
-		  titlebarheight, 0, s.glvis->depth, InputOutput, s.glvis->visual,
-		  CWColormap | CWEventMask | CWBackPixel, &attribs);
+      titlebarheight, 0, s.glvis->depth, InputOutput, s.glvis->visual,
+      CWColormap | CWEventMask | CWBackPixel, &attribs);
   XReparentWindow(s.dsp, cl->titlebar, cl->frame, 0, 0);
   XMapWindow(s.dsp, cl->titlebar);
   XSync(s.dsp, false);
   // Grab Buttons
   {
-	  unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
-	  // Grab Button 1
-	  XGrabButton(s.dsp, Button1, AnyModifier, cl->titlebar, 
-			  False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
+    unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
+    // Grab Button 1
+    XGrabButton(s.dsp, Button1, AnyModifier, cl->titlebar, 
+	False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
 
-	  // Grab Button 3
-	  XGrabButton(s.dsp, Button3, AnyModifier, cl->titlebar, 
-			  False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
+    // Grab Button 3
+    XGrabButton(s.dsp, Button3, AnyModifier, cl->titlebar, 
+	False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
   }
 
   // Set OpenGL context
@@ -2121,7 +2178,7 @@ setuptitlebar(client_t* cl) {
   if (glXSwapIntervalEXT) {
     glXSwapIntervalEXT(s.dsp, cl->titlebar, 0); // Set swap interval to 0 to disable V-Sync
   } else {
-    fprintf(stderr, "GLX_EXT_swap_control not supported\n");
+    fprintf(stderr, "ragnar: GLX_EXT_swap_control not supported.\n");
   }
   if(!s.ui.init) {
     s.ui = lf_init_x11(cl->area.pos.x, titlebarheight);
@@ -2210,7 +2267,7 @@ updatetitlebar(client_t* cl) {
   vals[0] = cl->area.size.x;
   vals[1] = titlebarheight;
   xcb_configure_window(s.con, cl->titlebar, 
-                       XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
+      XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
 }
 void
 hidetitlebar(client_t* cl) {
@@ -2218,12 +2275,12 @@ hidetitlebar(client_t* cl) {
   {
     uint32_t vals[2] = {0, 0};
     xcb_configure_window(s.con, cl->win, 
-                         XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, vals);
+	XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, vals);
   }
   {
     uint32_t vals[2] = {cl->area.size.x, cl->area.size.y};
     xcb_configure_window(s.con, cl->win, 
-                         XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
+	XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
   }
   cl->showtitlebar = false;
 }
@@ -2234,12 +2291,12 @@ showtitlebar(client_t* cl) {
   {
     uint32_t vals[2] = {0, titlebarheight};
     xcb_configure_window(s.con, cl->win, 
-                         XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, vals);
+	XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, vals);
   }
   {
     uint32_t vals[2] = {cl->area.size.x, cl->area.size.y - titlebarheight};
     xcb_configure_window(s.con, cl->win, 
-                         XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
+	XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
   }
   cl->showtitlebar = true;
 }
@@ -2396,18 +2453,18 @@ updatemons() {
 
       // If that worked, register the monitor if it isn't registered yet 
       if (crtc_reply) {
-        area_t monarea = (area_t){
-          .pos = (v2_t){
-            crtc_reply->x, crtc_reply->y
-          },
-          .size = (v2_t){
-            crtc_reply->width, crtc_reply->height
-          }
-        };
-        if(!monbyarea(monarea)) {
-          addmon(monarea, registered_count++);
-        }
-        free(crtc_reply);
+	area_t monarea = (area_t){
+	  .pos = (v2_t){
+	    crtc_reply->x, crtc_reply->y
+	  },
+	    .size = (v2_t){
+	      crtc_reply->width, crtc_reply->height
+	    }
+	};
+	if(!monbyarea(monarea)) {
+	  addmon(monarea, registered_count++);
+	}
+	free(crtc_reply);
       }
     }
     if (info_reply) {
@@ -2433,7 +2490,7 @@ monbyarea(area_t a) {
   monitor_t* mon;
   for (mon = s.monitors; mon != NULL; mon = mon->next) {
     if((mon->area.pos.x == a.pos.x && mon->area.pos.y == a.pos.y) &&
-        (mon->area.size.x == a.size.x && mon->area.size.y == a.size.y)) {
+	(mon->area.size.x == a.size.x && mon->area.size.y == a.size.y)) {
       return mon;
     }
   }
@@ -2506,10 +2563,10 @@ getkeysym(xcb_keycode_t keycode) {
   // Allocate key symbols 
   xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(s.con);
   // Get the keysym
-	xcb_keysym_t keysym = (!(keysyms) ? 0 : xcb_key_symbols_get_keysym(keysyms, keycode, 0));
+  xcb_keysym_t keysym = (!(keysyms) ? 0 : xcb_key_symbols_get_keysym(keysyms, keycode, 0));
   // Free allocated resources
-	xcb_key_symbols_free(keysyms);
-	return keysym;
+  xcb_key_symbols_free(keysyms);
+  return keysym;
 }
 
 /**
@@ -2587,8 +2644,8 @@ getwinstruts(xcb_window_t win) {
     xcb_window_t child = childs[i];
     strut_t strut = readstrut(child);
     if(!(strut.left == 0 && strut.right == 0 && 
-      strut.top == 0 && strut.bottom == 0) &&
-      s.nwinstruts + 1 <= MAX_STRUTS) {
+	  strut.top == 0 && strut.bottom == 0) &&
+	s.nwinstruts + 1 <= MAX_STRUTS) {
       s.winstruts[s.nwinstruts++] = strut;
     }
     getwinstruts(child);
@@ -2686,7 +2743,7 @@ ewmh_updateclients() {
   client_t* cl;
   for (cl = s.clients; cl != NULL; cl = cl->next) {
     xcb_change_property(s.con, XCB_PROP_MODE_APPEND, s.root, s.ewmh_atoms[EWMHclientList],
-                        XCB_ATOM_WINDOW, 32, 1, &cl->win);
+	XCB_ATOM_WINDOW, 32, 1, &cl->win);
   }
 }
 

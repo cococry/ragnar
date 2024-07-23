@@ -302,6 +302,8 @@ typedef struct {
   GLXContext glcontext;
   bool initgl;
 
+  bool ignore_enter_layout;
+
   LfState ui;
   LfTexture closeicon;
 
