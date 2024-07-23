@@ -1,32 +1,78 @@
+/* ======= ragnarwm config ======== 
+ * NOTE: For a detailed look at all values that can be used
+ * for configuration see the structs.h header. 
+ * =============================== */ 
+
 #pragma once
 #include "structs.h"
 
 /* Window properties */
-static const int32_t        winborderwidth            = 1;
-static const int32_t        winbordercolor            = 0x555555;
-static const int32_t        winbordercolor_selected   = 0x777777;
-static const int32_t        winlayoutgap              = 0;
-static const layout_type_t  initlayout                = LayoutTiledMaster;
+// Specifies the width of the border around frame windows
+static const int32_t        winborderwidth = 1; // (px)
+// Specifies the color of the border around frame windows
+static const int32_t        winbordercolor = 0x555555;
+// Specifies the color of the border around frame windows when the client
+// window is focused.
+static const int32_t        winbordercolor_selected = 0x777777;
+// Specifies the gap between windows within a tiling layout 
+static const int32_t        winlayoutgap = 0; // (px)
+// Specifies the initial layout type that is used when the window manager 
+// initializes.
+// Options are:
+// 	- LayoutTiledMaster
+// 	- LayoutFloating
+static const layout_type_t  initlayout = LayoutTiledMaster;
 
-
-// Main modifier that is used to execute all window manager keybindings
+// Specifies the main modifier (key) that is used to execute all window manager keybindings
+// Options are:
+// 	- Shift  
+//	- Control 
+//	- Alt      
+//	- Super 
 static const kb_modifier modkey   = Super; 
 
 /* Window controls */
-static const kb_modifier winmod   = modkey; 
+// Specifies the modifier (key) that is used to interact with windows (move/resize)
+// Options are:
+// 	- Shift  
+//	- Control 
+//	- Alt      
+//	- Super 
+static const kb_modifier winmod   = modkey;
+// Specifies the mouse button that needs to be held in combination with pressing the 
+// winmod modifier key in order to move a window 
+// Options are:
+// 	- LeftMouse
+// 	- MiddleMouse
+//	- RightMouse 
 static const mousebtn movebtn     = LeftMouse; 
+// Specifies the mouse button that needs to be held in combination with pressing the 
+// winmod modifier key in order to resize a window 
+// Options are:
+// 	- LeftMouse
+// 	- MiddleMouse
+//	- RightMouse 
 static const mousebtn resizebtn   = RightMouse;
 
 /* Desktops */
-// The desktop index that is selected on startup
+// Specifies the desktop index that is selected on startup
 static const int32_t desktopinit   = 0;
 
+// Specifies how many desktops are allocated
 #define MAX_DESKTOPS 9
+// Specifies the name of every allocated dekstop (ordered)
 static const char* desktopnames[MAX_DESKTOPS] = {
   "1", "2", "3", "4", "5", "6", "7", "8", "9"
 };
 
 /* Decoration */
+// Specifies wheter or not window decorations should be enabled. Window decorations 
+// in ragnarwm are rendered by using OpenGL 3D acceleration. So naturally, enabling them
+// will result in higher memory usage of the window manager as OpenGL context and resources need
+// to be created. If you want to squeeze out the most performance, it is recommended to disable decorations.
+// Known problems are that NVIDIA drivers on linux don't mix well with OpenGL contexts and drawing to them. 
+// If you are expierencing lag, mostly when resizing windows with decoration, its recommended to either turn off
+// decoration or set dynamic_rerender_on_resize = false further down in the config 
 static const bool     usedecoration   = true;
 static uint32_t       titlebarheight  = 30;
 static const int32_t  titlebarcolor   = 0x282828;
@@ -78,12 +124,14 @@ static const keybind keybinds[] = {
   {modkey | Shift,     Key9,       switchfocusdesktop,  { .i = 8 }},
 
   /* Layout shortcuts */
-  {modkey | Shift,  KeyT,       settiledmaster,    { NULL }},
-  {modkey | Shift,  KeyR,       setfloatingmode,   { NULL }},
-  {modkey,          KeySpace,   addfocustolayout,  { NULL }},
-  {modkey | Shift,  KeyB,   	  updatebarslayout,  { NULL }},
-  {modkey,  KeyJ,   	          cycledownlayout,  { NULL }},
-  {modkey,  KeyK,   	          cycleuplayout,  { NULL }},
+  {modkey | Shift,  KeyT,       settiledmaster,     { NULL }},
+  {modkey | Shift,  KeyR,       setfloatingmode,    { NULL }},
+  {modkey,          KeySpace,   addfocustolayout,   { NULL }},
+  {modkey | Shift,  KeyB,   	updatebarslayout,   { NULL }},
+  {modkey,          KeyJ,   	cycledownlayout,    { NULL }},
+  {modkey,  	    KeyK,   	cycleuplayout,      { NULL }},
+  {modkey,  	    KeyM,   	addmasterlayout,    { NULL }},
+  {modkey | Shift,  KeyM,   	removemasterlayout, { NULL }},
 
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd, { .cmd = TERMINAL_CMD }},
@@ -112,3 +160,8 @@ static const bool dynamic_rerender_on_resize = true;
 // (Struts define the area that a window takes up) This is usefull for 
 // docks, bars etc. as the layout keeps space for them.
 #define MAX_STRUTS 8
+
+// Specifies the file to log debug messages to 
+static const char* logfile = "/home/cococry/ragnarwm.log";
+// Specifies whether or not logging should be enabled
+static bool logdebug = false;

@@ -204,6 +204,8 @@ typedef struct {
 
 typedef struct {
   uint32_t left, right, top, bottom;
+  int32_t startx, endx;
+  int32_t starty, endy;
 } strut_t;
 
 typedef void (*event_handler_t)(xcb_generic_event_t* ev);
@@ -227,6 +229,8 @@ static void setfloatingmode();
 static void updatebarslayout();
 static void cycleuplayout();
 static void cycledownlayout();
+static void addmasterlayout();
+static void removemasterlayout();
 
 #include "config.h"
 
@@ -239,6 +243,7 @@ struct monitor_t {
 
   char* activedesktops[MAX_DESKTOPS];
   uint32_t desktopcount;
+  int32_t* nmaster;
 };
 
 typedef struct client_t client_t;
@@ -257,12 +262,16 @@ struct client_t {
   size_t borderwidth;
 
   monitor_t* mon;
-  int32_t desktop;
+  uint32_t desktop;
 
   bool urgent, ignoreunmap, ignoreexpose; 
 
   char* name;
 };
+
+typedef struct {
+  uint32_t idx;
+} desktop_t;
 
 typedef enum {
   EWMHsupported, 
@@ -319,7 +328,7 @@ typedef struct {
   xcb_atom_t wm_atoms[WMcount]; 
   xcb_atom_t ewmh_atoms[EWMHcount];
 
-  int32_t* curdesktop;
+  desktop_t* curdesktop;
 
   layout_type_t curlayout;
 

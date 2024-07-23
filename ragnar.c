@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdarg.h>
 #include <sys/wait.h>
 
 #include <xcb/xcb.h>
@@ -28,6 +29,7 @@
 #include <GL/glx.h>
 
 #include "structs.h"
+
 
 static void             setup();
 static void             loop();
@@ -63,6 +65,7 @@ static client_t*	prevvisible(bool tiled);
 static xcb_atom_t       getclientprop(client_t* cl, xcb_atom_t prop);
 static void             setfullscreen(client_t* cl, bool fullscreen);
 static void             switchclientdesktop(client_t* cl, int32_t desktop);
+static uint32_t 	numinlayout(monitor_t* mon);
 
 static void             makelayout(monitor_t* mon);
 static void             tiledmaster(monitor_t* mon);
@@ -103,6 +106,7 @@ static client_t*        clientfromtitlebar(xcb_window_t titlebar);
 static monitor_t*       addmon(area_t a, uint32_t idx); 
 static monitor_t*       monbyarea(area_t a);
 static monitor_t*       clientmon(client_t* cl);
+static desktop_t*       mondesktop(monitor_t* mon);
 static monitor_t*       cursormon();
 static uint32_t         updatemons();
 
@@ -120,8 +124,12 @@ static void             sigchld_handler(int32_t signum);
 static bool             strinarr(char* array[], int count, const char* target);
 static int32_t          compstrs(const void* a, const void* b);
 static void             strtoascii(char* str); 
+
 static void             initglcontext();
 static void             setglcontext(xcb_window_t win);
+
+static void 		logtofile(const char* fmt, ...);
+static char* 		cmdoutput(const char* cmd);
 
 
 // This needs to be included after the function definitions
@@ -241,7 +249,7 @@ setup() {
   s.curdesktop = malloc(sizeof(*s.curdesktop) * registered_monitors);
   if(s.curdesktop) {
     for(uint32_t i = 0; i < registered_monitors; i++) {
-      s.curdesktop[i] = desktopinit;
+      s.curdesktop[i].idx = desktopinit;
     }
   }
 }
@@ -307,7 +315,7 @@ terminate() {
  * @param p The point to check if it is inside the given area
  * @param area The area to check
  *
- * @return If the point p is in the area, false if it is not in the area 
+ * @return True if the point p is in the area, false if it is not in the area 
  */
 bool
 pointinarea(v2_t p, area_t area) {
@@ -560,7 +568,7 @@ clienthasdeleteatom(client_t* cl) {
  */
 bool 
 clientonscreen(client_t* cl, monitor_t* mon) {
-  return cl->mon == mon && cl->desktop == s.curdesktop[cl->mon->idx];
+  return cl->mon == mon && cl->desktop == mondesktop(cl->mon)->idx;
 }
 
 /**
@@ -872,7 +880,7 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Set client's monitor
   cl->mon = clientmon(cl);
-  cl->desktop = s.curdesktop[s.monfocus->idx];
+  cl->desktop = mondesktop(s.monfocus)->idx;
 
   // Update the EWMH client list
   ewmh_updateclients();
@@ -921,7 +929,6 @@ evunmapnotify(xcb_generic_event_t* ev) {
   }
   if(cl) {
     unframeclient(cl);
-    makelayout(cl->mon);
   } else {
     xcb_unmap_window(s.con, unmap_ev->window);
   }
@@ -932,6 +939,8 @@ evunmapnotify(xcb_generic_event_t* ev) {
   // Update the EWMH client list
   ewmh_updateclients();
 
+  // Re-establish the window layout
+  makelayout(s.monfocus);
 
   xcb_flush(s.con);
 }
@@ -1176,6 +1185,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
   // Move the window
   if(motion_ev->state & movebtn) {
     moveclient(cl, movedest);
+    cl->desktop = mondesktop(cl->mon)->idx;
   } 
   // Resize the window
   else if(motion_ev->state & resizebtn) {
@@ -1562,7 +1572,7 @@ prevvisible(bool tiled) {
 	bool checktiled2 = (tiled) ? !cl2->floating : true;
 	if(checktiled2 && clientonscreen(cl2, s.monfocus) &&
 	    (!cl2->next || (cl2->next && 
-			    cl2->next->desktop != s.curdesktop[s.monfocus->idx]))) {
+			    cl2->next->desktop != mondesktop(s.monfocus)->idx))) {
 	  prev = cl2;
 	  break;
 	}
@@ -1620,6 +1630,7 @@ setfullscreen(client_t* cl, bool fullscreen) {
   if(!s.monfocus || !cl) return;
 
   cl->fullscreen = fullscreen;
+  cl->floating = fullscreen;
   if(cl->fullscreen) {
     xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 1, &s.ewmh_atoms[EWMHfullscreen]);
     // Store previous position of client
@@ -1652,6 +1663,8 @@ setfullscreen(client_t* cl, bool fullscreen) {
   if(cl->area.size.x >= cl->mon->area.size.x && cl->area.size.y >= cl->mon->area.size.y && !cl->fullscreen) {
     setfullscreen(cl, true);
   }
+
+  makelayout(cl->mon);
 }
 
 /**
@@ -1675,12 +1688,34 @@ switchclientdesktop(client_t* cl, int32_t desktop) {
 }
 
 /**
+ * Returns how many client are currently in the layout on a 
+ * given monitor.
+ * @param mon The monitor to count clients on 
+ * */
+uint32_t
+numinlayout(monitor_t* mon) {
+  uint32_t nlayout = 0;
+  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+    if(clientonscreen(cl, mon) && !cl->floating) {
+      nlayout++;
+    }
+  }
+  return nlayout;
+}
+
+/**
  * @brief Establishes the current tiling layout for the windows
  * @param mon The monitor to use as the frame of the layout 
  */
 void
 makelayout(monitor_t* mon) {
   if(s.curlayout == LayoutFloating) return;
+
+  uint32_t nlayout = numinlayout(s.monfocus);
+  while(nlayout - mon->nmaster[mondesktop(mon)->idx] == 0 && nlayout != 1) {
+    s.monfocus->nmaster[mondesktop(s.monfocus)->idx]--;
+  }
+
   switch(s.curlayout) {
     case LayoutTiledMaster: 
       {
@@ -1719,18 +1754,48 @@ cycledownlayout() {
 }
 
 /**
+ * @brief Increments the number of windows that are seen as master windows
+ * in master-slave layouts.
+ */
+void 
+addmasterlayout() {
+  uint32_t nlayout = numinlayout(s.monfocus);
+  int32_t nmaster = s.monfocus->nmaster[mondesktop(s.monfocus)->idx];
+  if(nlayout - (nmaster + 1) >= 1) {
+    s.monfocus->nmaster[mondesktop(s.monfocus)->idx]++;
+  }
+  makelayout(s.monfocus);
+}
+
+/**
+ * @brief Decrements the number of windows that are seen as master windows
+ * in master-slave layouts.
+ */
+void 
+removemasterlayout() {
+  int32_t nmaster = s.monfocus->nmaster[mondesktop(s.monfocus)->idx];
+  if(nmaster - 1 >= 1) {
+    s.monfocus->nmaster[mondesktop(s.monfocus)->idx]--;
+  }
+  makelayout(s.monfocus);
+}
+
+/**
  * @brief Establishes a tiled master layout for the windows that are 
  * currently visible.
  * @param mon The monitor to use as the frame of the layout 
  */
 void 
 tiledmaster(monitor_t* mon) {
-  const uint32_t nmaster = 1; // TODO
+  if(!mon) return;
+
   uint32_t nslaves = 0;
+  uint32_t nmaster = mon->nmaster[mondesktop(mon)->idx];
   {
     uint32_t i = 0;
     for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-      if(cl->floating || cl->desktop != s.curdesktop[mon->idx] || cl->mon != mon) continue;
+      if(cl->floating || cl->desktop != mondesktop(cl->mon)->idx
+	  || cl->mon != mon) continue;
       if(i >= nmaster) {
 	nslaves++;
       }
@@ -1740,55 +1805,75 @@ tiledmaster(monitor_t* mon) {
 
   uint32_t i = 0;
 
-  uint32_t totalw = mon->area.size.x;
-  uint32_t totalh = mon->area.size.y;
-  int32_t startx = mon->area.pos.x;
-  int32_t starty = mon->area.pos.y;
+  uint32_t w = mon->area.size.x;
+  uint32_t h = mon->area.size.y;
+  int32_t x = mon->area.pos.x;
+  int32_t y = mon->area.pos.y;
 
   // Apply strut information to the layout
   for(uint32_t i = 0; i < s.nwinstruts; i++) {
+    bool onmonitor = 
+      mon->area.pos.x >= s.winstruts[i].startx 
+      && s.winstruts[i].endx <= mon->area.pos.x + mon->area.size.x;
+
+    if(!onmonitor) continue;
+
     if(s.winstruts[i].left != 0) {
-      startx += s.winstruts[i].left;
-      totalw -= s.winstruts[i].left;
+      x += s.winstruts[i].left;
+      w -= s.winstruts[i].left;
     }
     if(s.winstruts[i].right != 0) {
-      totalw -= s.winstruts[i].right;
+      w -= s.winstruts[i].right;
     }
     if(s.winstruts[i].top != 0) {
-      starty += s.winstruts[i].top;
-      totalh -= s.winstruts[i].top;
+      y += s.winstruts[i].top;
+      h -= s.winstruts[i].top;
     }
     if(s.winstruts[i].bottom != 0) {
-      totalh -= s.winstruts[i].bottom;
+      h -= s.winstruts[i].bottom;
     }
   }
+
+  int32_t ymaster = y;
+
   for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-    if(cl->floating || cl->desktop != s.curdesktop[mon->idx] || cl->mon != mon) continue;
+    if(cl->floating || cl->desktop != mondesktop(cl->mon)->idx || cl->mon != mon) continue;
 
     bool ismaster = (i < nmaster);
-    float height = (totalh / (ismaster ? nmaster : nslaves));
+
+    float height = (h / (ismaster ? nmaster : nslaves));
     bool singleclient = !nslaves;
 
     moveclient(cl, (v2_t){
-	(ismaster ? startx : (int32_t)(startx + totalw / 2)) + winlayoutgap, 
-	starty + winlayoutgap}); 
+	(ismaster ? x : (int32_t)(x + w / 2)) + winlayoutgap,
+	(ismaster ? ymaster : y) + winlayoutgap});
     resizeclient(cl, (v2_t){
-	(((singleclient ? totalw : totalw / 2)) - cl->borderwidth * 2) - winlayoutgap * 2, 
+	(((singleclient ? w : w / 2)) - cl->borderwidth * 2) - winlayoutgap * 2,
 	(height - cl->borderwidth * 2) - winlayoutgap * 2});
 
     if(!ismaster) {
-      starty += height;
+      y += height;
+    } else {
+      ymaster += height;
     }
     i++;
   }
 }
+
+/**
+ * @brief Swaps two clients within the linked list of clients 
+ * @param c1 The client to swap with c2 
+ * @param c2 The client to swap with c1
+ */
 void 
 swapclients(client_t* c1, client_t* c2) {
   if (c1 == c2) {
     return;
   }
 
-  client_t *prev1 = NULL, *prev2 = NULL, *tmp = s.clients;
+  client_t *prev1 = NULL, 
+	   *prev2 = NULL, 
+	   *tmp = s.clients;
 
   while (tmp && tmp != c1) {
     prev1 = tmp;
@@ -1824,7 +1909,7 @@ swapclients(client_t* c1, client_t* c2) {
 }
 
 /**
- * @brief Uploads the active desktop names to EWMH 
+ * @brief Uploads the active desktop names and sends them to EWMH 
  */
 void
 uploaddesktopnames() {
@@ -1924,7 +2009,7 @@ void togglefullscreen() {
  */
 void
 cycledesktopup() {
-  int32_t newdesktop = s.curdesktop[s.monfocus->idx];
+  int32_t newdesktop = mondesktop(s.monfocus)->idx;
   if(newdesktop + 1 < MAX_DESKTOPS) {
     newdesktop++;
   } else {
@@ -1938,7 +2023,7 @@ cycledesktopup() {
  */
 void
 cycledesktopdown() {
-  int32_t newdesktop = s.curdesktop[s.monfocus->idx];
+  int32_t newdesktop = mondesktop(s.monfocus)->idx;
   if(newdesktop - 1 >= 0) {
     newdesktop--;
   } else {
@@ -1957,7 +2042,7 @@ cycledesktopdown() {
 void
 switchdesktop(passthrough_data data) {
   if(!s.monfocus) return;
-  if(data.i == s.curdesktop[s.monfocus->idx]) return;
+  if(data.i == (int32_t)mondesktop(s.monfocus)->idx) return;
 
   // Create the desktop if it was not created yet
   if(!strinarr(s.monfocus->activedesktops, s.monfocus->desktopcount, desktopnames[data.i])) {
@@ -1980,10 +2065,10 @@ switchdesktop(passthrough_data data) {
   for (client_t* cl = s.clients; cl != NULL; cl = cl->next) {
     if(cl->mon != s.monfocus) continue;
     // Hide the clients on the current desktop
-    if(cl->desktop == s.curdesktop[s.monfocus->idx]) {
+    if(cl->desktop == mondesktop(s.monfocus)->idx) {
       hideclient(cl);
       // Show the clients on the desktop we want to switch to
-    } else if(cl->desktop == data.i) {
+    } else if((int32_t)cl->desktop == data.i) {
       showclient(cl);
     }
   }
@@ -1993,8 +2078,7 @@ switchdesktop(passthrough_data data) {
     unfocusclient(cl);
   }
 
-  s.curdesktop[s.monfocus->idx] = data.i;
-
+  mondesktop(s.monfocus)->idx = data.i;
   makelayout(s.monfocus);
 }
 
@@ -2193,7 +2277,7 @@ setuptitlebar(client_t* cl) {
 void
 rendertitlebar(client_t* cl) {
   if(!usedecoration) return;
-  if(cl->desktop != s.curdesktop[s.monfocus->idx]) return;
+  if(cl->desktop != mondesktop(s.monfocus)->idx) return;
   setglcontext(cl->titlebar);
 
   // Clear background
@@ -2419,7 +2503,14 @@ monitor_t* addmon(area_t a, uint32_t idx) {
   mon->next     = s.monitors;
   mon->idx      = idx;
   mon->desktopcount = 0;
+
+  mon->nmaster 	= malloc(sizeof(int32_t) * MAX_DESKTOPS);
+  for(uint32_t i = 0; i < MAX_DESKTOPS; i++) {
+    mon->nmaster[i] = 1;
+  }
+
   s.monitors    = mon;
+
   return mon;
 }
 
@@ -2528,6 +2619,11 @@ clientmon(client_t* cl) {
   return ret;
 }
 
+desktop_t* 
+mondesktop(monitor_t* mon) {
+  return &s.curdesktop[mon->idx];
+}
+
 /**
  * @brief Returns the monitor under the cursor 
  *
@@ -2614,6 +2710,13 @@ readstrut(xcb_window_t win) {
     strut.right   = data[1];
     strut.top     = data[2];
     strut.bottom  = data[3];
+    strut.startx  = data[8];
+    strut.endx	  = data[9];
+    strut.starty  = data[4];
+    strut.endy 	  = data[5];
+    logtofile("Read strut data of window %i: L: %i, R: %i, T: %i B: %i SX: %i EX: %i SY: %i EY: %i", win,
+	strut.left, strut.right, strut.top, strut.bottom, strut.startx, strut.endx, 
+	strut.starty, strut.endy); 
   } 
 
   free(reply);
@@ -2756,6 +2859,16 @@ sigchld_handler(int32_t signum) {
   while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
+/**
+ * @brief Checks if a given string is within a given 
+ * array of strings
+ * @param array Haystack
+ * @param count Number of items within the haystack
+ * @param target Needle
+ *
+ * @return Wether or not the given string was found in the 
+ * given array
+ * */
 bool 
 strinarr(char* array[], int count, const char* target) {
   for (int i = 0; i < count; ++i) {
@@ -2766,6 +2879,11 @@ strinarr(char* array[], int count, const char* target) {
   return false; // String not found
 }
 
+/*
+ * @brief Converts a given string to ASCII by removing all non-ASCII
+ * characters within it and replacing them with a replacement character.
+ * @param str The string to un-ASCII-fy 
+ * */
 void 
 strtoascii(char* str) {
   while(*str) {
@@ -2775,6 +2893,12 @@ strtoascii(char* str) {
     str++;
   }
 }
+
+/*
+ * @brief Compares two strings 
+ * @param a The first string to compare
+ * @param b The second string to compare
+ * @return See 'man strcmp' */
 int32_t 
 compstrs(const void* a, const void* b) {
   return strcmp(*(const char **)a, *(const char **)b);
@@ -2798,6 +2922,10 @@ initglcontext() {
   s.glcontext = glXCreateContext(s.dsp, s.glvis, NULL, GL_TRUE); 
 }
 
+/**
+ * @brief Set the OpenGL context and drawable to a given window
+ * @param win The window to draw on 
+ * */
 void
 setglcontext(xcb_window_t win) {
   // Get the current drawable and context
@@ -2813,8 +2941,86 @@ setglcontext(xcb_window_t win) {
   }
 }
 
+/**
+ * @brief Logs a given formatted message to the log file specified in the
+ * config. 
+ * @param fmt The format string
+ * @param ... The variadic arguments */
+void 
+logtofile(const char* fmt, ...) {
+  if(!logdebug) return;
 
-int 
+  // Open the file in append mode
+  FILE *file = fopen(logfile, "a");
+
+  // Check if the file was opened successfully
+  if (file == NULL) {
+    perror("ragnar: error opening log file.");
+    return;
+  }
+
+  // Write the date to the file 
+  char* date = cmdoutput("date +\"%d.%m.%y %H:%M:%S\"");
+  fprintf(file, "%s | ", date);
+
+  // Initialize the variable argument list
+  va_list args;
+  va_start(args, fmt);
+
+  // Write the formatted string to the file
+  vfprintf(file, fmt, args);
+
+  // End the variable argument list
+  va_end(args);
+
+  fprintf(file, "\n");
+
+  // Close the file
+  fclose(file);
+}
+
+char* 
+cmdoutput(const char* cmd) {
+  FILE *fp;
+  char buffer[512];
+  char *result = NULL;
+  size_t result_len = 0;
+
+  // Open a pipe to the command
+  fp = popen(cmd, "r");
+  if (fp == NULL) {
+    perror("popen");
+    return NULL;
+  }
+
+  // Read the command's output
+  while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+    size_t buffer_len = strlen(buffer);
+    char *new_result = realloc(result, result_len + buffer_len + 1);
+    if (new_result == NULL) {
+      perror("realloc");
+      free(result);
+      pclose(fp);
+      return NULL;
+    }
+    result = new_result;
+    memcpy(result + result_len, buffer, buffer_len);
+    result_len += buffer_len;
+    result[result_len] = '\0'; 
+  }
+
+  // Close the pipe
+  if (pclose(fp) == -1) {
+    perror("pclose");
+    free(result);
+    return NULL;
+  }
+
+  return result;
+}
+
+
+int
 main() {
   // Run the startup script
   runcmd((passthrough_data){.cmd = "ragnarstart"});
