@@ -14,14 +14,6 @@ static const int32_t        winbordercolor = 0x555555;
 // Specifies the color of the border around frame windows when the client
 // window is focused.
 static const int32_t        winbordercolor_selected = 0x777777;
-// Specifies the gap between windows within a tiling layout 
-static const int32_t        winlayoutgap = 0; // (px)
-// Specifies the initial layout type that is used when the window manager 
-// initializes.
-// Options are:
-// 	- LayoutTiledMaster
-// 	- LayoutFloating
-static const layout_type_t  initlayout = LayoutTiledMaster;
 
 // Specifies the main modifier (key) that is used to execute all window manager keybindings
 // Options are:
@@ -29,7 +21,7 @@ static const layout_type_t  initlayout = LayoutTiledMaster;
 //	- Control 
 //	- Alt      
 //	- Super 
-static const kb_modifier modkey   = Super; 
+static const kb_modifier_t modkey   = Super; 
 
 /* Window controls */
 // Specifies the modifier (key) that is used to interact with windows (move/resize)
@@ -38,21 +30,21 @@ static const kb_modifier modkey   = Super;
 //	- Control 
 //	- Alt      
 //	- Super 
-static const kb_modifier winmod   = modkey;
+static const kb_modifier_t winmod   = modkey;
 // Specifies the mouse button that needs to be held in combination with pressing the 
 // winmod modifier key in order to move a window 
 // Options are:
 // 	- LeftMouse
 // 	- MiddleMouse
 //	- RightMouse 
-static const mousebtn movebtn     = LeftMouse; 
+static const mousebtn_t movebtn     = LeftMouse; 
 // Specifies the mouse button that needs to be held in combination with pressing the 
 // winmod modifier key in order to resize a window 
 // Options are:
 // 	- LeftMouse
 // 	- MiddleMouse
 //	- RightMouse 
-static const mousebtn resizebtn   = RightMouse;
+static const mousebtn_t resizebtn   = RightMouse;
 
 /* Desktops */
 // Specifies the desktop index that is selected on startup
@@ -66,6 +58,7 @@ static const char* desktopnames[MAX_DESKTOPS] = {
 };
 
 /* Decoration */
+
 // Specifies wheter or not window decorations should be enabled. Window decorations 
 // in ragnarwm are rendered by using OpenGL 3D acceleration. So naturally, enabling them
 // will result in higher memory usage of the window manager as OpenGL context and resources need
@@ -81,13 +74,29 @@ static const char*    fontpath        = "/usr/share/ragnarwm/fonts/LilexNerdFont
 static const char*    closeiconpath   = "/usr/share/ragnarwm/icons/close.png";
 static const uint32_t iconcolor       = 0xeeeeee;
 
+/* Layout */
+static const float layoutmasterarea      = 0.5f;
+static const float layoutmasterarea_min  = 0.1f;
+static const float layoutmasterarea_max  = 0.9f;
+static const float layoutmasterarea_step  = 0.1f;
+// Specifies the gap between windows within a tiling layout 
+static const int32_t        winlayoutgap = 0; // (px)
+static const int32_t        winlayoutgap_max = 150; // (px)
+static const int32_t        winlayoutgap_step = 5; // (px)
+// Specifies the initial layout type that is used when the window manager 
+// initializes.
+// Options are:
+// 	- LayoutTiledMaster
+// 	- LayoutFloating
+static const layout_type_t  initlayout   = LayoutTiledMaster;
+
 #define TERMINAL_CMD    "alacritty &"
 #define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
 #define BROWSER_CMD     "brave &"
 #define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */
-static const keybind keybinds[] = {
+static const keybind_t keybinds[] = {
 /* Modifier   | Key       | Callback              | Command */ 
   {modkey,          KeyEscape,  terminate,          { NULL }},
   /* Clients */
@@ -124,14 +133,18 @@ static const keybind keybinds[] = {
   {modkey | Shift,     Key9,       switchfocusdesktop,  { .i = 8 }},
 
   /* Layout shortcuts */
-  {modkey | Shift,  KeyT,       settiledmaster,     { NULL }},
-  {modkey | Shift,  KeyR,       setfloatingmode,    { NULL }},
-  {modkey,          KeySpace,   addfocustolayout,   { NULL }},
-  {modkey | Shift,  KeyB,   	updatebarslayout,   { NULL }},
-  {modkey,          KeyJ,   	cycledownlayout,    { NULL }},
-  {modkey,  	    KeyK,   	cycleuplayout,      { NULL }},
-  {modkey,  	    KeyM,   	addmasterlayout,    { NULL }},
-  {modkey | Shift,  KeyM,   	removemasterlayout, { NULL }},
+  {modkey | Shift,  KeyT,       settiledmaster,      { NULL }},
+  {modkey | Shift,  KeyR,       setfloatingmode,     { NULL }},
+  {modkey,          KeySpace,   addfocustolayout,    { NULL }},
+  {modkey | Shift,  KeyB,   	updatebarslayout,    { NULL }},
+  {modkey,          KeyJ,   	cycledownlayout,     { NULL }},
+  {modkey,  	    KeyK,   	cycleuplayout,       { NULL }},
+  {modkey,  	    KeyM,   	addmasterlayout,     { NULL }},
+  {modkey | Shift,  KeyM,   	removemasterlayout,  { NULL }},
+  {modkey,          KeyH,   	decmasterarealayout, { NULL }},
+  {modkey,          KeyL,   	incmasterarealayout, { NULL }},
+  {modkey,          KeyMinus,  	decgapsizelayout,    { NULL }},
+  {modkey,          KeyPlus,   	incgapsizelayout,    { NULL }},
 
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd, { .cmd = TERMINAL_CMD }},
@@ -162,6 +175,6 @@ static const bool dynamic_rerender_on_resize = true;
 #define MAX_STRUTS 8
 
 // Specifies the file to log debug messages to 
-static const char* logfile = "/home/cococry/ragnarwm.log";
+static const char* logfile = "/home/user/ragnarwm.log";
 // Specifies whether or not logging should be enabled
 static bool logdebug = false;

@@ -10,13 +10,13 @@ typedef enum {
   Control   = XCB_MOD_MASK_CONTROL,
   Alt       = XCB_MOD_MASK_1,
   Super     = XCB_MOD_MASK_4
-} kb_modifier;
+} kb_modifier_t;
 
 typedef enum {
   LeftMouse   = XCB_BUTTON_MASK_1,
   MiddleMouse = XCB_BUTTON_MASK_2,
   RightMouse  = XCB_BUTTON_MASK_3,
-} mousebtn;
+} mousebtn_t;
 
 typedef enum {
   LayoutFloating = 0,
@@ -26,14 +26,14 @@ typedef enum {
 typedef struct {
   const char* cmd;
   int32_t i;
-} passthrough_data;
+} passthrough_data_t;
 
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
-  void (*cb)(passthrough_data data);
-  passthrough_data data;
-} keybind;
+  void (*cb)(passthrough_data_t data);
+  passthrough_data_t data;
+} keybind_t;
 
 typedef enum {
     KeyVoidSymbol = XK_VoidSymbol,
@@ -220,9 +220,9 @@ static void cycledesktopup();
 static void cycledesktopdown();
 static void cyclefocusdesktopup();
 static void cyclefocusdesktopdown();
-static void switchdesktop(passthrough_data data); 
-static void switchfocusdesktop(passthrough_data data);
-static void runcmd(passthrough_data data);
+static void switchdesktop(passthrough_data_t data); 
+static void switchfocusdesktop(passthrough_data_t data);
+static void runcmd(passthrough_data_t data);
 static void addfocustolayout();
 static void settiledmaster();
 static void setfloatingmode();
@@ -231,10 +231,20 @@ static void cycleuplayout();
 static void cycledownlayout();
 static void addmasterlayout();
 static void removemasterlayout();
+static void incmasterarealayout();
+static void decmasterarealayout();
+static void incgapsizelayout();
+static void decgapsizelayout();
 
 #include "config.h"
 
 typedef struct monitor_t monitor_t;
+
+typedef struct {
+  uint32_t nmaster;
+  float masterarea;
+  int32_t gapsize;
+} layout_props_t; 
 
 struct monitor_t {
   area_t area;
@@ -243,14 +253,14 @@ struct monitor_t {
 
   char* activedesktops[MAX_DESKTOPS];
   uint32_t desktopcount;
-  int32_t* nmaster;
+  layout_props_t* layouts;
 };
 
 typedef struct client_t client_t;
 
 struct client_t {
   area_t area, area_prev;
-  bool fullscreen, floating;
+  bool fullscreen, floating, floating_prev;
   xcb_window_t win, frame, titlebar;
 
   bool showtitlebar;

@@ -1168,7 +1168,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
     if(!cl->floating) {
       // Remove the client from the layout when the user moved it 
       cl->floating = true;
-      makelayout(cl->mon);
+      makelayout(s.monfocus);
     }
     xcb_flush(s.con);
     return;
@@ -1201,7 +1201,7 @@ evmotionnotify(xcb_generic_event_t* ev) {
   if(!cl->floating) {
     // Remove the client from the layout when the user moved it 
     cl->floating = true;
-    makelayout(cl->mon);
+    makelayout(s.monfocus);
   }
 
   xcb_flush(s.con);
@@ -1630,11 +1630,13 @@ setfullscreen(client_t* cl, bool fullscreen) {
   if(!s.monfocus || !cl) return;
 
   cl->fullscreen = fullscreen;
-  cl->floating = fullscreen;
   if(cl->fullscreen) {
     xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 1, &s.ewmh_atoms[EWMHfullscreen]);
     // Store previous position of client
     cl->area_prev = cl->area;
+    // Store previous floating state of client
+    cl->floating_prev = cl->floating;
+    cl->floating = true;
     // Set the client's area to the focused monitors area, effictivly
     // making the client as large as the monitor screen
     cl->area = s.monfocus->area;
@@ -1645,6 +1647,7 @@ setfullscreen(client_t* cl, bool fullscreen) {
     xcb_change_property(s.con, XCB_PROP_MODE_REPLACE, cl->win, s.ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
     // Set the client's area to the area before the last fullscreen occured 
     cl->area = cl->area_prev;
+    cl->floating = cl->floating_prev;
     cl->borderwidth = winborderwidth;
   }
   // Update client's border width
@@ -1664,7 +1667,7 @@ setfullscreen(client_t* cl, bool fullscreen) {
     setfullscreen(cl, true);
   }
 
-  makelayout(cl->mon);
+  makelayout(s.monfocus);
 }
 
 /**
@@ -1684,7 +1687,7 @@ switchclientdesktop(client_t* cl, int32_t desktop) {
     unfocusclient(cl);
   }
   hideclient(cl);
-  makelayout(cl->mon);
+  makelayout(s.monfocus);
 }
 
 /**
@@ -1711,9 +1714,11 @@ void
 makelayout(monitor_t* mon) {
   if(s.curlayout == LayoutFloating) return;
 
+  /* Make sure that there is always at least one slave window */
   uint32_t nlayout = numinlayout(s.monfocus);
-  while(nlayout - mon->nmaster[mondesktop(mon)->idx] == 0 && nlayout != 1) {
-    s.monfocus->nmaster[mondesktop(s.monfocus)->idx]--;
+  uint32_t deskidx = mondesktop(mon)->idx;
+  while(nlayout - mon->layouts[deskidx].nmaster == 0 && nlayout != 1) {
+    mon->layouts[deskidx].nmaster--;
   }
 
   switch(s.curlayout) {
@@ -1760,9 +1765,11 @@ cycledownlayout() {
 void 
 addmasterlayout() {
   uint32_t nlayout = numinlayout(s.monfocus);
-  int32_t nmaster = s.monfocus->nmaster[mondesktop(s.monfocus)->idx];
-  if(nlayout - (nmaster + 1) >= 1) {
-    s.monfocus->nmaster[mondesktop(s.monfocus)->idx]++;
+  uint32_t deskidx = mondesktop(s.monfocus)->idx;
+  layout_props_t* layout = &s.monfocus->layouts[deskidx];
+
+  if(nlayout - (layout->nmaster + 1) >= 1 && nlayout != 1) {
+    layout->nmaster++;
   }
   makelayout(s.monfocus);
 }
@@ -1773,9 +1780,57 @@ addmasterlayout() {
  */
 void 
 removemasterlayout() {
-  int32_t nmaster = s.monfocus->nmaster[mondesktop(s.monfocus)->idx];
-  if(nmaster - 1 >= 1) {
-    s.monfocus->nmaster[mondesktop(s.monfocus)->idx]--;
+  uint32_t deskidx = mondesktop(s.monfocus)->idx;
+  layout_props_t* layout = &s.monfocus->layouts[deskidx];
+
+  if(layout->nmaster - 1 >= 1) {
+    layout->nmaster--;
+  }
+  makelayout(s.monfocus);
+}
+
+void 
+incmasterarealayout() {
+  uint32_t deskidx = mondesktop(s.monfocus)->idx;
+  layout_props_t* layout = &s.monfocus->layouts[deskidx];
+
+  if(layout->masterarea 
+      + layoutmasterarea_step <= layoutmasterarea_max) {
+    layout->masterarea += layoutmasterarea_step;
+  }
+  makelayout(s.monfocus);
+}
+
+void 
+decmasterarealayout() {
+  uint32_t deskidx = mondesktop(s.monfocus)->idx;
+  layout_props_t* layout = &s.monfocus->layouts[deskidx];
+
+  if(layout->masterarea 
+      - layoutmasterarea_step >= layoutmasterarea_min) {
+    layout->masterarea -= layoutmasterarea_step;
+  }
+  makelayout(s.monfocus);
+}
+
+void 
+incgapsizelayout() {
+  uint32_t deskidx = mondesktop(s.monfocus)->idx;
+  layout_props_t* layout = &s.monfocus->layouts[deskidx];
+
+  if(layout->gapsize + winlayoutgap_step <= winlayoutgap_max) {
+    layout->gapsize += winlayoutgap_step;
+  }
+  makelayout(s.monfocus);
+}
+
+void 
+decgapsizelayout() {
+  uint32_t deskidx = mondesktop(s.monfocus)->idx;
+  layout_props_t* layout = &s.monfocus->layouts[deskidx];
+
+  if(layout->gapsize - winlayoutgap_step >= 0) {
+    layout->gapsize -= winlayoutgap_step;
   }
   makelayout(s.monfocus);
 }
@@ -1789,8 +1844,12 @@ void
 tiledmaster(monitor_t* mon) {
   if(!mon) return;
 
-  uint32_t nslaves = 0;
-  uint32_t nmaster = mon->nmaster[mondesktop(mon)->idx];
+  uint32_t nslaves    = 0;
+  uint32_t deskidx    = mondesktop(mon)->idx;
+  uint32_t nmaster    = mon->layouts[deskidx].nmaster;
+  int32_t gapsize     = mon->layouts[deskidx].gapsize;
+  float   masterarea  = mon->layouts[deskidx].masterarea;
+
   {
     uint32_t i = 0;
     for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
@@ -1835,6 +1894,7 @@ tiledmaster(monitor_t* mon) {
   }
 
   int32_t ymaster = y;
+  int32_t wmaster = w * masterarea;
 
   for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(cl->mon)->idx || cl->mon != mon) continue;
@@ -1845,11 +1905,12 @@ tiledmaster(monitor_t* mon) {
     bool singleclient = !nslaves;
 
     moveclient(cl, (v2_t){
-	(ismaster ? x : (int32_t)(x + w / 2)) + winlayoutgap,
-	(ismaster ? ymaster : y) + winlayoutgap});
+	(ismaster ? x : (int32_t)(x + wmaster)) + gapsize,
+	(ismaster ? ymaster : y) + gapsize});
     resizeclient(cl, (v2_t){
-	(((singleclient ? w : w / 2)) - cl->borderwidth * 2) - winlayoutgap * 2,
-	(height - cl->borderwidth * 2) - winlayoutgap * 2});
+	((singleclient ? w : (ismaster ? (uint32_t)wmaster : (uint32_t)w - wmaster)) 
+	 - cl->borderwidth * 2) - gapsize * 2,
+	(height - cl->borderwidth * 2) - gapsize * 2});
 
     if(!ismaster) {
       y += height;
@@ -2015,7 +2076,7 @@ cycledesktopup() {
   } else {
     newdesktop = 0;
   }
-  switchdesktop((passthrough_data){.i = newdesktop});
+  switchdesktop((passthrough_data_t){.i = newdesktop});
 }
 
 /**
@@ -2029,7 +2090,7 @@ cycledesktopdown() {
   } else {
     newdesktop = MAX_DESKTOPS - 1;
   }
-  switchdesktop((passthrough_data){.i = newdesktop});
+  switchdesktop((passthrough_data_t){.i = newdesktop});
 }
 
 
@@ -2040,7 +2101,7 @@ cycledesktopdown() {
  * @param data The .i member is used as the desktop to switch to
  * */
 void
-switchdesktop(passthrough_data data) {
+switchdesktop(passthrough_data_t data) {
   if(!s.monfocus) return;
   if(data.i == (int32_t)mondesktop(s.monfocus)->idx) return;
 
@@ -2088,7 +2149,7 @@ switchdesktop(passthrough_data data) {
  * @param data The .i member is used as the desktop to switch to
  * */
 void
-switchfocusdesktop(passthrough_data data) {
+switchfocusdesktop(passthrough_data_t data) {
   if(!s.focus) return;
   switchclientdesktop(s.focus, data.i);
 }
@@ -2504,9 +2565,11 @@ monitor_t* addmon(area_t a, uint32_t idx) {
   mon->idx      = idx;
   mon->desktopcount = 0;
 
-  mon->nmaster 	= malloc(sizeof(int32_t) * MAX_DESKTOPS);
+  mon->layouts = malloc(sizeof(*mon->layouts) * MAX_DESKTOPS);
   for(uint32_t i = 0; i < MAX_DESKTOPS; i++) {
-    mon->nmaster[i] = 1;
+    mon->layouts[i].nmaster = 1;
+    mon->layouts[i].gapsize = winlayoutgap;
+    mon->layouts[i].masterarea = MIN(MAX(layoutmasterarea, 0.0), 1.0);
   }
 
   s.monitors    = mon;
@@ -2763,7 +2826,7 @@ getwinstruts(xcb_window_t win) {
  * @param cmd The command to run 
  */
 void
-runcmd(passthrough_data data) {
+runcmd(passthrough_data_t data) {
   if (data.cmd == NULL) {
     return;
   }
@@ -2791,7 +2854,7 @@ runcmd(passthrough_data data) {
 void 
 addfocustolayout() {
   s.focus->floating = false;
-  makelayout(s.focus->mon);
+  makelayout(s.monfocus);
 }
 
 void 
@@ -3023,7 +3086,7 @@ cmdoutput(const char* cmd) {
 int
 main() {
   // Run the startup script
-  runcmd((passthrough_data){.cmd = "ragnarstart"});
+  runcmd((passthrough_data_t){.cmd = "ragnarstart"});
   // Setup the window manager
   setup();
   // Enter the event loop

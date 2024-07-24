@@ -2,12 +2,12 @@ CC = cc
 
 # includes and flags
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
-LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm 
+LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
 
 SRC = ragnar.c
 OBJ = ${SRC:.c=.o}
 
-all: ragnar print_options 
+all: ragnar
 
 print_options:
 	@echo ragnar build options:
@@ -19,26 +19,23 @@ print_options:
 .c.o:
 	${CC} -c ${CFLAGS} ${LIBS} ${INCS} $<
 
-${OBJ}: 
-
 ragnar: ${OBJ}
 	${CC} -o $@ ${OBJ} ${LIBS} ${INCS}
 
-install:
-	cp -f ragnar /usr/bin
-	cp -f ragnar.desktop /usr/share/applications
-	cp -f ragnarstart /usr/bin
-	mkdir -p /usr/share/ragnarwm
-	cp -r ./fonts/ /usr/share/ragnarwm
-	cp -r ./icons/ /usr/share/ragnarwm
-	chmod 755 /usr/bin/ragnar
+install: ragnar
+	sudo cp -f ragnar /usr/bin
+	sudo cp -f ragnar.desktop /usr/share/applications
+	sudo cp -f ragnarstart /usr/bin
+	sudo mkdir -p /usr/share/ragnarwm
+	sudo cp -r ./fonts/ /usr/share/ragnarwm
+	sudo cp -r ./icons/ /usr/share/ragnarwm
+	sudo chmod 755 /usr/bin/ragnar
 
 clean:
 	rm -f ragnar ${OBJ}
 
 uninstall:
-	rm -f /usr/bin/ragnar
-	rm -f /usr/share/applications/ragnar.desktop
-	rm -f /usr/bin/ragnarstart
-
-.PHONY: all print_options clean install uninstall freetype
+	sudo rm -f /usr/bin/ragnar
+	sudo rm -f /usr/share/applications/ragnar.desktop
+	sudo rm -f /usr/bin/ragnarstart
+	sudo rm -r /usr/share/ragnarwm
