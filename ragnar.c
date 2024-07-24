@@ -37,6 +37,7 @@ static void             loop();
 static bool             pointinarea(v2_t p, area_t a);
 static v2_t             cursorpos(bool* success);
 static area_t           winarea(xcb_window_t win, bool* success);
+static xcb_window_t 	truecolorwindow(area_t a, uint32_t bw);
 static float            getoverlaparea(area_t a, area_t b);
 
 static void             setbordercolor(client_t* cl, uint32_t color);
@@ -373,9 +374,33 @@ winarea(xcb_window_t win, bool* success) {
   // Creating the area structure to store the geometry in
   area_t a = (area_t){.pos = (v2_t){reply->x, reply->y}, .size = (v2_t){reply->width, reply->height}};
 
-  // Error checking
   free(reply);
   return a;
+}
+
+xcb_window_t
+truecolorwindow(area_t a, uint32_t bw) {
+  xcb_window_t win;
+  XVisualInfo vinfo;
+  if (!XMatchVisualInfo(s.dsp, DefaultScreen(s.dsp), 32, TrueColor, &vinfo)) {
+    fprintf(stderr, "ragnar: no true-color visual found.\n");
+    terminate();
+  }
+
+  XSetWindowAttributes attr;
+  attr.colormap = XCreateColormap(s.dsp, DefaultRootWindow(s.dsp), vinfo.visual, AllocNone);
+  attr.border_pixel = bw;
+  attr.background_pixel = 0;
+  attr.override_redirect = True; 
+
+  unsigned long mask = CWColormap | CWBorderPixel | CWBackPixel | CWOverrideRedirect;
+
+  win = XCreateWindow(s.dsp, DefaultRootWindow(s.dsp),
+      a.pos.x, a.pos.y, a.size.x, a.size.y,
+      winborderwidth, vinfo.depth, InputOutput, vinfo.visual,
+      mask, &attr);
+
+  return win;
 }
 
 /**
@@ -608,7 +633,6 @@ getclientname(client_t* cl) {
  */
 void
 killclient(client_t* cl) {
-  cl->floating = true;
   // If the client specifically has a delete atom set, send a delete event  
   if(clienthasdeleteatom(cl)) {
     xcb_client_message_event_t ev;
@@ -705,24 +729,13 @@ setxfocus(client_t* cl) {
 void
 frameclient(client_t* cl) {
   {
-    cl->frame = xcb_generate_id(s.con);
-    uint32_t mask = XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK;
-    uint32_t values[2] = {1, 
-      XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-	XCB_EVENT_MASK_STRUCTURE_NOTIFY |
-	XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-	XCB_EVENT_MASK_PROPERTY_CHANGE |
-	XCB_EVENT_MASK_ENTER_WINDOW |
-	XCB_EVENT_MASK_FOCUS_CHANGE |
-	XCB_EVENT_MASK_BUTTON_PRESS};
+    cl->frame = truecolorwindow(cl->area, winborderwidth);
 
-    xcb_create_window(s.con, XCB_COPY_FROM_PARENT, cl->frame, s.root,
-	cl->area.pos.x, cl->area.pos.y, cl->area.size.x, cl->area.size.y,
-	1, XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT,
-	mask, values);
-
+    // Select input events 
+    unsigned long event_mask = StructureNotifyMask | SubstructureNotifyMask | SubstructureRedirectMask |
+      PropertyChangeMask | EnterWindowMask | FocusChangeMask | ButtonPressMask;
+    XSelectInput(s.dsp, cl->frame, event_mask); 
   }
-
   setuptitlebar(cl);
 
   // Reparent the client's content to the newly created frame
@@ -1768,7 +1781,7 @@ addmasterlayout() {
   uint32_t deskidx = mondesktop(s.monfocus)->idx;
   layout_props_t* layout = &s.monfocus->layouts[deskidx];
 
-  if(nlayout - (layout->nmaster + 1) >= 1 && nlayout != 1) {
+  if(nlayout - (layout->nmaster + 1) >= 1 && nlayout > 1) {
     layout->nmaster++;
   }
   makelayout(s.monfocus);
@@ -2274,6 +2287,7 @@ setuptitlebar(client_t* cl) {
     s.initgl = true;
   }
 
+
   Colormap colormap = DefaultColormap(s.dsp, DefaultScreen(s.dsp));
 
   // Initialize background color
@@ -2302,6 +2316,7 @@ setuptitlebar(client_t* cl) {
   XReparentWindow(s.dsp, cl->titlebar, cl->frame, 0, 0);
   XMapWindow(s.dsp, cl->titlebar);
   XSync(s.dsp, false);
+ 
   // Grab Buttons
   {
     unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
@@ -2973,7 +2988,8 @@ compstrs(const void* a, const void* b) {
 void 
 initglcontext() {
   /* Create an OpenGL context */
-  GLint attribs[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None };
+  GLint attribs[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, 
+     None };
 
   int screen_num = DefaultScreen(s.dsp);
   s.glvis = glXChooseVisual(s.dsp, screen_num, attribs);
@@ -2983,6 +2999,9 @@ initglcontext() {
   }
 
   s.glcontext = glXCreateContext(s.dsp, s.glvis, NULL, GL_TRUE); 
+
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 /**

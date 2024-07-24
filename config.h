@@ -9,7 +9,7 @@
 /* Window properties */
 // Specifies the width of the border around frame windows
 static const int32_t        winborderwidth = 1; // (px)
-// Specifies the color of the border around frame windows
+						// Specifies the color of the border around frame windows
 static const int32_t        winbordercolor = 0x555555;
 // Specifies the color of the border around frame windows when the client
 // window is focused.
@@ -80,14 +80,14 @@ static const float layoutmasterarea_min  = 0.1f;
 static const float layoutmasterarea_max  = 0.9f;
 static const float layoutmasterarea_step  = 0.1f;
 // Specifies the gap between windows within a tiling layout 
-static const int32_t        winlayoutgap = 0; // (px)
+static const int32_t        winlayoutgap = 5; // (px)
 static const int32_t        winlayoutgap_max = 150; // (px)
 static const int32_t        winlayoutgap_step = 5; // (px)
-// Specifies the initial layout type that is used when the window manager 
-// initializes.
-// Options are:
-// 	- LayoutTiledMaster
-// 	- LayoutFloating
+						   // Specifies the initial layout type that is used when the window manager 
+						   // initializes.
+						   // Options are:
+						   // 	- LayoutTiledMaster
+						   // 	- LayoutFloating
 static const layout_type_t  initlayout   = LayoutTiledMaster;
 
 #define TERMINAL_CMD    "alacritty &"
@@ -97,7 +97,7 @@ static const layout_type_t  initlayout   = LayoutTiledMaster;
 
 /* Window manger keybinds */
 static const keybind_t keybinds[] = {
-/* Modifier   | Key       | Callback              | Command */ 
+  /* Modifier   | Key       | Callback              | Command */ 
   {modkey,          KeyEscape,  terminate,          { NULL }},
   /* Clients */
   {modkey,          KeyTab,     cyclefocusdown,     { NULL }},
