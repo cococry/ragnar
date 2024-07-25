@@ -72,6 +72,7 @@ static const int32_t  titlebarcolor   = 0x282828;
 static const int32_t  fontcolor       = 0xeeeeee;
 static const char*    fontpath        = "/usr/share/ragnarwm/fonts/LilexNerdFont-Medium.ttf";
 static const char*    closeiconpath   = "/usr/share/ragnarwm/icons/close.png";
+static const char*    layouticonpath  = "/usr/share/ragnarwm/icons/layout.png";
 static const uint32_t iconcolor       = 0xeeeeee;
 
 /* Layout */

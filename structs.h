@@ -265,7 +265,7 @@ struct client_t {
 
   bool showtitlebar;
 
-  v2_t closebutton;
+  v2_t closebutton, layoutbutton;
 
   client_t* next;
 
@@ -275,6 +275,8 @@ struct client_t {
   uint32_t desktop;
 
   bool urgent, ignoreunmap, ignoreexpose; 
+  bool titlebar_render_additional; 
+
 
   char* name;
 };
@@ -324,7 +326,7 @@ typedef struct {
   bool ignore_enter_layout;
 
   LfState ui;
-  LfTexture closeicon;
+  LfTexture closeicon, layouticon;
 
   client_t* clients;
   client_t* focus;

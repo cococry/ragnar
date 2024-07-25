@@ -89,6 +89,7 @@ static void             evmaprequest(xcb_generic_event_t* ev);
 static void             evunmapnotify(xcb_generic_event_t* ev);
 static void             evdestroynotify(xcb_generic_event_t* ev);
 static void             eventernotify(xcb_generic_event_t* ev);
+static void             evleavenotify(xcb_generic_event_t* ev);
 static void             evkeypress(xcb_generic_event_t* ev);
 static void             evbuttonpress(xcb_generic_event_t* ev);
 static void             evbuttonrelease(xcb_generic_event_t* ev);
@@ -150,6 +151,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_UNMAP_NOTIFY]        = evunmapnotify,
   [XCB_DESTROY_NOTIFY]      = evdestroynotify,
   [XCB_ENTER_NOTIFY]        = eventernotify,
+  [XCB_LEAVE_NOTIFY]        = evleavenotify,
   [XCB_KEY_PRESS]           = evkeypress,
   [XCB_BUTTON_PRESS]        = evbuttonpress,
   [XCB_BUTTON_RELEASE]      = evbuttonrelease,
@@ -986,14 +988,20 @@ eventernotify(xcb_generic_event_t* ev) {
   }
 
   client_t* cl = clientfromwin(enter_ev->event);
-
-
+  bool istitlebar = false;
   if(!cl) {
-    if(!(cl = clientfromtitlebar(enter_ev->event)) && enter_ev->event != s.root) return;
+    cl = clientfromtitlebar(enter_ev->event);
+    istitlebar = cl != NULL;
+
+    if(!cl && enter_ev->event != s.root) return;
   }
 
   // Focus entered client
-  if(cl) { 
+  if(cl) {
+    if(istitlebar) {
+      cl->titlebar_render_additional = true;
+      rendertitlebar(cl);
+    }
     focusclient(cl);
   }
   else if(enter_ev->event == s.root) {
@@ -1009,6 +1017,17 @@ eventernotify(xcb_generic_event_t* ev) {
       setborderwidth(cl, winborderwidth);
     }
   }
+
+  xcb_flush(s.con);
+}
+
+void 
+evleavenotify(xcb_generic_event_t* ev) {
+  xcb_leave_notify_event_t* leave_ev = (xcb_leave_notify_event_t*)ev;
+  client_t* cl = clientfromtitlebar(leave_ev->event);
+  if(!cl) return;
+  cl->titlebar_render_additional = false;
+  rendertitlebar(cl);
 
   xcb_flush(s.con);
 }
@@ -1073,8 +1092,19 @@ evbuttonpress(xcb_generic_event_t* ev) {
       .pos = cl->closebutton,
 	.size = (v2_t){30, titlebarheight}
     };
+    area_t layoutbtnarea = (area_t){
+      .pos = cl->layoutbutton,
+	.size = (v2_t){30, titlebarheight}
+    };
     if (pointinarea(cursorpos, closebtnarea)) {
       killclient(cl);
+      return;
+    }
+    if (pointinarea(cursorpos, layoutbtnarea) &&
+	s.curlayout != LayoutFloating && cl->floating &&
+	cl->titlebar_render_additional) {
+      cl->floating = false;
+      makelayout(cl->mon);
       return;
     }
     focusclient(cl);
@@ -2307,7 +2337,7 @@ setuptitlebar(client_t* cl) {
   Window root = DefaultRootWindow(s.dsp);
   XSetWindowAttributes attribs;
   attribs.colormap = XCreateColormap(s.dsp, s.root, s.glvis->visual, AllocNone); 
-  attribs.event_mask = EnterWindowMask | ExposureMask | StructureNotifyMask;
+  attribs.event_mask = EnterWindowMask | LeaveWindowMask | ExposureMask | StructureNotifyMask;
   attribs.background_pixel = color.pixel;
 
   cl->titlebar = (xcb_window_t)XCreateWindow(s.dsp, root, 0, 0, cl->area.size.x,
@@ -2346,6 +2376,7 @@ setuptitlebar(client_t* cl) {
     s.ui.theme.font = lf_load_font(fontpath, 24);
     s.ui.theme.text_props.text_color = lf_color_from_hex(fontcolor);
     s.closeicon = lf_load_texture(closeiconpath, LF_TEX_FILTER_LINEAR, false);
+    s.layouticon = lf_load_texture(layouticonpath, LF_TEX_FILTER_LINEAR, false);
   }
   rendertitlebar(cl);
 }
@@ -2353,8 +2384,12 @@ setuptitlebar(client_t* cl) {
 void
 rendertitlebar(client_t* cl) {
   if(!usedecoration) return;
+  if(!cl) return;
   if(cl->desktop != mondesktop(s.monfocus)->idx) return;
   setglcontext(cl->titlebar);
+
+  uint32_t btnsize = 12;
+  float btnmargin = 15;
 
   // Clear background
   {
@@ -2368,6 +2403,26 @@ rendertitlebar(client_t* cl) {
   glViewport(0, 0, cl->area.size.x, titlebarheight);
 
   lf_begin(&s.ui);
+  lf_set_line_should_overflow(&s.ui, false);
+  // Render layout button
+
+  if(cl->titlebar_render_additional && s.curlayout != LayoutFloating && cl->floating)
+  {
+    LfUIElementProps props = s.ui.theme.button_props;
+    props.color = LF_NO_COLOR;
+    props.padding = 0;
+    props.margin_top = (titlebarheight - btnsize * 1.25) / 2.0f;
+    props.border_width = 0;
+    props.margin_left = btnmargin;
+    props.margin_right = 0;
+    lf_push_style_props(&s.ui, props);
+    cl->layoutbutton = (v2_t){lf_get_ptr_x(&s.ui), lf_get_ptr_y(&s.ui)};
+    lf_set_image_color(&s.ui, lf_color_from_hex(iconcolor));
+    lf_image_button(&s.ui, ((LfTexture){.id = s.layouticon.id, .width = btnsize * 1.25, .height = btnsize * 1.25}));
+    lf_unset_image_color(&s.ui);
+    lf_pop_style_props(&s.ui);
+  }
+
   // Render client name
   {
     // Get client name
@@ -2381,33 +2436,38 @@ rendertitlebar(client_t* cl) {
     float textwidth = lf_text_dimension(&s.ui, displayname).x;
     lf_set_ptr_x_absolute(&s.ui, (cl->area.size.x - textwidth) / 2.0f);
 
+    lf_set_cull_end_x(&s.ui, cl->area.size.x - btnsize * 2 - btnmargin);
+
     // Display text and remove margin
     LfUIElementProps props = s.ui.theme.text_props;
     props.margin_left = 0.0f;
     lf_push_style_props(&s.ui, props);
     lf_text(&s.ui, displayname); 
     lf_pop_style_props(&s.ui);
+
+    lf_unset_cull_end_x(&s.ui);
   }
+
   // Render close button
   {
-    uint32_t width = 12;
-    float margin = 15;
     LfUIElementProps props = s.ui.theme.button_props;
-    lf_set_ptr_x_absolute(&s.ui, cl->area.size.x - width - margin);
+    lf_set_ptr_x_absolute(&s.ui, cl->area.size.x - btnsize - btnmargin);
 
     props.color = LF_NO_COLOR;
     props.padding = 0;
-    props.margin_top = (titlebarheight - width) / 2.0f;
+    props.margin_top = (titlebarheight - btnsize) / 2.0f;
     props.border_width = 0;
     props.margin_left = 0;
     props.margin_right = 0;
     lf_push_style_props(&s.ui, props);
     cl->closebutton = (v2_t){lf_get_ptr_x(&s.ui), lf_get_ptr_y(&s.ui)};
     lf_set_image_color(&s.ui, lf_color_from_hex(iconcolor));
-    lf_image_button(&s.ui, ((LfTexture){.id = s.closeicon.id, .width = width, .height = width}));
+    lf_image_button(&s.ui, ((LfTexture){.id = s.closeicon.id, .width = btnsize, .height = btnsize}));
     lf_unset_image_color(&s.ui);
     lf_pop_style_props(&s.ui);
   }
+
+  lf_set_line_should_overflow(&s.ui, true);
   lf_end(&s.ui);
 
   glXSwapBuffers(s.dsp, cl->titlebar);
@@ -2484,6 +2544,7 @@ addclient(xcb_window_t win) {
   cl->borderwidth = winborderwidth;
   cl->fullscreen = false;
   cl->floating = false;
+  cl->titlebar_render_additional = false;
   if(usedecoration)
     cl->name = getclientname(cl);
   cl->showtitlebar = usedecoration;
