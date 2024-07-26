@@ -942,11 +942,15 @@ evmaprequest(xcb_generic_event_t* ev) {
   }
 
   // Raise all floating clients
-  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
-    if(clientonscreen(cl, s.monfocus) && cl->floating) {
-      raiseclient(cl);
+  if(s.curlayout != LayoutFloating) {
+    for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+      if(clientonscreen(cl, s.monfocus) && cl->floating) {
+	raiseclient(cl);
+      }
     }
   }
+  // Raise the newly created client over all other clients
+  raiseclient(cl);
   xcb_flush(s.con);
 }
 /**

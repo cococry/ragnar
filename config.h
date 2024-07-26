@@ -66,7 +66,7 @@ static const char* desktopnames[MAX_DESKTOPS] = {
 // Known problems are that NVIDIA drivers on linux don't mix well with OpenGL contexts and drawing to them. 
 // If you are expierencing lag, mostly when resizing windows with decoration, its recommended to either turn off
 // decoration or set dynamic_rerender_on_resize = false further down in the config 
-static const bool     usedecoration   = true;
+static const bool     usedecoration   = false;
 static uint32_t       titlebarheight  = 30;
 static const int32_t  titlebarcolor   = 0x282828;
 static const int32_t  fontcolor       = 0xeeeeee;
