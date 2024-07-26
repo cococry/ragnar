@@ -491,13 +491,30 @@ moveclient(client_t* cl, v2_t pos) {
  */
 void
 resizeclient(client_t* cl, v2_t size) {
-  if(!cl) {
+  if (!cl) {
     return;
   }
+
+  // Retrieve size hints
+  xcb_size_hints_t hints;
+  if (xcb_icccm_get_wm_normal_hints_reply(s.con, xcb_icccm_get_wm_normal_hints(s.con, cl->win), &hints, NULL)) {
+    // Enforce minimum size
+    if (hints.flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) {
+      if (size.x < hints.min_width) size.x = hints.min_width;
+      if (size.y < hints.min_height) size.y = hints.min_height;
+    }
+
+    // Enforce maximum size
+    if (hints.flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) {
+      if (size.x > hints.max_width) size.x = hints.max_width;
+      if (size.y > hints.max_height) size.y = hints.max_height;
+    }
+  }
+
   uint32_t sizeval[2] = { (uint32_t)size.x, (uint32_t)size.y };
   uint32_t sizeval_content[2] = { (uint32_t)size.x, (uint32_t)size.y - ((cl->showtitlebar) ? titlebarheight : 0.0f)};
 
-  // Resize the window by configuring it's width and height property
+  // Resize the window by configuring its width and height property
   xcb_configure_window(s.con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
   xcb_configure_window(s.con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
 
@@ -864,7 +881,7 @@ evmaprequest(xcb_generic_event_t* ev) {
 
   // Setup listened events for the mapped window
   {
-    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_PROPERTY_CHANGE };
+    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_PROPERTY_CHANGE };
     xcb_change_window_attributes_checked(s.con, map_ev->window, XCB_CW_EVENT_MASK, evmask);
   }
 
@@ -924,6 +941,12 @@ evmaprequest(xcb_generic_event_t* ev) {
     focusclient(cl);
   }
 
+  // Raise all floating clients
+  for(client_t* cl = s.clients; cl != NULL; cl = cl->next) {
+    if(clientonscreen(cl, s.monfocus) && cl->floating) {
+      raiseclient(cl);
+    }
+  }
   xcb_flush(s.con);
 }
 /**
