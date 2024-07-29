@@ -336,13 +336,23 @@ void             setfullscreen(state_t* s, client_t* cl, bool fullscreen);
 void             switchclientdesktop(state_t* s, client_t* cl, int32_t desktop);
 
 /**
- * Returns how many client are currently in the layout on a 
+ * @brief Returns how many client are currently in the layout on a 
  * given monitor.
  *
  * @param s The window manager's state
  * @param mon The monitor to count clients on 
  * */
 uint32_t 	       numinlayout(state_t* s, monitor_t* mon);
+
+/**
+ * @brief Returns the current layout of the current virtual desktop on 
+ * a given monitor
+ *
+ * @param s The window manager's state
+ * @param mon The monitor to get the current layout of the current 
+ * virtual desktop of.
+ * */
+layout_type_t    getcurlayout(state_t* s, monitor_t* mon);
 
 /**
  * @brief Establishes the current tiling layout for the windows

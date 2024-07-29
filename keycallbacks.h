@@ -301,7 +301,8 @@ inline void settiledmaster(state_t* s, passthrough_data_t data){
       cl->floating = false;
     }
   }
-  s->curlayout = LayoutTiledMaster;
+  uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
+  s->monfocus->layouts[deskidx].curlayout = LayoutTiledMaster;
   makelayout(s, s->monfocus);
 }
 
@@ -316,12 +317,13 @@ inline void settiledmaster(state_t* s, passthrough_data_t data){
 inline void setfloatingmode(state_t* s, passthrough_data_t data) { 
   (void)data;
 
-  s->curlayout = LayoutFloating;
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     if(clientonscreen(s, cl, s->monfocus)) {
       cl->floating = true;
     }
   }
+  uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
+  s->monfocus->layouts[deskidx].curlayout = LayoutFloating;
   makelayout(s, s->monfocus);
 }
 
@@ -521,4 +523,82 @@ inline void toggletitlebars(state_t* s, passthrough_data_t data){
   s->showtitlebars = !s->showtitlebars;
 }
 
+
+/**
+ * @brief Moves the focused client up by 'keywinmove_step' 
+ * (in px)
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */
+inline void movefocusup(state_t* s, passthrough_data_t data){ 
+  (void)data;
+  if(!s->focus->floating) return;
+
+  v2_t pos = s->focus->area.pos;
+  v2_t dest = (v2_t){pos.x,
+    MIN(MAX(pos.y - keywinmove_step, s->monfocus->area.pos.y), 
+        s->monfocus->area.pos.y + s->monfocus->area.size.y
+        - s->focus->area.size.y)};
+  moveclient(s, s->focus, dest);
+  s->ignore_enter_layout = true;
+}
+
+/**
+ * @brief Moves the focused client down by 'keywinmove_step' 
+ * (in px)
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */
+inline void movefocusdown(state_t* s, passthrough_data_t data){ 
+  (void)data;
+  if(!s->focus->floating) return;
+
+  v2_t pos = s->focus->area.pos;
+  v2_t dest = (v2_t){pos.x,
+    MIN(MAX(pos.y + keywinmove_step, s->monfocus->area.pos.y), 
+        s->monfocus->area.pos.y + s->monfocus->area.size.y 
+        - s->focus->area.size.y)};
+  moveclient(s, s->focus, dest);
+  s->ignore_enter_layout = true;
+}
+
+/**
+ * @brief Moves the focused client left by 'keywinmove_step' 
+ * (in px)
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */
+inline void movefocusleft(state_t* s, passthrough_data_t data){ 
+  (void)data;
+  if(!s->focus->floating) return;
+
+  v2_t pos = s->focus->area.pos;
+  v2_t dest = (v2_t){MIN(MAX(pos.x - keywinmove_step, s->monfocus->area.pos.x), 
+      s->monfocus->area.pos.x + s->monfocus->area.size.x 
+      - s->focus->area.size.x), pos.y};
+  moveclient(s, s->focus, dest);
+  s->ignore_enter_layout = true;
+}
+
+/**
+ * @brief Moves the focused client right by 'keywinmove_step' 
+ * (in px)
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */
+inline void movefocusright(state_t* s, passthrough_data_t data){ 
+  (void)data;
+  if(!s->focus->floating) return;
+
+  v2_t pos = s->focus->area.pos;
+  v2_t dest = (v2_t){MIN(MAX(pos.x + keywinmove_step, s->monfocus->area.pos.x), 
+      s->monfocus->area.pos.x + s->monfocus->area.size.x 
+      - s->focus->area.size.x), pos.y};
+  moveclient(s, s->focus, dest);
+  s->ignore_enter_layout = true;
+}
 

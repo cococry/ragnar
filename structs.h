@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <leif/leif.h>
 
 #include <xcb/xcb.h>
@@ -12,6 +11,13 @@
 #include <GL/glx.h>
 
 #define _XCB_EV_LAST 36 
+
+/* Evaluates to the length (count of elements) in a given array */
+#define ARRLEN(arr) (sizeof(arr) / sizeof(arr[0]))
+/* Evaluates to the minium of two given numbers */
+#define MIN(a, b) (((a)<(b))?(a):(b))
+/* Evaluates to the maximum of two given numbers */
+#define MAX(a, b) (((a)>(b))?(a):(b))
 
 typedef enum {
   Shift     = XCB_MOD_MASK_SHIFT,
@@ -257,6 +263,7 @@ typedef struct {
   uint32_t nmaster;
   float masterarea;
   int32_t gapsize;
+  layout_type_t curlayout;
 } layout_props_t; 
 
 
@@ -316,6 +323,10 @@ void incgapsizelayout(state_t* s, passthrough_data_t data);
 void decgapsizelayout(state_t* s, passthrough_data_t data);
 void togglefocustitlebar(state_t* s, passthrough_data_t data); 
 void toggletitlebars(state_t* s, passthrough_data_t data);
+void movefocusup(state_t* s, passthrough_data_t data);
+void movefocusdown(state_t* s, passthrough_data_t data);
+void movefocusleft(state_t* s, passthrough_data_t data);
+void movefocusright(state_t* s, passthrough_data_t data);
 
 #include "config.h"
 
@@ -362,8 +373,6 @@ struct state_t {
   xcb_atom_t ewmh_atoms[EWMHcount];
 
   desktop_t* curdesktop;
-
-  layout_type_t curlayout;
 
   strut_t winstruts[MAX_STRUTS];
   uint32_t nwinstruts;

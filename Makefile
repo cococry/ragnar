@@ -32,7 +32,7 @@ install: ragnar
 	sudo chmod 755 /usr/bin/ragnar
 
 clean:
-	rm -f ragnar 
+	rm -f ragnar ragnar.o 
 
 uninstall:
 	sudo rm -f /usr/bin/ragnar

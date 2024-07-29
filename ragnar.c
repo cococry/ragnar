@@ -32,13 +32,6 @@
 #include "funcs.h"
 #include "keycallbacks.h"
 
-/* Evaluates to the length (count of elements) in a given array */
-#define ARRLEN(arr) (sizeof(arr) / sizeof(arr[0]))
-/* Evaluates to the minium of two given numbers */
-#define MIN(a, b) (((a)<(b))?(a):(b))
-/* Evaluates to the maximum of two given numbers */
-#define MAX(a, b) (((a)>(b))?(a):(b))
-
 /* */
 static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_MAP_REQUEST]         = evmaprequest,
@@ -91,7 +84,6 @@ setup(state_t* s) {
   s->lastexposetime = 0;
   s->lastmotiontime = 0;
 
-  s->curlayout = initlayout;
 
   s->showtitlebars = showtitlebars_init;
 
@@ -1085,6 +1077,12 @@ numinlayout(state_t* s, monitor_t* mon) {
   return nlayout;
 }
 
+layout_type_t
+getcurlayout(state_t* s, monitor_t* mon) {
+  uint32_t deskidx = mondesktop(s, mon)->idx;
+  return mon->layouts[deskidx].curlayout;
+}
+
 /**
  * @brief Establishes the current tiling layout for the windows
  *
@@ -1093,7 +1091,8 @@ numinlayout(state_t* s, monitor_t* mon) {
  */
 void
 makelayout(state_t* s, monitor_t* mon) {
-  if(s->curlayout == LayoutFloating) return;
+  layout_type_t curlayout = getcurlayout(s, mon); 
+  if(curlayout == LayoutFloating) return;
 
   /* Make sure that there is always at least one slave window */
   uint32_t nlayout = numinlayout(s, s->monfocus);
@@ -1102,7 +1101,7 @@ makelayout(state_t* s, monitor_t* mon) {
     mon->layouts[deskidx].nmaster--;
   }
 
-  switch(s->curlayout) {
+  switch(curlayout) {
     case LayoutTiledMaster:  {
       tiledmaster(s, mon);
       break;
@@ -1567,7 +1566,7 @@ rendertitlebar(state_t* s, client_t* cl) {
   lf_set_line_should_overflow(&s->ui, false);
 
   // Render layout button
-  if(cl->titlebar_render_additional && s->curlayout != LayoutFloating && cl->floating)
+  if(cl->titlebar_render_additional && getcurlayout(s, cl->mon) != LayoutFloating && cl->floating)
   {
     LfUIElementProps props = s->ui.theme.button_props;
     props.color = LF_NO_COLOR;
@@ -1790,7 +1789,7 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   }
 
   // Raise all floating clients
-  if(s->curlayout != LayoutFloating) {
+  if(getcurlayout(s, cl->mon) != LayoutFloating) {
     // Add all fullscreened clients to the layout
     for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
       if(clientonscreen(s, cl, s->monfocus) && cl->fullscreen) {
@@ -1994,19 +1993,19 @@ evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
     v2_t cursorpos = (v2_t){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
     area_t closebtnarea = (area_t){
       .pos = cl->closebutton,
-	.size = (v2_t){30, titlebarheight}
+      .size = (v2_t){30, titlebarheight}
     };
     area_t layoutbtnarea = (area_t){
       .pos = cl->layoutbutton,
-	.size = (v2_t){30, titlebarheight}
+      .size = (v2_t){30, titlebarheight}
     };
     if (pointinarea(cursorpos, closebtnarea)) {
       killclient(s, cl);
       return;
     }
     if (pointinarea(cursorpos, layoutbtnarea) &&
-	s->curlayout != LayoutFloating && cl->floating &&
-	cl->titlebar_render_additional) {
+      getcurlayout(s, cl->mon) != LayoutFloating && cl->floating &&
+      cl->titlebar_render_additional) {
       cl->floating = false;
       makelayout(s, cl->mon);
       return;
@@ -2199,7 +2198,7 @@ evconfigrequest(state_t* s, xcb_generic_event_t* ev) {
     // Configure the window with the specified values
     xcb_configure_window(s->con, config_ev->window, mask, values);
   } else {
-    if(s->curlayout != LayoutFloating && !cl->floating) return;
+    if(getcurlayout(s, cl->mon) != LayoutFloating && !cl->floating) return;
     {
       uint16_t mask = 0;
       uint32_t values[5];
@@ -2398,7 +2397,7 @@ addclient(state_t* s, xcb_window_t win) {
   cl->area = area;
   cl->borderwidth = winborderwidth;
   cl->fullscreen = false;
-  cl->floating = false;
+  cl->floating = getcurlayout(s, s->monfocus) == LayoutFloating;
   cl->titlebar_render_additional = false;
   if(usedecoration)
     cl->name = getclientname(s, cl);
@@ -2513,6 +2512,7 @@ monitor_t* addmon(state_t* s, area_t a, uint32_t idx) {
     mon->layouts[i].nmaster = 1;
     mon->layouts[i].gapsize = winlayoutgap;
     mon->layouts[i].masterarea = MIN(MAX(layoutmasterarea, 0.0), 1.0);
+    mon->layouts[i].curlayout = initlayout;
   }
 
   // Update linked list pointer

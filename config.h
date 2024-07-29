@@ -88,6 +88,8 @@ static const float layoutmasterarea      = 0.5f;
 static const float layoutmasterarea_min  = 0.1f;
 static const float layoutmasterarea_max  = 0.9f;
 static const float layoutmasterarea_step  = 0.1f;
+
+static const int32_t keywinmove_step = 100;
 // Specifies the gap between windows within a tiling layout 
 static const int32_t        winlayoutgap = 5; // (px)
 static const int32_t        winlayoutgap_max = 150; // (px)
@@ -117,6 +119,11 @@ static const keybind_t keybinds[] = {
   {modkey | Shift,  KeyI,       toggletitlebars,    { NULL }},
   {modkey,          KeyI,       togglefocustitlebar,{ NULL }},
   {modkey,          KeyR,       raisefocus,         { NULL }},
+
+  {modkey | Shift,  KeyW,       movefocusup,        { NULL }},
+  {modkey | Shift,  KeyA,       movefocusleft,      { NULL }},
+  {modkey | Shift,  KeyS,       movefocusdown,      { NULL }},
+  {modkey | Shift,  KeyD,       movefocusright,     { NULL }},
   /* Desktops */
   {modkey,     KeyD,       cycledesktopup,          { NULL }},
   {modkey,     KeyA,       cycledesktopdown,        { NULL }},
