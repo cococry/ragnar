@@ -1,9 +1,18 @@
+#pragma once
 /* ======= ragnarwm config ======== 
  * NOTE: For a detailed look at all values that can be used
  * for configuration see the structs.h header. 
  * =============================== */ 
 
-#pragma once
+
+// The maximum number of struts that are noticed by the layouts
+// (Struts define the area that a window takes up) This is usefull for 
+// docks, bars etc. as the layout keeps space for them.
+#define MAX_STRUTS 8
+
+// Specifies how many desktops are allocated
+#define MAX_DESKTOPS 9
+
 #include "structs.h"
 
 /* Window properties */
@@ -50,8 +59,6 @@ static const mousebtn_t resizebtn   = RightMouse;
 // Specifies the desktop index that is selected on startup
 static const int32_t desktopinit   = 0;
 
-// Specifies how many desktops are allocated
-#define MAX_DESKTOPS 9
 // Specifies the name of every allocated dekstop (ordered)
 static const char* desktopnames[MAX_DESKTOPS] = {
   "1", "2", "3", "4", "5", "6", "7", "8", "9"
@@ -66,7 +73,8 @@ static const char* desktopnames[MAX_DESKTOPS] = {
 // Known problems are that NVIDIA drivers on linux don't mix well with OpenGL contexts and drawing to them. 
 // If you are expierencing lag, mostly when resizing windows with decoration, its recommended to either turn off
 // decoration or set dynamic_rerender_on_resize = false further down in the config 
-static const bool     usedecoration   = false;
+static const bool     usedecoration   = true;
+static const bool     showtitlebars_init = false;
 static uint32_t       titlebarheight  = 30;
 static const int32_t  titlebarcolor   = 0x282828;
 static const int32_t  fontcolor       = 0xeeeeee;
@@ -93,18 +101,21 @@ static const layout_type_t  initlayout   = LayoutTiledMaster;
 
 #define TERMINAL_CMD    "alacritty &"
 #define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
-#define BROWSER_CMD     "brave &"
+#define BROWSER_CMD     "firefox &"
 #define SCREENSHOT_CMD  "flameshot gui &"
 
 /* Window manger keybinds */
 static const keybind_t keybinds[] = {
   /* Modifier   | Key       | Callback              | Command */ 
-  {modkey,          KeyEscape,  terminate,          { NULL }},
+  {modkey,          KeyEscape,  terminate_successfully, { NULL }},
   /* Clients */
   {modkey,          KeyTab,     cyclefocusdown,     { NULL }},
   {modkey | Shift,  KeyTab,     cyclefocusup,       { NULL }},
   {modkey,          KeyQ,       killfocus,          { NULL }},
   {modkey,          KeyF,       togglefullscreen,   { NULL }},
+  {modkey,          KeyR,       raisefocus,         { NULL }},
+  {modkey | Shift,  KeyI,       toggletitlebars,    { NULL }},
+  {modkey,          KeyI,       togglefocustitlebar,{ NULL }},
   {modkey,          KeyR,       raisefocus,         { NULL }},
   /* Desktops */
   {modkey,     KeyD,       cycledesktopup,          { NULL }},
@@ -161,6 +172,8 @@ static const size_t motion_notify_debounce_fps = 60;
 // Specifies if non ASCII characters should be rendered on the titlebar 
 // Turning this on can lead to unexpected behaviour in some clients.
 static const uint32_t decoration_render_non_ascii = false;
+// Specifies whether or not vsync should be enabled on OpenGL render windows
+static bool glvsync = false;
 // The character that is rendered instead of a non-ASCII character 
 static const char non_ascii_replacement = ' ';
 // Specifies if clients that are interactivly resized should re-render their
@@ -170,12 +183,12 @@ static const char non_ascii_replacement = ' ';
 // handle multiple OpenGL contexts well.
 static const bool dynamic_rerender_on_resize = true;
 
-// The maximum number of struts that are noticed by the layouts
-// (Struts define the area that a window takes up) This is usefull for 
-// docks, bars etc. as the layout keeps space for them.
-#define MAX_STRUTS 8
 
 // Specifies the file to log debug messages to 
-static const char* logfile = "/home/user/ragnarwm.log";
+static const char* logfile = "/home/luca/ragnarwm.log";
+// Specifies the default cursor image on the root window
+static const char* cursorimage = "arrow"; 
 // Specifies whether or not logging should be enabled
-static bool logdebug = false;
+static bool logmessages = false;
+// Specifies whether or not messages should be logged to the logfile
+static bool shouldlogtofile = true;

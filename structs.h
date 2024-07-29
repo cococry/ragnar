@@ -1,7 +1,15 @@
 #pragma once
 
+
 #include <leif/leif.h>
-#include <time.h>
+
+#include <xcb/xcb.h>
+#include <xcb/xcb_keysyms.h>
+#include <X11/keysym.h>
+#include <xcb/xcb_ewmh.h>
+
+#include <GL/gl.h>
+#include <GL/glx.h>
 
 #define _XCB_EV_LAST 36 
 
@@ -23,15 +31,48 @@ typedef enum {
   LayoutTiledMaster
 } layout_type_t; 
 
+typedef enum {
+  EWMHsupported = 0, 
+  EWMHname, 
+  EWMHstate, 
+  EWMHstateHidden, 
+  EWMHcheck,
+  EWMHfullscreen, 
+  EWMHactiveWindow, 
+  EWMHwindowType,
+  EWMHwindowTypeDialog, 
+  EWMHclientList,
+  EWMHcurrentDesktop,
+  EWMHnumberOfDesktops,
+  EWMHdesktopNames,
+  EWMHcount
+} ewmh_atom_t;
+
+typedef enum {
+  WMprotocols = 0,
+  WMdelete,
+  WMstate,
+  WMtakeFocus,
+  WMcount
+} wm_atom_t;
+
+typedef enum {
+  LogLevelTrace = 0,
+  LogLevelWarn,
+  LogLevelError 
+} log_level_t;
+
 typedef struct {
   const char* cmd;
   int32_t i;
 } passthrough_data_t;
 
+typedef struct state_t state_t;
+
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
-  void (*cb)(passthrough_data_t data);
+  void (*cb)(state_t* s, passthrough_data_t data);
   passthrough_data_t data;
 } keybind_t;
 
@@ -208,35 +249,7 @@ typedef struct {
   int32_t starty, endy;
 } strut_t;
 
-typedef void (*event_handler_t)(xcb_generic_event_t* ev);
 
-static void terminate();
-static void cyclefocusup();
-static void cyclefocusdown();
-static void killfocus();
-static void togglefullscreen();
-static void raisefocus();
-static void cycledesktopup(); 
-static void cycledesktopdown();
-static void cyclefocusdesktopup();
-static void cyclefocusdesktopdown();
-static void switchdesktop(passthrough_data_t data); 
-static void switchfocusdesktop(passthrough_data_t data);
-static void runcmd(passthrough_data_t data);
-static void addfocustolayout();
-static void settiledmaster();
-static void setfloatingmode();
-static void updatebarslayout();
-static void cycleuplayout();
-static void cycledownlayout();
-static void addmasterlayout();
-static void removemasterlayout();
-static void incmasterarealayout();
-static void decmasterarealayout();
-static void incgapsizelayout();
-static void decgapsizelayout();
-
-#include "config.h"
 
 typedef struct monitor_t monitor_t;
 
@@ -246,15 +259,6 @@ typedef struct {
   int32_t gapsize;
 } layout_props_t; 
 
-struct monitor_t {
-  area_t area;
-  monitor_t* next;
-  uint32_t idx;
-
-  char* activedesktops[MAX_DESKTOPS];
-  uint32_t desktopcount;
-  layout_props_t* layouts;
-};
 
 typedef struct client_t client_t;
 
@@ -285,32 +289,47 @@ typedef struct {
   uint32_t idx;
 } desktop_t;
 
-typedef enum {
-  EWMHsupported, 
-  EWMHname, 
-  EWMHstate, 
-  EWMHstateHidden, 
-  EWMHcheck,
-  EWMHfullscreen, 
-  EWMHactiveWindow, 
-  EWMHwindowType,
-  EWMHwindowTypeDialog, 
-  EWMHclientList,
-  EWMHcurrentDesktop,
-  EWMHnumberOfDesktops,
-  EWMHdesktopNames,
-  EWMHcount
-} ewmh_atom_t;
+void terminate_successfully(state_t* s, passthrough_data_t data);
+void cyclefocusup(state_t* s, passthrough_data_t data);
+void cyclefocusdown(state_t* s, passthrough_data_t data);
+void killfocus(state_t* s, passthrough_data_t data);
+void togglefullscreen(state_t* s, passthrough_data_t data);
+void raisefocus(state_t* s, passthrough_data_t data);
+void cycledesktopup(state_t* s, passthrough_data_t data); 
+void cycledesktopdown(state_t* s, passthrough_data_t data);
+void cyclefocusdesktopup(state_t* s, passthrough_data_t data);
+void cyclefocusdesktopdown(state_t* s, passthrough_data_t data);
+void switchdesktop(state_t* s, passthrough_data_t data); 
+void switchfocusdesktop(state_t* s, passthrough_data_t data);
+void runcmd(state_t* s, passthrough_data_t data);
+void addfocustolayout(state_t* s, passthrough_data_t data);
+void settiledmaster(state_t* s, passthrough_data_t data);
+void setfloatingmode(state_t* s, passthrough_data_t data);
+void updatebarslayout(state_t* s, passthrough_data_t data);
+void cycleuplayout(state_t* s, passthrough_data_t data);
+void cycledownlayout(state_t* s, passthrough_data_t data);
+void addmasterlayout(state_t* s, passthrough_data_t data);
+void removemasterlayout(state_t* s, passthrough_data_t data);
+void incmasterarealayout(state_t* s, passthrough_data_t data);
+void decmasterarealayout(state_t* s, passthrough_data_t data);
+void incgapsizelayout(state_t* s, passthrough_data_t data);
+void decgapsizelayout(state_t* s, passthrough_data_t data);
+void togglefocustitlebar(state_t* s, passthrough_data_t data); 
+void toggletitlebars(state_t* s, passthrough_data_t data);
 
-typedef enum {
-  WMprotocols,
-  WMdelete,
-  WMstate,
-  WMtakeFocus,
-  WMcount
-} wm_atom_t;
+#include "config.h"
 
-typedef struct {
+struct monitor_t {
+  area_t area;
+  monitor_t* next;
+  uint32_t idx;
+
+  char* activedesktops[MAX_DESKTOPS];
+  uint32_t desktopcount;
+  layout_props_t* layouts;
+};
+
+struct state_t {
   xcb_connection_t* con;
   xcb_ewmh_connection_t ewmh;
   xcb_window_t root;
@@ -324,6 +343,8 @@ typedef struct {
   bool initgl;
 
   bool ignore_enter_layout;
+
+  bool showtitlebars;
 
   LfState ui;
   LfTexture closeicon, layouticon;
@@ -347,4 +368,7 @@ typedef struct {
   strut_t winstruts[MAX_STRUTS];
   uint32_t nwinstruts;
 
-} state_t;
+};
+
+typedef void (*event_handler_t)(state_t* s, xcb_generic_event_t* ev);
+

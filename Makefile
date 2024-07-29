@@ -4,7 +4,7 @@ CC = cc
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
 LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
 
-SRC = ragnar.c
+SRC = ragnar.c 
 OBJ = ${SRC:.c=.o}
 
 all: ragnar
@@ -32,7 +32,7 @@ install: ragnar
 	sudo chmod 755 /usr/bin/ragnar
 
 clean:
-	rm -f ragnar ${OBJ}
+	rm -f ragnar 
 
 uninstall:
 	sudo rm -f /usr/bin/ragnar
