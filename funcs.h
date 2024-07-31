@@ -31,10 +31,20 @@ void             loop(state_t* s);
  * @brief Terminates the window manager 
  *
  * This function terminates the window manager by
- * diss->conecting the s->conection to the X server and
+ * giving up the connection to the X server and
  * exiting the program.
  */
 void             terminate(state_t* s, int32_t exitcode);
+
+/**
+ * @brief Manages all windows that are avaiable on the 
+ * X display.
+ *
+ * @param s The window manager' state
+ */
+void             managewins(state_t* s);
+
+void             makeclient(state_t* s, xcb_window_t win);
 
 /**
  * @brief Evaluates if a given point is inside a given area 
@@ -155,6 +165,18 @@ void             raiseclient(state_t* s, client_t* cl);
  * @return Whether or not the given client has a WM_DELETE atom 
  */
 bool             clienthasdeleteatom(state_t* s, client_t* cl);
+
+/**
+ * @brief Returns wether or not a client should be added 
+ * to the tiling layout based on window properties:
+ * (_NET_WM_WINDOW_TYPE, NET_WM_WINDOW_TYPE_NORMAL)
+ *
+ * @param s The window manager's state
+ * @param cl The client to check if it should tile for 
+ *
+ * @return Whether or not a given client should tile 
+ */
+bool             clientshouldtile(state_t* s, client_t* cl);
 
 /**
  * @brief Checks if a client is on a given monitor and if it is 
@@ -458,6 +480,35 @@ void             updatetitlebar(state_t* s, client_t* cl);
  * */
 void             hidetitlebar(state_t* s, client_t* cl);
 
+/**
+ * @brief Takes in a size for a client window and adjusts it 
+ * if it does not meet the requirements of the client's hints.
+ * The adjusted value is returned.
+ *
+ * @param s The window manager's state
+ * @param cl The client of which to get the adjusted size of
+ * @param size The size before applying hints 
+ *
+ * @return The size after applying hints
+ * */
+v2_t            applysizehints(state_t* s, client_t* cl, v2_t size);
+
+/**
+ * @brief Adds a given client to the current tiling layout
+ *
+ * @param s The window manager's state
+ * @param cl The client to add to the layout 
+ * */
+void            addtolayout(state_t* s, client_t* cl);
+
+/**
+ * @brief Removes a given client from the current tiling layout
+ *
+ * @param s The window manager's state
+ * @param cl The client to remove from the layout 
+ * */
+void            removefromlayout(state_t* s, client_t* cl);
+
 
 /**
  * @brief Shows the titlebar window of a given client 
@@ -529,7 +580,7 @@ void             evkeypress(state_t* s, xcb_generic_event_t* ev);
 
 /**
  * @brief Handles a X button press event by focusing the client 
- * associated with the pressed window and setting cursor and window grab positions->
+ * associated with the pressed window and setting cursor and window grab positions
  *
  * @param s The window manager's state
  * @param ev The generic event 
@@ -600,7 +651,7 @@ void             evclientmessage(state_t* s, xcb_generic_event_t* ev);
 void             evexpose(state_t* s, xcb_generic_event_t* ev);
 
 /**
- * @brief Adds a client window to the linked list of clients->
+ * @brief Adds a client window to the linked list of clients
  *
  * @param s The window manager's state
  * @param win The window to create a client from and add it 
@@ -642,7 +693,7 @@ client_t*        clientfromwin(state_t* s, xcb_window_t win);
 client_t*        clientfromtitlebar(state_t* s, xcb_window_t titlebar);
 
 /**
- * @brief Adds a monitor area to the linked list of monitors->
+ * @brief Adds a monitor area to the linked list of monitors
  *
  * @param s The window manager's state 
  * @param a The area of the monitor to create 
@@ -762,7 +813,7 @@ xcb_atom_t       getatom(state_t* s, const char* atomstr);
 
 /**
  * 
- * @brief Updates the client list EWMH atom tothe current list of clients->
+ * @brief Updates the client list EWMH atom tothe current list of clients
  *
  * @param s The window manager's state 
  * */
@@ -839,4 +890,3 @@ void 		         logtofile(const char* fmt, va_list args);
  *
  * @return The output of the given command */ 
 char* 		       cmdoutput(const char* cmd);
-

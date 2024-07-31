@@ -271,7 +271,8 @@ typedef struct client_t client_t;
 
 struct client_t {
   area_t area, area_prev;
-  bool fullscreen, floating, floating_prev;
+  bool fullscreen, floating, floating_prev,
+       fixed;
   xcb_window_t win, frame, titlebar;
 
   bool showtitlebar;

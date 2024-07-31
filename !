@@ -61,7 +61,7 @@ static int
 otherwmhandler(Display* dsp, XErrorEvent* ev) {
   (void)dsp;
   (void)ev;
-  fprintf(stderr, "ragnar: another X window manager is already running.\n");
+  fprintf(stderr, "ragnar: another X window manager is already running.");
   exit(EXIT_FAILURE);
   return -1;
 }
@@ -137,8 +137,6 @@ setup(state_t* s) {
     XSetErrorHandler(xerror);
     XSync(s->dsp, False);
   }
-  // Run the startup script
-  runcmd(NULL, (passthrough_data_t){.cmd = "ragnarstart"});
 
   // Setting up xcb connection 
   s->con = XGetXCBConnection(s->dsp);
@@ -180,11 +178,6 @@ setup(state_t* s) {
 
   // Setup atoms for EWMH and NetWM standards
   setupatoms(s);
-
-
-  // Gather strut information for layouts 
-  s->nwinstruts = 0;
-  getwinstruts(s, s->root);
 
   // Initialize virtual desktops
   s->curdesktop = malloc(sizeof(*s->curdesktop) * registered_monitors);
@@ -3292,6 +3285,14 @@ main() {
   state_t* wm_state = malloc(sizeof(state_t));
   // Setup the window manager
   setup(wm_state);
+
+  // Run the startup script
+  runcmd(NULL, (passthrough_data_t){.cmd = "ragnarstart"});
+
+  // Gather strut information for layouts 
+  wm_state->nwinstruts = 0;
+  getwinstruts(wm_state, wm_state->root);
+
   // Manage all windows on the display
   managewins(wm_state);
   // Enter the event loop

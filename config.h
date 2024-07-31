@@ -73,8 +73,8 @@ static const char* desktopnames[MAX_DESKTOPS] = {
 // Known problems are that NVIDIA drivers on linux don't mix well with OpenGL contexts and drawing to them. 
 // If you are expierencing lag, mostly when resizing windows with decoration, its recommended to either turn off
 // decoration or set dynamic_rerender_on_resize = false further down in the config 
-static const bool     usedecoration   = true;
-static const bool     showtitlebars_init = false;
+static const bool     usedecoration       = false;
+static const bool     showtitlebars_init  = false;
 static uint32_t       titlebarheight  = 30;
 static const int32_t  titlebarcolor   = 0x282828;
 static const int32_t  fontcolor       = 0xeeeeee;
@@ -101,7 +101,7 @@ static const int32_t        winlayoutgap_step = 5; // (px)
 						   // 	- LayoutFloating
 static const layout_type_t  initlayout   = LayoutTiledMaster;
 
-#define TERMINAL_CMD    "alacritty &"
+#define TERMINAL_CMD    "kitty &"
 #define MENU_CMD        "~/.config/rofi/launchers/type-3/launcher.sh &"
 #define BROWSER_CMD     "firefox &"
 #define SCREENSHOT_CMD  "flameshot gui &"
@@ -198,4 +198,4 @@ static const char* cursorimage = "arrow";
 // Specifies whether or not logging should be enabled
 static bool logmessages = false;
 // Specifies whether or not messages should be logged to the logfile
-static bool shouldlogtofile = true;
+static bool shouldlogtofile = false;
