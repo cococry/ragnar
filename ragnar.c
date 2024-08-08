@@ -1494,6 +1494,14 @@ uploaddesktopnames(state_t* s) {
   xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(s->con)).data;
   xcb_window_t root_window = screen->root;
 
+  if(s->monfocus) {
+    desktop_t* desk = mondesktop(s, s->monfocus);
+    if(desk) {
+      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
+                          XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
+    }
+  }
+
   // Set the _NET_DESKTOP_NAMES property
   xcb_change_property(s->con,
       XCB_PROP_MODE_REPLACE,
@@ -1999,7 +2007,7 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   xcb_get_window_attributes_reply_t *wa_reply = xcb_get_window_attributes_reply(s->con, wa_cookie, NULL);
   // Return if attributes could not be retrieved or if the window uses override_redirect
   if (!wa_reply || wa_reply->override_redirect) {
-    free(wa_reply);
+    xcb_flush(s->con);
     return;
   }
   free(wa_reply);
@@ -2099,6 +2107,7 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
       rendertitlebar(s, cl);
     }
     focusclient(s, cl);
+    uploaddesktopnames(s);
   }
   else if(enter_ev->event == s->root) {
     // Set Input focus to root

@@ -1,5 +1,6 @@
 #pragma once
 #include "funcs.h"
+#include <string.h>
 
 /**
  * @brief Terminates the window manager with 
@@ -202,7 +203,6 @@ inline void switchdesktop(state_t* s, passthrough_data_t data){
   // Notify EWMH for desktop change
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
       XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
-
 
 
   for (client_t* cl = s->clients; cl != NULL; cl = cl->next) {
