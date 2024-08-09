@@ -4,7 +4,7 @@ CC = cc
 CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
 LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
 
-SRC = ragnar.c 
+SRC = ragnar.c config.h keycallbacks.h 
 OBJ = ${SRC:.c=.o}
 
 all: ragnar

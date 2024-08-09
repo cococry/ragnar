@@ -1,6 +1,10 @@
 #pragma once
+#include "config.h"
 #include "funcs.h"
+#include "structs.h"
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 /**
  * @brief Terminates the window manager with 
@@ -26,7 +30,7 @@ inline void cyclefocusup(state_t* s, passthrough_data_t data) {
   // Return if there are no clients or no focus
   if (!s->clients || !s->focus)
     return;
-  
+
   client_t* next = prevvisible(s, false);
 
   if(next) {
@@ -45,7 +49,7 @@ inline void cyclefocusdown(state_t* s, passthrough_data_t data) {
   (void)data;
   if (!s->clients || !s->focus)
     return;
- 
+
   client_t* next = nextvisible(s, false);
 
   // If there is a next client, just focus it
@@ -164,7 +168,7 @@ inline void cyclefocusdesktopup(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state 
  * @param data The data to use for the function (unused here)
  * */
-inline void cyclefocusdesktopdown(state_t* s, passthrough_data_t data){ 
+inline void cyclefocusdesktopdown(state_t* s, passthrough_data_t data) { 
   (void)data;
 
   if(!s->focus) return;
@@ -184,7 +188,7 @@ inline void cyclefocusdesktopdown(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The .i member is used as the desktop to switch to
  * */
-inline void switchdesktop(state_t* s, passthrough_data_t data){ 
+inline void switchdesktop(state_t* s, passthrough_data_t data) { 
   if(!s->monfocus) return;
   if(data.i == (int32_t)mondesktop(s, s->monfocus)->idx) return;
 
@@ -221,6 +225,8 @@ inline void switchdesktop(state_t* s, passthrough_data_t data){
     unfocusclient(s, cl);
   }
 
+  s->lastdesktop = *mondesktop(s, s->monfocus);
+
   mondesktop(s, s->monfocus)->idx = data.i;
   makelayout(s, s->monfocus);
 
@@ -235,7 +241,7 @@ inline void switchdesktop(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The .i member is used as the desktop to switch to
  * */
-inline void switchfocusdesktop(state_t* s, passthrough_data_t data){ 
+inline void switchfocusdesktop(state_t* s, passthrough_data_t data) { 
   if(!s->focus) return;
   switchclientdesktop(s, s->focus, data.i);
 }
@@ -293,7 +299,7 @@ inline void addfocustolayout(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state 
  * @param data The data to use for the function (unused here)
  */
-inline void settiledmaster(state_t* s, passthrough_data_t data){ 
+inline void settiledmaster(state_t* s, passthrough_data_t data) { 
   (void)data;
 
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
@@ -303,6 +309,57 @@ inline void settiledmaster(state_t* s, passthrough_data_t data){
   }
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
   s->monfocus->layouts[deskidx].curlayout = LayoutTiledMaster;
+
+  resetlayoutsizes(s, s->monfocus);
+
+  makelayout(s, s->monfocus);
+}
+
+/**
+ * @brief Sets the current layout to vertical stripes 
+ * and adds every on-screen client to the layout
+ * layout.
+ *
+ * @param s The window manager's state 
+ * @param data The data to use for the function (unused here)
+ */
+inline void setverticalstripes(state_t* s, passthrough_data_t data) { 
+  (void)data;
+
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(clientonscreen(s, cl, s->monfocus)) {
+      cl->floating = false;
+    }
+  }
+  uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
+  s->monfocus->layouts[deskidx].curlayout = LayoutVerticalStripes;
+
+  resetlayoutsizes(s, s->monfocus);
+
+  makelayout(s, s->monfocus);
+}
+
+/**
+ * @brief Sets the current layout to horizontal stripes 
+ * and adds every on-screen client to the layout
+ * layout.
+ *
+ * @param s The window manager's state 
+ * @param data The data to use for the function (unused here)
+ */
+inline void sethorizontalstripes(state_t* s, passthrough_data_t data) { 
+  (void)data;
+
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(clientonscreen(s, cl, s->monfocus)) {
+      cl->floating = false;
+    }
+  }
+  uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
+  s->monfocus->layouts[deskidx].curlayout = LayoutHorizontalStripes;
+
+  resetlayoutsizes(s, s->monfocus);
+
   makelayout(s, s->monfocus);
 }
 
@@ -324,6 +381,7 @@ inline void setfloatingmode(state_t* s, passthrough_data_t data) {
   }
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
   s->monfocus->layouts[deskidx].curlayout = LayoutFloating;
+
   makelayout(s, s->monfocus);
 }
 
@@ -333,7 +391,7 @@ inline void setfloatingmode(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state 
  * @param data The data to use for the function (unused here)
  */
-inline void updatebarslayout(state_t* s, passthrough_data_t data){ 
+inline void updatebarslayout(state_t* s, passthrough_data_t data) { 
   (void)data;
   // Gather strut information 
   s->nwinstruts = 0;
@@ -349,11 +407,13 @@ inline void updatebarslayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void cycleuplayout(state_t* s, passthrough_data_t data){ 
+inline void cycleuplayout(state_t* s, passthrough_data_t data) { 
   (void)data;
   client_t* prev = prevvisible(s, true);
   s->ignore_enter_layout = true;
   swapclients(s, s->focus, prev);
+  // Reset the sizes of all clients
+  resetlayoutsizes(s, s->monfocus); 
   makelayout(s, s->monfocus);
 }
 
@@ -364,11 +424,13 @@ inline void cycleuplayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void cycledownlayout(state_t* s, passthrough_data_t data){ 
+inline void cycledownlayout(state_t* s, passthrough_data_t data) { 
   (void)data;
   client_t* next = nextvisible(s, true);
   s->ignore_enter_layout = true;
   swapclients(s, s->focus, next);
+  // Reset the sizes of all clients
+  resetlayoutsizes(s, s->monfocus); 
   makelayout(s, s->monfocus);
 }
 
@@ -379,7 +441,7 @@ inline void cycledownlayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void addmasterlayout(state_t* s, passthrough_data_t data){ 
+inline void addmasterlayout(state_t* s, passthrough_data_t data) { 
   (void)data;
 
   uint32_t nlayout = numinlayout(s, s->monfocus);
@@ -392,7 +454,6 @@ inline void addmasterlayout(state_t* s, passthrough_data_t data){
   makelayout(s, s->monfocus);
 }
 
-
 /**
  * @brief Decrements the number of windows that are seen as master windows
  * in master-slave layouts
@@ -400,7 +461,7 @@ inline void addmasterlayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void removemasterlayout(state_t* s, passthrough_data_t data){ 
+inline void removemasterlayout(state_t* s, passthrough_data_t data) { 
   (void)data;
 
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
@@ -419,7 +480,7 @@ inline void removemasterlayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void incmasterarealayout(state_t* s, passthrough_data_t data){ 
+inline void incmasterarealayout(state_t* s, passthrough_data_t data) { 
   (void)data;
 
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
@@ -439,10 +500,12 @@ inline void incmasterarealayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void decmasterarealayout(state_t* s, passthrough_data_t data){ 
+inline void decmasterarealayout(state_t* s, passthrough_data_t data) { 
   (void)data;
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
   layout_props_t* layout = &s->monfocus->layouts[deskidx];
+
+  if(layout->mastermaxed) return;
 
   if(layout->masterarea 
       - layoutmasterarea_step >= layoutmasterarea_min) {
@@ -459,7 +522,7 @@ inline void decmasterarealayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void incgapsizelayout(state_t* s, passthrough_data_t data){ 
+inline void incgapsizelayout(state_t* s, passthrough_data_t data) { 
   (void)data;
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
   layout_props_t* layout = &s->monfocus->layouts[deskidx];
@@ -471,13 +534,101 @@ inline void incgapsizelayout(state_t* s, passthrough_data_t data){
 }
 
 /**
+ * @brief Increments the height of a client within layouts 
+ * in which can be stacked on top of each other.
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */
+inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
+  (void)data;
+
+  bool horizontal = false;
+  layout_type_t curlayout = getcurlayout(s, s->monfocus);
+  // Only layouts where clients are stacked on top of each other
+  if( curlayout == LayoutTiledMaster ||
+      curlayout == LayoutHorizontalStripes) {
+    horizontal = true;
+  } 
+
+  uint32_t nmaster = 0, nslaves = 0;
+  enumartelayout(s, s->monfocus, &nmaster, &nslaves);
+
+  bool ismaster = isclientmaster(s, s->focus, s->monfocus);
+
+  // The last client cannot change size itself as it is only 
+  // influenced by the client ontop of it
+  if(!s->focus->next || s->focus->next->desktop != mondesktop(s, s->monfocus)->idx) return;
+
+  // If the height of the focus or the window influenced by the focus is smaller 
+  // than the minimum height a window can be in the layout, return
+  float size = horizontal ? s->focus->area.size.y : s->focus->area.size.x;
+  float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
+  if( size + layoutsize_step < layoutsize_min ||
+      nextsize - layoutsize_step < layoutsize_min) {
+    return;
+  }
+
+  // If the window is a master and there are more than one master 
+  // or the window is a slave and there are more than one slave,
+  // the clients height can be changed
+  if((nmaster > 1 && ismaster) || (nslaves > 1 && !ismaster)) {
+    s->focus->layoutsizeadd += layoutsize_step;
+  }
+
+  // Recreate the layout
+  makelayout(s, s->monfocus);
+}
+
+inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
+  (void)data;
+
+  bool horizontal = false;
+  layout_type_t curlayout = getcurlayout(s, s->monfocus);
+  // Only layouts where clients are stacked on top of each other
+  if( curlayout == LayoutTiledMaster ||
+      curlayout == LayoutHorizontalStripes) {
+    horizontal = true;
+  } 
+
+  uint32_t nmaster = 0, nslaves = 0;
+  enumartelayout(s, s->monfocus, &nmaster, &nslaves);
+
+  bool ismaster = isclientmaster(s, s->focus, s->monfocus);
+
+  // The last client cannot change size itself as it is only 
+  // influenced by the client ontop of it
+  if(!s->focus->next || s->focus->next->desktop != mondesktop(s, s->monfocus)->idx) return;
+
+  // If the height of the focus or the window influenced by the focus is smaller 
+  // than the minimum height a window can be in the layout, return
+  //
+  float size = horizontal ? s->focus->area.size.y : s->focus->area.size.x;
+  float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
+  if( size - layoutsize_step < layoutsize_min ||
+      nextsize + layoutsize_step < layoutsize_min) {
+    return;
+  }
+
+  // If the window is a master and there are more than one master 
+  // or the window is a slave and there are more than one slave,
+  // the clients height can be changed
+  if((nmaster > 1 && ismaster) || (nslaves > 1 && !ismaster)) {
+    s->focus->layoutsizeadd -= layoutsize_step;
+  }
+
+  // Recreate the layout
+  makelayout(s, s->monfocus);
+}
+
+/**
  * @brief Decrements the size of the gaps between windows 
  * in layouts in the current layout.
  *
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void decgapsizelayout(state_t* s, passthrough_data_t data){ 
+inline void decgapsizelayout(state_t* s, passthrough_data_t data) { 
   (void)data;
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
   layout_props_t* layout = &s->monfocus->layouts[deskidx];
@@ -495,7 +646,7 @@ inline void decgapsizelayout(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void togglefocustitlebar(state_t* s, passthrough_data_t data){ 
+inline void togglefocustitlebar(state_t* s, passthrough_data_t data) { 
   (void)data;
   if(s->focus->showtitlebar) {
     hidetitlebar(s, s->focus);
@@ -511,7 +662,7 @@ inline void togglefocustitlebar(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void toggletitlebars(state_t* s, passthrough_data_t data){ 
+inline void toggletitlebars(state_t* s, passthrough_data_t data) { 
   (void)data;
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     if(s->showtitlebars) {
@@ -531,7 +682,7 @@ inline void toggletitlebars(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusup(state_t* s, passthrough_data_t data){ 
+inline void movefocusup(state_t* s, passthrough_data_t data) { 
   (void)data;
   if(!s->focus->floating) return;
 
@@ -551,7 +702,7 @@ inline void movefocusup(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusdown(state_t* s, passthrough_data_t data){ 
+inline void movefocusdown(state_t* s, passthrough_data_t data) { 
   (void)data;
   if(!s->focus->floating) return;
 
@@ -571,7 +722,7 @@ inline void movefocusdown(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusleft(state_t* s, passthrough_data_t data){ 
+inline void movefocusleft(state_t* s, passthrough_data_t data) { 
   (void)data;
   if(!s->focus->floating) return;
 
@@ -590,7 +741,7 @@ inline void movefocusleft(state_t* s, passthrough_data_t data){
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusright(state_t* s, passthrough_data_t data){ 
+inline void movefocusright(state_t* s, passthrough_data_t data) { 
   (void)data;
   if(!s->focus->floating) return;
 

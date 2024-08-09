@@ -1,4 +1,5 @@
 #include <stdint.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -394,8 +395,6 @@ makeclient(state_t* s, xcb_window_t win) {
       s->monfocus->area.pos.x + (s->monfocus->area.size.x - cl->area.size.x) / 2.0f, 
       s->monfocus->area.pos.y + (s->monfocus->area.size.y - cl->area.size.y) / 2.0f});
   }
-
-  makelayout(s, s->monfocus);
 
   // Map the window
   xcb_map_window(s->con, win);
@@ -823,6 +822,10 @@ killclient(state_t* s, client_t* cl) {
  * @param s The window manager's state
  * @param cl The client to focus
  */
+
+// Helper to reduce EWMH property changes 
+static monitor_t* lastmon;
+
 void
 focusclient(state_t* s, client_t* cl) {
   if(!cl || cl->win == s->root) {
@@ -850,6 +853,16 @@ focusclient(state_t* s, client_t* cl) {
   s->focus = cl;
   uploaddesktopnames(s);
   s->monfocus = cursormon(s);
+
+  if(s->monfocus != lastmon && lastmon != NULL) {
+    desktop_t* desk = mondesktop(s, s->monfocus); 
+
+    if(desk) {
+      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
+                          XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
+    }
+  }
+  lastmon = s->monfocus;
 }
 
 /**
@@ -1295,7 +1308,11 @@ numinlayout(state_t* s, monitor_t* mon) {
 
 layout_type_t
 getcurlayout(state_t* s, monitor_t* mon) {
-  uint32_t deskidx = mondesktop(s, mon)->idx;
+  desktop_t* desk = mondesktop(s, mon);
+  if(!desk) {
+    return LayoutFloating;
+  }
+  uint32_t deskidx = desk->idx;
   return mon->layouts[deskidx].curlayout;
 }
 
@@ -1322,9 +1339,35 @@ makelayout(state_t* s, monitor_t* mon) {
       tiledmaster(s, mon);
       break;
     }
+    case LayoutVerticalStripes: {
+      verticalstripes(s, mon);
+      break;
+    }
+    case LayoutHorizontalStripes: {
+      horizontalstripes(s, mon);
+      break;
+    }
     default: {
         break;
       }
+  }
+}
+
+/**
+ * @brief Resets the size modifications of 
+ * all client windows within the layout.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor on which the layout is 
+ */
+void 
+resetlayoutsizes(state_t* s, monitor_t* mon) {
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || 
+      cl->desktop != mondesktop(s, cl->mon)->idx || 
+      cl->mon != mon) continue;
+
+    cl->layoutsizeadd = 0.0f;
   }
 }
 
@@ -1339,25 +1382,12 @@ void
 tiledmaster(state_t* s, monitor_t* mon) {
   if(!mon) return;
 
-  uint32_t nslaves    = 0;
+  uint32_t nslaves    = 0, nmaster = 0;
   uint32_t deskidx    = mondesktop(s, mon)->idx;
-  uint32_t nmaster    = mon->layouts[deskidx].nmaster;
   int32_t gapsize     = mon->layouts[deskidx].gapsize;
   float   masterarea  = mon->layouts[deskidx].masterarea;
 
-  {
-    uint32_t i = 0;
-    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-      if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
-	  || cl->mon != mon) continue;
-      if(i >= nmaster) {
-	nslaves++;
-      }
-      i++;
-    }
-  }
-
-  uint32_t i = 0;
+  enumartelayout(s, mon, &nmaster, &nslaves);
 
   uint32_t w = mon->area.size.x;
   uint32_t h = mon->area.size.y;
@@ -1389,23 +1419,60 @@ tiledmaster(state_t* s, monitor_t* mon) {
   }
 
   int32_t ymaster = y;
-  int32_t wmaster = w * masterarea;
+  float wmaster = w * masterarea;
 
+  mon->layouts[deskidx].mastermaxed = false;
+
+  uint32_t i = 0;
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx || cl->mon != mon) continue;
+    if(cl->floating || 
+      cl->desktop != mondesktop(s, cl->mon)->idx || 
+      cl->mon != mon) continue;
+    if(i >= nmaster) break;
+
+    if(wmaster <= cl->minsize.x && cl->minsize.x != 0) {
+      wmaster = cl->minsize.x;
+      mon->layouts[deskidx].mastermaxed = true;
+      break;
+    }
+  }
+
+  i = 0;
+
+  float lastadd = 0.0f;
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating ||
+      cl->desktop != mondesktop(s, cl->mon)->idx || 
+      cl->mon != mon) continue;
 
     bool ismaster = (i < nmaster);
 
-    float height = (h / (ismaster ? nmaster : nslaves));
+
+    float height = ((float)h / (ismaster ? nmaster : nslaves)) + cl->layoutsizeadd
+     - lastadd;
+
+    lastadd = cl->layoutsizeadd;
+    float width = (ismaster ? (uint32_t)wmaster : (uint32_t)w - wmaster);
+
+    if(width > cl->maxsize.x && cl->maxsize.x != 0) {
+      width = cl->maxsize.x;
+    } if(width < cl->minsize.x && cl->minsize.x != 0) {
+      width = cl->minsize.x;
+    } if(height >= cl->maxsize.y && cl->maxsize.y != 0) {
+      height = cl->maxsize.y;
+    } if(height < cl->minsize.y && cl->minsize.y != 0) {
+      height = cl->minsize.y;
+    }
+
     bool singleclient = !nslaves;
 
     moveclient(s, cl, (v2_t){
-	(ismaster ? x : (int32_t)(x + wmaster)) + gapsize,
-	(ismaster ? ymaster : y) + gapsize});
+      (ismaster ? x : (int32_t)(x + wmaster)) + gapsize,
+      (ismaster ? ymaster : y) + gapsize});
     resizeclient(s, cl, (v2_t){
-	((singleclient ? w : (ismaster ? (uint32_t)wmaster : (uint32_t)w - wmaster)) 
-	 - cl->borderwidth * 2) - gapsize * 2,
-	(height - cl->borderwidth * 2) - gapsize * 2});
+      ((singleclient ? w : width) 
+      - cl->borderwidth * 2) - gapsize * 2,
+      (height - cl->borderwidth * 2) - gapsize * 2});
 
     if(!ismaster) {
       y += height;
@@ -1413,6 +1480,148 @@ tiledmaster(state_t* s, monitor_t* mon) {
       ymaster += height;
     }
     i++;
+  }
+}
+
+/**
+ * @brief Establishes a layout in which windows are 
+ * layed out left to right as vertical stripes.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor to use as the frame of the layout 
+ */
+void  
+verticalstripes(state_t* s, monitor_t* mon) {
+ if(!mon) return;
+
+  uint32_t nwins = 0;
+  uint32_t deskidx    = mondesktop(s, mon)->idx;
+  int32_t gapsize     = mon->layouts[deskidx].gapsize;
+
+  {
+    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+      if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
+        || cl->mon != mon) continue;
+      nwins++;
+    }
+  }
+
+  uint32_t w = mon->area.size.x;
+  uint32_t h = mon->area.size.y;
+  int32_t x = mon->area.pos.x;
+  int32_t y = mon->area.pos.y;
+
+  // Apply strut information to the layout
+  for(uint32_t i = 0; i < s->nwinstruts; i++) {
+    bool onmonitor = 
+      s->winstruts[i].startx >= mon->area.pos.x  
+      && s->winstruts[i].endx <= mon->area.pos.x + mon->area.size.x;
+
+    if(!onmonitor) continue;
+
+    if(s->winstruts[i].left != 0) {
+      x += s->winstruts[i].left;
+      w -= s->winstruts[i].left;
+    }
+    if(s->winstruts[i].right != 0) {
+      w -= s->winstruts[i].right;
+    }
+    if(s->winstruts[i].top != 0) {
+      y += s->winstruts[i].top;
+      h -= s->winstruts[i].top;
+    }
+    if(s->winstruts[i].bottom != 0) {
+      h -= s->winstruts[i].bottom;
+    }
+  }
+  
+
+  float lastadd = 0.0f;
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx || cl->mon != mon) continue;
+
+    float winw = (float)w / nwins + cl->layoutsizeadd - lastadd;
+    lastadd = cl->layoutsizeadd;
+
+    moveclient(s, cl, (v2_t){
+      x + gapsize,
+      y + gapsize});
+    resizeclient(s, cl, (v2_t){
+      winw - cl->borderwidth * 2 - gapsize * 2,
+      h - cl->borderwidth * 2 - gapsize * 2});
+
+    x += winw;
+  }
+}
+
+/**
+ * @brief Establishes a layout in which windows are 
+ * layed out top to bottom as horizontal stripes 
+ *
+ * @param s The window manager's state
+ * @param mon The monitor to use as the frame of the layout 
+ */
+void
+horizontalstripes(state_t* s, monitor_t* mon) {
+  if(!mon) return;
+
+  uint32_t nwins = 0;
+  uint32_t deskidx    = mondesktop(s, mon)->idx;
+  int32_t gapsize     = mon->layouts[deskidx].gapsize;
+
+  {
+    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+      if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
+        || cl->mon != mon) continue;
+      nwins++;
+    }
+  }
+
+  uint32_t w = mon->area.size.x;
+  uint32_t h = mon->area.size.y;
+  int32_t x = mon->area.pos.x;
+  int32_t y = mon->area.pos.y;
+
+  // Apply strut information to the layout
+  for(uint32_t i = 0; i < s->nwinstruts; i++) {
+    bool onmonitor = 
+      s->winstruts[i].startx >= mon->area.pos.x  
+      && s->winstruts[i].endx <= mon->area.pos.x + mon->area.size.x;
+
+    if(!onmonitor) continue;
+
+    if(s->winstruts[i].left != 0) {
+      x += s->winstruts[i].left;
+      w -= s->winstruts[i].left;
+    }
+    if(s->winstruts[i].right != 0) {
+      w -= s->winstruts[i].right;
+    }
+    if(s->winstruts[i].top != 0) {
+      y += s->winstruts[i].top;
+      h -= s->winstruts[i].top;
+    }
+    if(s->winstruts[i].bottom != 0) {
+      h -= s->winstruts[i].bottom;
+    }
+  }
+
+  float lastadd = 0.0f;
+
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx || cl->mon != mon) continue;
+
+    float winh = (float)h / nwins + cl->layoutsizeadd - lastadd;
+    lastadd = cl->layoutsizeadd;
+
+    moveclient(s, cl, (v2_t){
+      x + gapsize,
+      y + gapsize});
+    resizeclient(s, cl, (v2_t){
+      w - cl->borderwidth * 2 - gapsize * 2,
+      winh - cl->borderwidth * 2 - gapsize * 2});
+
+    y += winh;
   }
 }
 
@@ -1494,24 +1703,15 @@ uploaddesktopnames(state_t* s) {
   xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(s->con)).data;
   xcb_window_t root_window = screen->root;
 
-  if(s->monfocus) {
-    desktop_t* desk = mondesktop(s, s->monfocus);
-    if(desk) {
-      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-                          XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
-    }
-  }
-
   // Set the _NET_DESKTOP_NAMES property
   xcb_change_property(s->con,
-      XCB_PROP_MODE_REPLACE,
-      root_window,
-      s->ewmh_atoms[EWMHdesktopNames],
-      XCB_ATOM_STRING,
-      8,
-      total_length,
-      data);
-
+                      XCB_PROP_MODE_REPLACE,
+                      root_window,
+                      s->ewmh_atoms[EWMHdesktopNames],
+                      XCB_ATOM_STRING,
+                      8,
+                      total_length,
+                      data);
   free(data);
 }
 
@@ -1931,6 +2131,13 @@ applysizehints(state_t* s, client_t* cl, v2_t size) {
       if (size.y > hints.max_height) size.y = hints.max_height;
     }
   }
+
+  cl->minsize.x = hints.min_width;
+  cl->minsize.y = hints.min_height;
+
+  cl->maxsize.x = hints.max_width;
+  cl->maxsize.y = hints.max_height;
+
   // Check if client is fixed size
   cl->fixed = (hints.max_width != 0 && hints.max_height != 0 &&
                hints.max_width == hints.min_width && 
@@ -1949,6 +2156,70 @@ void
 addtolayout(state_t* s, client_t* cl)  {
   cl->floating = false;
   makelayout(s, cl->mon);
+}
+
+/**
+ * @brief Returns the number of master- and slave windows 
+ * within a given layout
+ *
+ * @param s The window manager's state
+ * @param mon The monitor on which the layout is 
+ * @param nmaster The number of master windows [out] 
+ * @param nslaves The number of slave windows [out] 
+ * */
+void 
+enumartelayout(state_t* s, monitor_t* mon, uint32_t* nmaster, uint32_t* nslaves) {
+  uint32_t deskidx = mondesktop(s, mon)->idx;
+  *nmaster = mon->layouts[deskidx].nmaster;
+
+  layout_type_t curlayout = getcurlayout(s, mon);
+  if( curlayout == LayoutVerticalStripes || 
+      curlayout == LayoutHorizontalStripes) {
+    *nmaster = 0; 
+  } 
+
+  uint32_t i = 0;
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
+      || cl->mon != mon) continue;
+    if(i >= *nmaster) {
+      *nslaves = *nslaves + 1;
+    }
+    i++;
+  }
+}
+
+/**
+ * @brief Checks if a given client is a master window 
+ * within layouts that can have master windows.
+ *
+ * @param s The window manager's state
+ * @param cl The client to check if it is a master window 
+ * @param mon The monitor on which the layout is 
+ * */
+bool 
+isclientmaster(state_t* s, client_t* cl, monitor_t* mon) {
+  layout_type_t curlayout = getcurlayout(s, mon);
+  if( curlayout == LayoutVerticalStripes || 
+      curlayout == LayoutHorizontalStripes) {
+    return false;
+  } 
+
+  uint32_t i = 0; 
+  uint32_t deskidx = mondesktop(s, mon)->idx;
+  uint32_t nmaster = mon->layouts[deskidx].nmaster;
+
+  for(client_t* iter = s->clients; iter != NULL; iter = iter->next) {
+    if(iter->floating ||
+      iter->desktop != mondesktop(s, iter->mon)->idx || 
+      iter->mon != mon) continue;
+
+    if(iter == cl && i < nmaster) {
+      return true;
+    }
+    i++;
+  }
+  return false;
 }
 
 /**
@@ -2002,20 +2273,36 @@ void
 evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   xcb_map_request_event_t* map_ev = (xcb_map_request_event_t*)ev;
 
-  // Retrieving attributes of the mapped window
+  // Retrieve attributes of the mapped window
   xcb_get_window_attributes_cookie_t wa_cookie = xcb_get_window_attributes(s->con, map_ev->window);
   xcb_get_window_attributes_reply_t *wa_reply = xcb_get_window_attributes_reply(s->con, wa_cookie, NULL);
+
   // Return if attributes could not be retrieved or if the window uses override_redirect
-  if (!wa_reply || wa_reply->override_redirect) {
-    xcb_flush(s->con);
+  if (!wa_reply) {
+    // If wa_reply is null, there was an issue with the request
     return;
   }
+
+  if (wa_reply->override_redirect) {
+    // The window is not managed by the window manager
+    free(wa_reply);
+    return;
+  }
+
+  // Free the reply after checking
   free(wa_reply);
-  // Don't handle already managed clients 
-  if(clientfromwin(s, map_ev->window) != NULL) {
+
+  // Don't handle already managed clients
+  if (clientfromwin(s, map_ev->window) != NULL) {
     return;
   }
+
+  // Handle new client
   makeclient(s, map_ev->window);
+
+  resetlayoutsizes(s, s->monfocus); 
+
+  makelayout(s, s->monfocus);
 
   xcb_flush(s->con);
 }
@@ -2048,6 +2335,9 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
 
   // Update the EWMH client list
   ewmh_updateclients(s);
+
+  // Reset the sizes of all clients
+  resetlayoutsizes(s, s->monfocus); 
 
   // Re-establish the window layout
   makelayout(s, s->monfocus);
@@ -2116,7 +2406,7 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
     client_t* cl;
     for (cl = s->clients; cl != NULL; cl = cl->next) {
       if(cl->fullscreen) {
-	continue;
+        continue;
       }
       setbordercolor(s, cl, winbordercolor);
       setborderwidth(s, cl, winborderwidth);
@@ -2124,7 +2414,7 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
   }
 
   xcb_flush(s->con);
-}
+ }
 
 
 /**
@@ -2302,7 +2592,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   // Throttle motiton notify events for performance and to avoid jiterring on certain 
   // high polling-rate mouses   
   uint32_t curtime = motion_ev->time;
-  if((curtime - s->lastmotiontime) <= (1000 / motion_notify_debounce_fps)) {
+  if((curtime - s->lastmotiontime) <= (1000.0 / motion_notify_debounce_fps)) {
     return;
   }
   s->lastmotiontime = curtime;
@@ -2325,6 +2615,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
         focusclient(s, cl);
       }
     }
+    xcb_flush(s->con);
     return;
   }
 
@@ -2333,6 +2624,12 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     monitor_t* mon = cursormon(s);
     uploaddesktopnames(s);
     s->monfocus = mon;
+    desktop_t* desk = mondesktop(s, s->monfocus);
+    if(desk) {
+      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
+                          XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
+    }
+    xcb_flush(s->con);
     return;
   }
   if(!(motion_ev->state & resizebtn || motion_ev->state & movebtn)) return;
@@ -2638,6 +2935,7 @@ addclient(state_t* s, xcb_window_t win) {
   cl->titlebar_render_additional = false;
   cl->name = getclientname(s, cl);
   cl->showtitlebar = usedecoration;
+  cl->layoutsizeadd = 0;
 
   // Create frame window for the client
   frameclient(s, cl);
@@ -2648,7 +2946,7 @@ addclient(state_t* s, xcb_window_t win) {
 
 
   logmsg(LogLevelTrace, "Added client ('%s') to the linked list of clients.", 
-         cl->name);
+         cl->name ? cl->name : "No name");
 
   return cl;
 }

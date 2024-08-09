@@ -34,7 +34,9 @@ typedef enum {
 
 typedef enum {
   LayoutFloating = 0,
-  LayoutTiledMaster
+  LayoutTiledMaster,
+  LayoutVerticalStripes,
+  LayoutHorizontalStripes
 } layout_type_t; 
 
 typedef enum {
@@ -264,6 +266,7 @@ typedef struct {
   float masterarea;
   int32_t gapsize;
   layout_type_t curlayout;
+  bool mastermaxed;
 } layout_props_t; 
 
 
@@ -289,6 +292,10 @@ struct client_t {
   bool urgent, ignoreunmap, ignoreexpose; 
   bool titlebar_render_additional; 
 
+  vec2s minsize;
+  vec2s maxsize;
+
+  float layoutsizeadd;
 
   char* name;
 };
@@ -312,6 +319,8 @@ void switchfocusdesktop(state_t* s, passthrough_data_t data);
 void runcmd(state_t* s, passthrough_data_t data);
 void addfocustolayout(state_t* s, passthrough_data_t data);
 void settiledmaster(state_t* s, passthrough_data_t data);
+void setverticalstripes(state_t* s, passthrough_data_t data);
+void sethorizontalstripes(state_t* s, passthrough_data_t data); 
 void setfloatingmode(state_t* s, passthrough_data_t data);
 void updatebarslayout(state_t* s, passthrough_data_t data);
 void cycleuplayout(state_t* s, passthrough_data_t data);
@@ -322,6 +331,8 @@ void incmasterarealayout(state_t* s, passthrough_data_t data);
 void decmasterarealayout(state_t* s, passthrough_data_t data);
 void incgapsizelayout(state_t* s, passthrough_data_t data);
 void decgapsizelayout(state_t* s, passthrough_data_t data);
+void inclayoutsizefocus(state_t* s, passthrough_data_t data);
+void declayoutsizefocus(state_t* s, passthrough_data_t data);
 void togglefocustitlebar(state_t* s, passthrough_data_t data); 
 void toggletitlebars(state_t* s, passthrough_data_t data);
 void movefocusup(state_t* s, passthrough_data_t data);
@@ -374,6 +385,7 @@ struct state_t {
   xcb_atom_t ewmh_atoms[EWMHcount];
 
   desktop_t* curdesktop;
+  desktop_t lastdesktop;
 
   strut_t winstruts[MAX_STRUTS];
   uint32_t nwinstruts;

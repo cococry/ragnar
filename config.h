@@ -18,7 +18,7 @@
 /* Window properties */
 // Specifies the width of the border around frame windows
 static const int32_t        winborderwidth = 1; // (px)
-						// Specifies the color of the border around frame windows
+                                                // Specifies the color of the border around frame windows
 static const int32_t        winbordercolor = 0x555555;
 // Specifies the color of the border around frame windows when the client
 // window is focused.
@@ -89,16 +89,22 @@ static const float layoutmasterarea_min  = 0.1f;
 static const float layoutmasterarea_max  = 0.9f;
 static const float layoutmasterarea_step  = 0.1f;
 
+static const float layoutsize_step      = 50;   // px
+static const float layoutsize_min       = 150;  // px
+
+
 static const int32_t keywinmove_step = 100;
 // Specifies the gap between windows within a tiling layout 
 static const int32_t        winlayoutgap = 5; // (px)
 static const int32_t        winlayoutgap_max = 150; // (px)
 static const int32_t        winlayoutgap_step = 5; // (px)
-						   // Specifies the initial layout type that is used when the window manager 
-						   // initializes.
-						   // Options are:
-						   // 	- LayoutTiledMaster
-						   // 	- LayoutFloating
+
+
+// Specifies the initial layout type that is used when the window manager 
+// initializes.
+// Options are:
+// 	- LayoutTiledMaster
+// 	- LayoutFloating
 static const layout_type_t  initlayout   = LayoutTiledMaster;
 
 #define TERMINAL_CMD    "kitty &"
@@ -125,10 +131,10 @@ static const keybind_t keybinds[] = {
   {modkey | Shift,  KeyS,       movefocusdown,      { NULL }},
   {modkey | Shift,  KeyD,       movefocusright,     { NULL }},
   /* Desktops */
-  {modkey,     KeyD,       cycledesktopup,          { NULL }},
-  {modkey,     KeyA,       cycledesktopdown,        { NULL }},
-  {modkey,     KeyP,       cyclefocusdesktopup,     { NULL }},
-  {modkey,     KeyO,       cyclefocusdesktopdown,   { NULL }},
+  {modkey,          KeyD,       cycledesktopup,          { NULL }},
+  {modkey,          KeyA,       cycledesktopdown,        { NULL }},
+  {modkey,          KeyP,       cyclefocusdesktopup,     { NULL }},
+  {modkey,          KeyO,       cyclefocusdesktopdown,   { NULL }},
 
   /* Switch desktop hotkeys */
   {modkey,     Key1,       switchdesktop,               { .i = 0 }},
@@ -140,6 +146,7 @@ static const keybind_t keybinds[] = {
   {modkey,     Key7,       switchdesktop,               { .i = 6 }},
   {modkey,     Key8,       switchdesktop,               { .i = 7 }},
   {modkey,     Key9,       switchdesktop,               { .i = 8 }},
+
   /* Move focus to desktop hotkeys */
   {modkey | Shift,     Key1,       switchfocusdesktop,  { .i = 0 }},
   {modkey | Shift,     Key2,       switchfocusdesktop,  { .i = 1 }},
@@ -152,18 +159,22 @@ static const keybind_t keybinds[] = {
   {modkey | Shift,     Key9,       switchfocusdesktop,  { .i = 8 }},
 
   /* Layout shortcuts */
-  {modkey | Shift,  KeyT,       settiledmaster,      { NULL }},
-  {modkey | Shift,  KeyR,       setfloatingmode,     { NULL }},
-  {modkey,          KeySpace,   addfocustolayout,    { NULL }},
-  {modkey | Shift,  KeyB,   	updatebarslayout,    { NULL }},
-  {modkey,          KeyJ,   	cycledownlayout,     { NULL }},
-  {modkey,  	    KeyK,   	cycleuplayout,       { NULL }},
-  {modkey,  	    KeyM,   	addmasterlayout,     { NULL }},
-  {modkey | Shift,  KeyM,   	removemasterlayout,  { NULL }},
-  {modkey,          KeyH,   	decmasterarealayout, { NULL }},
-  {modkey,          KeyL,   	incmasterarealayout, { NULL }},
-  {modkey,          KeyMinus,  	decgapsizelayout,    { NULL }},
-  {modkey,          KeyPlus,   	incgapsizelayout,    { NULL }},
+  {modkey | Shift,  KeyT,       settiledmaster,       { NULL }},
+  {modkey | Shift,  KeyR,       setfloatingmode,      { NULL }},
+  {modkey | Shift,  KeyH,       sethorizontalstripes, { NULL }},
+  {modkey | Shift,  KeyV,       setverticalstripes,   { NULL }},
+  {modkey,          KeySpace,   addfocustolayout,     { NULL }},
+  {modkey | Shift,  KeyB,   	  updatebarslayout,     { NULL }},
+  {modkey,          KeyJ,   	  cycledownlayout,      { NULL }},
+  {modkey,  	      KeyK,   	  cycleuplayout,        { NULL }},
+  {modkey | Shift,  KeyJ,   	  inclayoutsizefocus, { NULL }},
+  {modkey | Shift,  KeyK,   	  declayoutsizefocus, { NULL }},
+  {modkey,  	      KeyM,   	  addmasterlayout,      { NULL }},
+  {modkey | Shift,  KeyM,   	  removemasterlayout,   { NULL }},
+  {modkey,          KeyH,   	  decmasterarealayout,  { NULL }},
+  {modkey,          KeyL,   	  incmasterarealayout,  { NULL }},
+  {modkey,          KeyMinus,  	decgapsizelayout,     { NULL }},
+  {modkey,          KeyPlus,   	incgapsizelayout,     { NULL }},
 
   /* Application shortcuts */
   {modkey,     KeyReturn,  runcmd, { .cmd = TERMINAL_CMD }},
@@ -192,10 +203,10 @@ static const bool dynamic_rerender_on_resize = true;
 
 
 // Specifies the file to log debug messages to 
-static const char* logfile = "/home/luca/ragnarwm.log";
+static const char* logfile = "/home/cococry/ragnarwm.log";
 // Specifies the default cursor image on the root window
 static const char* cursorimage = "arrow"; 
 // Specifies whether or not logging should be enabled
-static bool logmessages = false;
+static bool logmessages = true;
 // Specifies whether or not messages should be logged to the logfile
-static bool shouldlogtofile = false;
+static bool shouldlogtofile = true;

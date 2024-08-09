@@ -44,6 +44,12 @@ void             terminate(state_t* s, int32_t exitcode);
  */
 void             managewins(state_t* s);
 
+/**
+ * @brief Creates a client from a given X windwo 
+ *
+ * @param s The window manager' state
+ * @param win The window from which to create a client 
+ */
 void             makeclient(state_t* s, xcb_window_t win);
 
 /**
@@ -385,6 +391,15 @@ layout_type_t    getcurlayout(state_t* s, monitor_t* mon);
 void             makelayout(state_t* s, monitor_t* mon);
 
 /**
+ * @brief Resets the size modifications of 
+ * all client windows within the layout.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor on which the layout is 
+ */
+void             resetlayoutsizes(state_t* s, monitor_t* mon);
+
+/**
  * @brief Establishes a tiled master layout for the windows that are 
  * currently visible.
  *
@@ -392,6 +407,24 @@ void             makelayout(state_t* s, monitor_t* mon);
  * @param mon The monitor to use as the frame of the layout 
  */
 void             tiledmaster(state_t* s, monitor_t* mon);
+
+/**
+ * @brief Establishes a layout in which windows are 
+ * layed out left to right as vertical stripes.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor to use as the frame of the layout 
+ */
+void             verticalstripes(state_t* s, monitor_t* mon);
+
+/**
+ * @brief Establishes a layout in which windows are 
+ * layed out top to bottom as horizontal stripes 
+ *
+ * @param s The window manager's state
+ * @param mon The monitor to use as the frame of the layout 
+ */
+void             horizontalstripes(state_t* s, monitor_t* mon);
 
 /**
  * @brief Swaps two clients within the linked list of clients 
@@ -500,6 +533,27 @@ v2_t            applysizehints(state_t* s, client_t* cl, v2_t size);
  * @param cl The client to add to the layout 
  * */
 void            addtolayout(state_t* s, client_t* cl);
+
+/**
+ * @brief Returns the number of master- and slave windows 
+ * within a given layout
+ *
+ * @param s The window manager's state
+ * @param mon The monitor on which the layout is 
+ * @param nmaster The number of master windows [out] 
+ * @param nslaves The number of slave windows [out] 
+ * */
+void            enumartelayout(state_t* s, monitor_t* mon, uint32_t* nmaster, uint32_t* nslaves);
+
+/**
+ * @brief Checks if a given client is a master window 
+ * within layouts that can have master windows.
+ *
+ * @param s The window manager's state
+ * @param cl The client to check if it is a master window 
+ * @param mon The monitor on which the layout is 
+ * */
+bool            isclientmaster(state_t* s, client_t* cl, monitor_t* mon);
 
 /**
  * @brief Removes a given client from the current tiling layout
