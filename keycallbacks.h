@@ -451,6 +451,7 @@ inline void addmasterlayout(state_t* s, passthrough_data_t data) {
   if(nlayout - (layout->nmaster + 1) >= 1 && nlayout > 1) {
     layout->nmaster++;
   }
+
   makelayout(s, s->monfocus);
 }
 
@@ -558,14 +559,12 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
 
   // The last client cannot change size itself as it is only 
   // influenced by the client ontop of it
-  if(!s->focus->next || s->focus->next->desktop != mondesktop(s, s->monfocus)->idx) return;
+  if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)) return;
 
   // If the height of the focus or the window influenced by the focus is smaller 
   // than the minimum height a window can be in the layout, return
-  float size = horizontal ? s->focus->area.size.y : s->focus->area.size.x;
   float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
-  if( size + layoutsize_step < layoutsize_min ||
-      nextsize - layoutsize_step < layoutsize_min) {
+  if(nextsize - layoutsize_step < layoutsize_min) {
     return;
   }
 
@@ -598,18 +597,7 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
 
   // The last client cannot change size itself as it is only 
   // influenced by the client ontop of it
-  if(!s->focus->next || s->focus->next->desktop != mondesktop(s, s->monfocus)->idx) return;
-
-  // If the height of the focus or the window influenced by the focus is smaller 
-  // than the minimum height a window can be in the layout, return
-  //
-  float size = horizontal ? s->focus->area.size.y : s->focus->area.size.x;
-  float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
-  if( size - layoutsize_step < layoutsize_min ||
-      nextsize + layoutsize_step < layoutsize_min) {
-    return;
-  }
-
+  if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)) return;
   // If the window is a master and there are more than one master 
   // or the window is a slave and there are more than one slave,
   // the clients height can be changed
@@ -617,6 +605,12 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
     s->focus->layoutsizeadd -= layoutsize_step;
   }
 
+  // If the height of the focus or the window influenced by the focus is smaller 
+  // than the minimum height a window can be in the layout, return
+  float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
+  if(nextsize + layoutsize_step < layoutsize_min) {
+    return;
+  }
   // Recreate the layout
   makelayout(s, s->monfocus);
 }

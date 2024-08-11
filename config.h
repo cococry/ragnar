@@ -207,6 +207,6 @@ static const char* logfile = "/home/cococry/ragnarwm.log";
 // Specifies the default cursor image on the root window
 static const char* cursorimage = "arrow"; 
 // Specifies whether or not logging should be enabled
-static bool logmessages = true;
+static bool logmessages = false;
 // Specifies whether or not messages should be logged to the logfile
 static bool shouldlogtofile = true;

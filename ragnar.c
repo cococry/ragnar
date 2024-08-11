@@ -1364,7 +1364,7 @@ void
 resetlayoutsizes(state_t* s, monitor_t* mon) {
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || 
-      cl->desktop != mondesktop(s, cl->mon)->idx || 
+      cl->desktop != mondesktop(s, mon)->idx || 
       cl->mon != mon) continue;
 
     cl->layoutsizeadd = 0.0f;
