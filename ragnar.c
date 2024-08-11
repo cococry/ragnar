@@ -860,6 +860,7 @@ focusclient(state_t* s, client_t* cl) {
     if(desk) {
       xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
                           XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
+      xcb_flush(s->con);
     }
   }
   lastmon = s->monfocus;
@@ -1150,32 +1151,53 @@ nextvisible(state_t* s, bool tiled) {
 client_t*
 prevvisible(state_t* s, bool tiled) {
   client_t* prev = NULL;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    bool checktiled = (tiled) ? !cl->floating : true;
-    // Check if the client after the iterating client is the focused
-    // client, making it the client after the focus->
-    if(checktiled && clientonscreen(s, cl, s->monfocus) && cl->next == s->focus) {
-      prev = cl;
-      break;
-    }
-    // Check if the current client is the focused client 
-    // and cycling to the last client that is onscreen to wrap 
-    // around.
-    if(checktiled && clientonscreen(s, cl, s->monfocus) && cl == s->focus) {
-      for(client_t* cl2 = s->clients; cl2 != NULL; cl2 = cl2->next) {
-	bool checktiled2 = (tiled) ? !cl2->floating : true;
-	if(checktiled2 && clientonscreen(s, cl2, s->monfocus) &&
-	    (!cl2->next || (cl2->next && 
-			    cl2->next->desktop != mondesktop(s, s->monfocus)->idx))) {
-	  prev = cl2;
-	  break;
-	}
+  client_t* temp = s->clients;
+
+  bool isfirst = (s->focus == s->clients);
+  if(!isfirst) {
+    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+      if(cl->next == s->focus && (cl->desktop != s->focus->desktop
+      || cl->mon != s->focus->mon)) {
+        isfirst = true;
+        break;
       }
-      break;
     }
   }
-  return prev;
-}
+  if(isfirst) {
+    for(client_t* cl = s->focus; cl != NULL; cl = cl->next) {
+      bool tile = (tiled && !cl->floating) || !tiled;
+      if((!cl->next || (cl->next && ((cl->next->desktop != s->focus->desktop) ||
+         (cl->next->mon != s->focus->mon)))) && tile) {
+        return cl;
+      }
+    }
+  }
+
+  while (temp != NULL && temp->next != s->focus) {
+    temp = temp->next;
+  }
+
+  if (temp != NULL && temp->next == s->focus) {
+    prev = temp;
+  }
+
+  while (prev != NULL) {
+    bool tile = (tiled && !prev->floating) || !tiled;
+    if(prev->desktop == mondesktop(s, prev->mon)->idx && 
+      prev->mon == s->monfocus && 
+      tile) {
+      return prev; 
+    }
+
+    prev = temp; 
+    temp = s->focus;
+    while (temp != prev && temp->next != prev) {
+      temp = temp->next;
+    }
+  }
+
+  return s->focus;
+ }
 
 /**
  * @brief Gets the value of a given property on a 

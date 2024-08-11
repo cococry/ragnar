@@ -17,7 +17,7 @@
 
 /* Window properties */
 // Specifies the width of the border around frame windows
-static const int32_t        winborderwidth = 1; // (px)
+static const int32_t        winborderwidth = 3; // (px)
                                                 // Specifies the color of the border around frame windows
 static const int32_t        winbordercolor = 0x555555;
 // Specifies the color of the border around frame windows when the client

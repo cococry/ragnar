@@ -18,7 +18,6 @@ inline void terminate_successfully(state_t* s, passthrough_data_t data) {
   terminate(s, EXIT_SUCCESS);
 }
 
-
 /**
  * @brief Cycles the currently focused client one up
  *
@@ -232,6 +231,8 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
 
   logmsg(LogLevelTrace, "Switched virtual desktop on monitor %i to %i",
       s->monfocus->idx, data.i);
+
+  s->ignore_enter_layout = false;
 }
 
 
@@ -789,6 +790,7 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   area_t afocusmon = s->focus->mon->area;
 
   bool fs = s->focus->fullscreen;
+  bool floating = s->focus->floating;
   if(fs) {
     setfullscreen(s, s->focus, false);
   }
@@ -808,6 +810,7 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
 
     removefromlayout(s, s->focus);
     makelayout(s, s->focus->mon);
+    s->focus->floating = floating;
 
     moveclient(s, s->focus, dest);
   }
@@ -824,7 +827,9 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
     resizeclient(s, s->focus, dest);
   }
 
-  addtolayout(s, s->focus);
+  if(!floating) {
+    addtolayout(s, s->focus);
+  }
   makelayout(s, prevmon);
 
   if(fs) {
@@ -851,6 +856,7 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
   area_t afocusmon = s->focus->mon->area;
 
   bool fs = s->focus->fullscreen;
+  bool floating = s->focus->floating;
   if(fs) {
     setfullscreen(s, s->focus, false);
   }
@@ -870,6 +876,7 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
 
     removefromlayout(s, s->focus);
     makelayout(s, s->focus->mon);
+    s->focus->floating = floating;
 
     moveclient(s, s->focus, dest);
   }
@@ -885,7 +892,9 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
     resizeclient(s, s->focus, dest);
   }
 
-  addtolayout(s, s->focus);
+  if(!floating) {
+    addtolayout(s, s->focus);
+  }
   makelayout(s, nextmon);
 
   if(fs) {
