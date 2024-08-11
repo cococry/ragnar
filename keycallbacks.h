@@ -543,6 +543,7 @@ inline void incgapsizelayout(state_t* s, passthrough_data_t data) {
  */
 inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
   (void)data;
+  if(!s->focus) return;
 
   bool horizontal = false;
   layout_type_t curlayout = getcurlayout(s, s->monfocus);
@@ -559,14 +560,17 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
 
   // The last client cannot change size itself as it is only 
   // influenced by the client ontop of it
-  if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)) return;
+  if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)
+      || (s->focus->next && s->focus->next->mon != s->focus->mon)) return;
 
-  // If the height of the focus or the window influenced by the focus is smaller 
+  // If the height of the window influenced by the focus is smaller 
   // than the minimum height a window can be in the layout, return
   float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
   if(nextsize - layoutsize_step < layoutsize_min) {
     return;
   }
+  
+  s->ignore_enter_layout = true;
 
   // If the window is a master and there are more than one master 
   // or the window is a slave and there are more than one slave,
@@ -581,6 +585,7 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
 
 inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
   (void)data;
+  if(!s->focus) return;
 
   bool horizontal = false;
   layout_type_t curlayout = getcurlayout(s, s->monfocus);
@@ -597,7 +602,18 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
 
   // The last client cannot change size itself as it is only 
   // influenced by the client ontop of it
-  if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)) return;
+  if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)
+      || (s->focus->next && s->focus->next->mon != s->focus->mon)) return;
+
+  // If the height of the focus  is smaller 
+  // than the minimum height a window can be in the layout, return
+  float size = horizontal ? s->focus->area.size.y : s->focus->area.size.x;
+  if(size - layoutsize_step < layoutsize_min) {
+    return;
+  }
+
+  s->ignore_enter_layout = true;
+
   // If the window is a master and there are more than one master 
   // or the window is a slave and there are more than one slave,
   // the clients height can be changed
@@ -605,12 +621,6 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
     s->focus->layoutsizeadd -= layoutsize_step;
   }
 
-  // If the height of the focus or the window influenced by the focus is smaller 
-  // than the minimum height a window can be in the layout, return
-  float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
-  if(nextsize + layoutsize_step < layoutsize_min) {
-    return;
-  }
   // Recreate the layout
   makelayout(s, s->monfocus);
 }
@@ -747,3 +757,138 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
   s->ignore_enter_layout = true;
 }
 
+
+
+/**
+ * @brief Cycles the currently focused client one monitor 
+ * down (to the left).
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */ 
+
+inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
+  (void)data;
+  if(!s->focus) return;
+
+  monitor_t* prevmon = NULL;
+  {
+    monitor_t* temp = s->monitors;
+
+    while (temp && temp->next != s->focus->mon) {
+      temp = temp->next;
+    }
+
+    if (temp && temp->next == s->focus->mon) {
+      prevmon = temp;
+    }
+  }
+
+  if(!prevmon) return;
+
+  area_t afocusmon = s->focus->mon->area;
+
+  bool fs = s->focus->fullscreen;
+  if(fs) {
+    setfullscreen(s, s->focus, false);
+  }
+
+  // Moving
+  {
+    v2_t relpos;
+    relpos.x = s->focus->area.pos.x - afocusmon.pos.x;
+    relpos.y = s->focus->area.pos.y - afocusmon.pos.y;
+
+    float normx = relpos.x / afocusmon.size.x; 
+    float normy = relpos.y / afocusmon.size.y; 
+
+    v2_t dest;
+    dest.x = prevmon->area.pos.x + (normx * prevmon->area.size.x); 
+    dest.y = prevmon->area.pos.y + (normy * prevmon->area.size.y); 
+
+    removefromlayout(s, s->focus);
+    makelayout(s, s->focus->mon);
+
+    moveclient(s, s->focus, dest);
+  }
+
+  // Resizing
+  {
+    float scalex = prevmon->area.size.x / afocusmon.size.x;
+    float scaley = prevmon->area.size.y / afocusmon.size.y;
+
+    v2_t dest;
+    dest.x = s->focus->area.size.x * scalex;
+    dest.y = s->focus->area.size.y * scaley;
+
+    resizeclient(s, s->focus, dest);
+  }
+
+  addtolayout(s, s->focus);
+  makelayout(s, prevmon);
+
+  if(fs) {
+    setfullscreen(s, s->focus, true);
+  }
+}
+
+/**
+ * @brief Cycles the currently focused client one monitor 
+ * down (to the left).
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */ 
+
+inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
+  (void)data;
+  if(!s->focus) return;
+
+  monitor_t* nextmon = s->focus->mon->next;
+
+  if(!nextmon) return;
+
+  area_t afocusmon = s->focus->mon->area;
+
+  bool fs = s->focus->fullscreen;
+  if(fs) {
+    setfullscreen(s, s->focus, false);
+  }
+
+  // Moving
+  {
+    v2_t relpos;
+    relpos.x = s->focus->area.pos.x - afocusmon.pos.x;
+    relpos.y = s->focus->area.pos.y - afocusmon.pos.y;
+
+    float normx = relpos.x / afocusmon.size.x; 
+    float normy = relpos.y / afocusmon.size.y; 
+
+    v2_t dest;
+    dest.x = nextmon->area.pos.x + (normx * nextmon->area.size.x); 
+    dest.y = nextmon->area.pos.y + (normy * nextmon->area.size.y); 
+
+    removefromlayout(s, s->focus);
+    makelayout(s, s->focus->mon);
+
+    moveclient(s, s->focus, dest);
+  }
+  // Resizing
+  {
+    float scalex = nextmon->area.size.x / afocusmon.size.x;
+    float scaley = nextmon->area.size.y / afocusmon.size.y;
+
+    v2_t dest;
+    dest.x = s->focus->area.size.x * scalex;
+    dest.y = s->focus->area.size.y * scaley;
+
+    resizeclient(s, s->focus, dest);
+  }
+
+  addtolayout(s, s->focus);
+  makelayout(s, nextmon);
+
+  if(fs) {
+    setfullscreen(s, s->focus, true);
+  }
+}

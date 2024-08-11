@@ -339,6 +339,8 @@ void movefocusup(state_t* s, passthrough_data_t data);
 void movefocusdown(state_t* s, passthrough_data_t data);
 void movefocusleft(state_t* s, passthrough_data_t data);
 void movefocusright(state_t* s, passthrough_data_t data);
+void cyclefocusmonitordown(state_t* s, passthrough_data_t data);
+void cyclefocusmonitorup(state_t* s, passthrough_data_t data);
 
 #include "config.h"
 

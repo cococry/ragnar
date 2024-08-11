@@ -89,7 +89,7 @@ static const float layoutmasterarea_min  = 0.1f;
 static const float layoutmasterarea_max  = 0.9f;
 static const float layoutmasterarea_step  = 0.1f;
 
-static const float layoutsize_step      = 50;   // px
+static const float layoutsize_step      = 100;   // px
 static const float layoutsize_min       = 150;  // px
 
 
@@ -126,10 +126,12 @@ static const keybind_t keybinds[] = {
   {modkey,          KeyI,       togglefocustitlebar,{ NULL }},
   {modkey,          KeyR,       raisefocus,         { NULL }},
 
-  {modkey | Shift,  KeyW,       movefocusup,        { NULL }},
-  {modkey | Shift,  KeyA,       movefocusleft,      { NULL }},
-  {modkey | Shift,  KeyS,       movefocusdown,      { NULL }},
-  {modkey | Shift,  KeyD,       movefocusright,     { NULL }},
+  {modkey | Shift,  KeyW,       movefocusup,            { NULL }},
+  {modkey | Shift,  KeyA,       movefocusleft,          { NULL }},
+  {modkey | Shift,  KeyS,       movefocusdown,          { NULL }},
+  {modkey | Shift,  KeyD,       movefocusright,         { NULL }},
+  {modkey,          KeyRight,   cyclefocusmonitorup,    { NULL }},
+  {modkey,          KeyLeft,    cyclefocusmonitordown,  { NULL }},
   /* Desktops */
   {modkey,          KeyD,       cycledesktopup,          { NULL }},
   {modkey,          KeyA,       cycledesktopdown,        { NULL }},
