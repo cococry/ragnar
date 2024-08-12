@@ -315,21 +315,12 @@ void             seturgent(state_t* s, client_t* cl, bool urgent);
 
 /**
  * @brief Returns the next on-screen client after the 
- * focused client.
+ * given client.
  *
  * @param s The window manager's state
- * @param tiled Whether or not to skip floating clients
+ * @param skip_floating Whether or not to skip floating clients
  */
-client_t*	      nextvisible(state_t* s, bool tiled);
-
-/**
- * @brief Returns the previous on-screen client before the 
- * focused client.
- *
- * @param s The window manager's state
- * @param tiled Whether or not to skip floating clients
- */
-client_t*	      prevvisible(state_t* s, bool tiled);
+client_t*	      nextvisible(state_t* s, bool skip_floating);
 
 /**
  * @brief Gets the value of a given property on a 
@@ -735,6 +726,20 @@ void             releaseclient(state_t* s, xcb_window_t win);
  */
 client_t*        clientfromwin(state_t* s, xcb_window_t win);
 
+
+/**
+ * @brief Returns a filtered linked list of all clients 
+ * that are currently visible on the given monitor
+ *
+ * @param s The window manager's state
+ * @param mon The monitor to get visible clients off
+ * @param tiled Whether or not to ignore floating clients
+ *
+ * @return A filtered linked list with all visible clients on 
+ * the given monitor
+ */
+client_t*        visibleclients(state_t* s, monitor_t* mon, bool tiled);
+
 /**
  * @brief Returns the associated client from a given titlebar window.
  * Returns NULL if there is no client associated with the titlebar window.
@@ -897,13 +902,6 @@ bool             strinarr(char* array[], int count, const char* target);
  * @return See 'man strcmp' */
 int32_t          compstrs(const void* a, const void* b);
 
-/*
- * @brief Converts a given string to ASCII by removing all non-ASCII
- * characters within it and replacing them with a replacement character.
- * @param str The string to un-ASCII-fy 
- * */
-void             strtoascii(char* str); 
-
 /**
  * @brief Creates an GLX Context and sets up OpenGL visual. 
  *
@@ -927,14 +925,14 @@ void             setglcontext(state_t* s, xcb_window_t win);
  * @param lvl The log level 
  * @param fmt The format string
  * @param ... The variadic arguments */
-void             logmsg(log_level_t lvl, const char* fmt, ...);
+void             logmsg(state_t* s, log_level_t lvl, const char* fmt, ...);
 
 /**
  * @brief Logs a given formatted message to the log file specified in the
  * config. 
  * @param fmt The format string
  * @param ... The variadic arguments */
-void 		         logtofile(const char* fmt, va_list args); 
+void 		         logtofile(state_t* s, const char* fmt, va_list args); 
 
 
 /**

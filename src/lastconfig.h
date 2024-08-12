@@ -212,3 +212,4 @@ static const char* cursorimage = "arrow";
 static bool logmessages = false;
 // Specifies whether or not messages should be logged to the logfile
 static bool shouldlogtofile = true;
+

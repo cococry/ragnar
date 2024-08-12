@@ -1,0 +1,36 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-O3",
+      "-ffast-math",
+      "-Wall",
+      "-Wextra",
+      "-pedantic",
+      "-o",
+      "bin/ragnar",
+      "./src/config.c"
+    ],
+    "directory": "/home/cococry/dev/ragnar",
+    "file": "/home/cococry/dev/ragnar/src/config.c",
+    "output": "/home/cococry/dev/ragnar/bin/ragnar"
+  },
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-O3",
+      "-ffast-math",
+      "-Wall",
+      "-Wextra",
+      "-pedantic",
+      "-o",
+      "bin/ragnar",
+      "./src/ragnar.c"
+    ],
+    "directory": "/home/cococry/dev/ragnar",
+    "file": "/home/cococry/dev/ragnar/src/ragnar.c",
+    "output": "/home/cococry/dev/ragnar/bin/ragnar"
+  }
+]

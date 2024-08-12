@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 #include "funcs.h"
 #include "structs.h"
 #include <string.h>
@@ -19,26 +18,6 @@ inline void terminate_successfully(state_t* s, passthrough_data_t data) {
 }
 
 /**
- * @brief Cycles the currently focused client one up
- *
- * @param s The window manager's state
- * @param data The data to use for the function (unused here)
- */
-inline void cyclefocusup(state_t* s, passthrough_data_t data) {
-  (void)data;
-  // Return if there are no clients or no focus
-  if (!s->clients || !s->focus)
-    return;
-
-  client_t* next = prevvisible(s, false);
-
-  if(next) {
-    focusclient(s, next);
-    raiseclient(s, next);
-  }
-}
-
-/**
  * @brief Cycles the currently focused client one down 
  *
  * @param s The window manager's state
@@ -49,13 +28,12 @@ inline void cyclefocusdown(state_t* s, passthrough_data_t data) {
   if (!s->clients || !s->focus)
     return;
 
-  client_t* next = nextvisible(s, false);
+  s->ignore_enter_layout = true;
 
-  // If there is a next client, just focus it
-  if (next) {
-    focusclient(s, next);
-    raiseclient(s, next);
-  }
+  client_t* new_focus = nextvisible(s, false);
+
+  focusclient(s, new_focus);
+  raiseclient(s, s->focus);
 }
 
 /**
@@ -116,7 +94,7 @@ inline void cycledesktopup(state_t* s, passthrough_data_t data) {
   (void)data;
 
   int32_t newdesktop = mondesktop(s, s->monfocus)->idx;
-  if(newdesktop + 1 < MAX_DESKTOPS) {
+  if(newdesktop + 1 < (int32_t)s->config.maxdesktops) {
     newdesktop++;
   } else {
     newdesktop = 0;
@@ -137,7 +115,7 @@ inline void cycledesktopdown(state_t* s, passthrough_data_t data) {
   if(newdesktop - 1 >= 0) {
     newdesktop--;
   } else {
-    newdesktop = MAX_DESKTOPS - 1;
+    newdesktop = s->config.maxdesktops - 1;
   }
   switchdesktop(s, (passthrough_data_t){.i = newdesktop});
 }
@@ -153,7 +131,7 @@ inline void cyclefocusdesktopup(state_t* s, passthrough_data_t data) {
 
   if(!s->focus) return;
   int32_t new_desktop = s->focus->desktop;
-  if(new_desktop + 1 < MAX_DESKTOPS) {
+  if(new_desktop + 1 < (int32_t)s->config.maxdesktops) {
     new_desktop++;
   } else {
     new_desktop = 0;
@@ -175,7 +153,7 @@ inline void cyclefocusdesktopdown(state_t* s, passthrough_data_t data) {
   if(new_desktop - 1 >= 0) {
     new_desktop--;
   } else {
-    new_desktop = MAX_DESKTOPS - 1;
+    new_desktop = s->config.maxdesktops - 1;
   }
   switchclientdesktop(s, s->focus, new_desktop);
 }
@@ -192,13 +170,13 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   if(data.i == (int32_t)mondesktop(s, s->monfocus)->idx) return;
 
   // Create the desktop if it was not created yet
-  if(!strinarr(s->monfocus->activedesktops, s->monfocus->desktopcount, desktopnames[data.i])) {
+  if(!strinarr(s->monfocus->activedesktops, s->monfocus->desktopcount, s->config.desktopnames[data.i])) {
     createdesktop(s, data.i, s->monfocus);
   }
 
   uint32_t desktopidx = 0;
   for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-    if(strcmp(s->monfocus->activedesktops[i], desktopnames[data.i]) == 0) {
+    if(strcmp(s->monfocus->activedesktops[i], s->config.desktopnames[data.i]) == 0) {
       desktopidx = i;
       break;
     }
@@ -229,7 +207,7 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   mondesktop(s, s->monfocus)->idx = data.i;
   makelayout(s, s->monfocus);
 
-  logmsg(LogLevelTrace, "Switched virtual desktop on monitor %i to %i",
+  logmsg(s, LogLevelTrace, "Switched virtual desktop on monitor %i to %i",
       s->monfocus->idx, data.i);
 
   s->ignore_enter_layout = false;
@@ -263,7 +241,7 @@ inline void runcmd(state_t* s, passthrough_data_t data) {
     // Child process
     execl("/bin/sh", "sh", "-c", data.cmd, (char *)NULL);
     // If execl fails
-    logmsg(LogLevelError, "failed to execute command '%s'.", data.cmd);
+    logmsg(s, LogLevelError, "failed to execute command '%s'.", data.cmd);
     _exit(EXIT_FAILURE);
   } else if (pid > 0) {
     // Parent process
@@ -273,7 +251,7 @@ inline void runcmd(state_t* s, passthrough_data_t data) {
   } else {
     // Fork failed
     perror("fork");
-    logmsg(LogLevelError, "failed to execute command '%s'.", data.cmd);
+    logmsg(s, LogLevelError, "failed to execute command '%s'.", data.cmd);
     return;
   }
 }
@@ -400,24 +378,6 @@ inline void updatebarslayout(state_t* s, passthrough_data_t data) {
   makelayout(s, s->monfocus);
 }
 
-
-/**
- * @brief Cycles the focused window up in the layout list by
- * swapping it with the client before the it.
- *
- * @param s The window manager's state
- * @param data The data to use for the function (unused here)
- */
-inline void cycleuplayout(state_t* s, passthrough_data_t data) { 
-  (void)data;
-  client_t* prev = prevvisible(s, true);
-  s->ignore_enter_layout = true;
-  swapclients(s, s->focus, prev);
-  // Reset the sizes of all clients
-  resetlayoutsizes(s, s->monfocus); 
-  makelayout(s, s->monfocus);
-}
-
 /**
  * @brief Cycles the focused window down in the layout list by
  * swapping it with the client after the it.
@@ -427,10 +387,11 @@ inline void cycleuplayout(state_t* s, passthrough_data_t data) {
  */
 inline void cycledownlayout(state_t* s, passthrough_data_t data) { 
   (void)data;
-  client_t* next = nextvisible(s, true);
+ 
   s->ignore_enter_layout = true;
+  client_t* next = nextvisible(s, true);
+
   swapclients(s, s->focus, next);
-  // Reset the sizes of all clients
   resetlayoutsizes(s, s->monfocus); 
   makelayout(s, s->monfocus);
 }
@@ -489,8 +450,8 @@ inline void incmasterarealayout(state_t* s, passthrough_data_t data) {
   layout_props_t* layout = &s->monfocus->layouts[deskidx];
 
   if(layout->masterarea 
-      + layoutmasterarea_step <= layoutmasterarea_max) {
-    layout->masterarea += layoutmasterarea_step;
+      + s->config.layoutmasterarea_step <= s->config.layoutmasterarea_max) {
+    layout->masterarea += s->config.layoutmasterarea_step;
   }
   makelayout(s, s->monfocus);
 }
@@ -510,8 +471,8 @@ inline void decmasterarealayout(state_t* s, passthrough_data_t data) {
   if(layout->mastermaxed) return;
 
   if(layout->masterarea 
-      - layoutmasterarea_step >= layoutmasterarea_min) {
-    layout->masterarea -= layoutmasterarea_step;
+      - s->config.layoutmasterarea_step >= s->config.layoutmasterarea_min) {
+    layout->masterarea -= s->config.layoutmasterarea_step;
   }
   makelayout(s, s->monfocus);
 }
@@ -529,8 +490,8 @@ inline void incgapsizelayout(state_t* s, passthrough_data_t data) {
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
   layout_props_t* layout = &s->monfocus->layouts[deskidx];
 
-  if(layout->gapsize + winlayoutgap_step <= winlayoutgap_max) {
-    layout->gapsize += winlayoutgap_step;
+  if(layout->gapsize + s->config.winlayoutgap_step <= s->config.winlayoutgap_max) {
+    layout->gapsize += s->config.winlayoutgap_step;
   }
   makelayout(s, s->monfocus);
 }
@@ -567,7 +528,7 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
   // If the height of the window influenced by the focus is smaller 
   // than the minimum height a window can be in the layout, return
   float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
-  if(nextsize - layoutsize_step < layoutsize_min) {
+  if(nextsize - s->config.layoutsize_step < s->config.layoutsize_min) {
     return;
   }
   
@@ -577,7 +538,7 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
   // or the window is a slave and there are more than one slave,
   // the clients height can be changed
   if((nmaster > 1 && ismaster) || (nslaves > 1 && !ismaster)) {
-    s->focus->layoutsizeadd += layoutsize_step;
+    s->focus->layoutsizeadd += s->config.layoutsize_step;
   }
 
   // Recreate the layout
@@ -609,7 +570,7 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
   // If the height of the focus  is smaller 
   // than the minimum height a window can be in the layout, return
   float size = horizontal ? s->focus->area.size.y : s->focus->area.size.x;
-  if(size - layoutsize_step < layoutsize_min) {
+  if(size - s->config.layoutsize_step < s->config.layoutsize_min) {
     return;
   }
 
@@ -619,7 +580,7 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
   // or the window is a slave and there are more than one slave,
   // the clients height can be changed
   if((nmaster > 1 && ismaster) || (nslaves > 1 && !ismaster)) {
-    s->focus->layoutsizeadd -= layoutsize_step;
+    s->focus->layoutsizeadd -= s->config.layoutsize_step;
   }
 
   // Recreate the layout
@@ -638,8 +599,8 @@ inline void decgapsizelayout(state_t* s, passthrough_data_t data) {
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
   layout_props_t* layout = &s->monfocus->layouts[deskidx];
 
-  if(layout->gapsize - winlayoutgap_step >= 0) {
-    layout->gapsize -= winlayoutgap_step;
+  if(layout->gapsize - s->config.winlayoutgap_step >= 0) {
+    layout->gapsize -= s->config.winlayoutgap_step;
   }
   makelayout(s, s->monfocus);
 }
@@ -693,7 +654,7 @@ inline void movefocusup(state_t* s, passthrough_data_t data) {
 
   v2_t pos = s->focus->area.pos;
   v2_t dest = (v2_t){pos.x,
-    MIN(MAX(pos.y - keywinmove_step, s->monfocus->area.pos.y), 
+    MIN(MAX(pos.y - s->config.keywinmove_step, s->monfocus->area.pos.y), 
         s->monfocus->area.pos.y + s->monfocus->area.size.y
         - s->focus->area.size.y)};
   moveclient(s, s->focus, dest);
@@ -713,7 +674,7 @@ inline void movefocusdown(state_t* s, passthrough_data_t data) {
 
   v2_t pos = s->focus->area.pos;
   v2_t dest = (v2_t){pos.x,
-    MIN(MAX(pos.y + keywinmove_step, s->monfocus->area.pos.y), 
+    MIN(MAX(pos.y + s->config.keywinmove_step, s->monfocus->area.pos.y), 
         s->monfocus->area.pos.y + s->monfocus->area.size.y 
         - s->focus->area.size.y)};
   moveclient(s, s->focus, dest);
@@ -732,7 +693,7 @@ inline void movefocusleft(state_t* s, passthrough_data_t data) {
   if(!s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
-  v2_t dest = (v2_t){MIN(MAX(pos.x - keywinmove_step, s->monfocus->area.pos.x), 
+  v2_t dest = (v2_t){MIN(MAX(pos.x - s->config.keywinmove_step, s->monfocus->area.pos.x), 
       s->monfocus->area.pos.x + s->monfocus->area.size.x 
       - s->focus->area.size.x), pos.y};
   moveclient(s, s->focus, dest);
@@ -751,7 +712,7 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
   if(!s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
-  v2_t dest = (v2_t){MIN(MAX(pos.x + keywinmove_step, s->monfocus->area.pos.x), 
+  v2_t dest = (v2_t){MIN(MAX(pos.x + s->config.keywinmove_step, s->monfocus->area.pos.x), 
       s->monfocus->area.pos.x + s->monfocus->area.size.x 
       - s->focus->area.size.x), pos.y};
   moveclient(s, s->focus, dest);
@@ -827,14 +788,14 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
     resizeclient(s, s->focus, dest);
   }
 
-  if(!floating) {
-    addtolayout(s, s->focus);
-  }
   makelayout(s, prevmon);
 
   if(fs) {
     setfullscreen(s, s->focus, true);
   }
+
+  s->monfocus = cursormon(s);
+  s->focus->mon = prevmon;
 }
 
 /**
@@ -892,12 +853,12 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
     resizeclient(s, s->focus, dest);
   }
 
-  if(!floating) {
-    addtolayout(s, s->focus);
-  }
   makelayout(s, nextmon);
 
   if(fs) {
     setfullscreen(s, s->focus, true);
   }
+
+  s->monfocus = cursormon(s);
+  s->focus->mon = nextmon;
 }

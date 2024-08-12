@@ -77,10 +77,12 @@ typedef struct {
 
 typedef struct state_t state_t;
 
+typedef void (*keycallback_t)(state_t* s, passthrough_data_t data);
+
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
-  void (*cb)(state_t* s, passthrough_data_t data);
+  keycallback_t cb;
   passthrough_data_t data;
 } keybind_t;
 
@@ -305,7 +307,6 @@ typedef struct {
 } desktop_t;
 
 void terminate_successfully(state_t* s, passthrough_data_t data);
-void cyclefocusup(state_t* s, passthrough_data_t data);
 void cyclefocusdown(state_t* s, passthrough_data_t data);
 void killfocus(state_t* s, passthrough_data_t data);
 void togglefullscreen(state_t* s, passthrough_data_t data);
@@ -323,7 +324,6 @@ void setverticalstripes(state_t* s, passthrough_data_t data);
 void sethorizontalstripes(state_t* s, passthrough_data_t data); 
 void setfloatingmode(state_t* s, passthrough_data_t data);
 void updatebarslayout(state_t* s, passthrough_data_t data);
-void cycleuplayout(state_t* s, passthrough_data_t data);
 void cycledownlayout(state_t* s, passthrough_data_t data);
 void addmasterlayout(state_t* s, passthrough_data_t data);
 void removemasterlayout(state_t* s, passthrough_data_t data);
@@ -342,17 +342,73 @@ void movefocusright(state_t* s, passthrough_data_t data);
 void cyclefocusmonitordown(state_t* s, passthrough_data_t data);
 void cyclefocusmonitorup(state_t* s, passthrough_data_t data);
 
-#include "config.h"
 
 struct monitor_t {
   area_t area;
   monitor_t* next;
   uint32_t idx;
 
-  char* activedesktops[MAX_DESKTOPS];
+  char** activedesktops;
   uint32_t desktopcount;
   layout_props_t* layouts;
 };
+
+typedef struct {
+  uint32_t maxstruts;
+  uint32_t maxdesktops;
+
+  uint32_t winborderwidth;
+  uint32_t winbordercolor;
+  uint32_t winbordercolor_selected;
+
+  kb_modifier_t modkey; 
+  kb_modifier_t winmod;
+
+  mousebtn_t movebtn;
+  mousebtn_t resizebtn; 
+
+  uint32_t desktopinit;
+
+  char** desktopnames;
+
+  bool usedecoration;
+  bool showtitlebars_init;
+  uint32_t titlebarheight;
+
+  uint32_t titlebarcolor;
+  uint32_t fontcolor;
+
+  char* fontpath;
+
+  double layoutmasterarea;
+  double layoutmasterarea_min;
+  double layoutmasterarea_max;
+  double layoutmasterarea_step;
+
+  double layoutsize_step;
+  double layoutsize_min;
+
+  double keywinmove_step;
+
+  int32_t winlayoutgap; 
+  int32_t winlayoutgap_max; 
+  int32_t winlayoutgap_step;
+
+  layout_type_t initlayout;
+
+  keybind_t* keybinds;
+  uint32_t numkeybinds;
+
+  uint32_t motion_notify_debounce_fps;
+
+  bool glvsync;
+
+  char* logfile;
+  bool logmessages;
+  bool shouldlogtofile;
+
+  char* cursorimage;
+} config_data_t;
 
 struct state_t {
   xcb_connection_t* con;
@@ -389,10 +445,10 @@ struct state_t {
   desktop_t* curdesktop;
   desktop_t lastdesktop;
 
-  strut_t winstruts[MAX_STRUTS];
+  strut_t* winstruts;
   uint32_t nwinstruts;
 
+  config_data_t config;
 };
 
 typedef void (*event_handler_t)(state_t* s, xcb_generic_event_t* ev);
-

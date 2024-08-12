@@ -33,6 +33,7 @@
 #include <GL/gl.h>
 #include <GL/glx.h>
 
+#include "config.h"
 #include "structs.h"
 #include "funcs.h"
 #include "keycallbacks.h"
@@ -95,7 +96,7 @@ xerror(Display *dpy, XErrorEvent *ee)
  * The event mask of the root window is being cofigured to
  * listen to necessary events. 
  * After the configuration of the root window, all the specified
- * keybinds in config.h are grabbed by the window manager.
+ * keybinds in the config are grabbed by the window manager.
  */
 void
 setup(state_t* s) {
@@ -109,25 +110,28 @@ setup(state_t* s) {
     exit(EXIT_FAILURE);
   }
 
+  initconfig(s);
+  readconfig(s, &s->config);
+
   /* Initializing default variables */
   s->clients = NULL;
 
-  if(!usedecoration) {
-    titlebarheight = 0;
+  if(!s->config.usedecoration) {
+    s->config.titlebarheight = 0;
   }
 
   s->lastexposetime = 0;
   s->lastmotiontime = 0;
 
-  s->showtitlebars = showtitlebars_init;
+  s->showtitlebars = s->config.showtitlebars_init;
 
   // Opening Xorg display
   s->dsp = XOpenDisplay(NULL);
   if(!s->dsp) {
-    logmsg(LogLevelError, "open X Display.");
+    logmsg(s,  LogLevelError, "open X Display.");
     terminate(s, EXIT_FAILURE);
   }
-  logmsg(LogLevelTrace, "successfully opened X display.");
+  logmsg(s,  LogLevelTrace, "successfully opened X display.");
 
 
   /* Checking for other window manager and terminating if one is found. */
@@ -145,10 +149,10 @@ setup(state_t* s) {
   s->con = XGetXCBConnection(s->dsp);
   // Checking for errors
   if (xcb_connection_has_error(s->con) || !s->con) {
-    logmsg(LogLevelError, "cannot connect to XCB.");
+    logmsg(s,  LogLevelError, "cannot connect to XCB.");
     terminate(s, EXIT_FAILURE);
   }
-  logmsg(LogLevelTrace, "successfully opened XCB connection.");
+  logmsg(s,  LogLevelTrace, "successfully opened XCB connection.");
 
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s->dsp, XCBOwnsEventQueue);
@@ -185,13 +189,15 @@ setup(state_t* s) {
 
   // Gather strut information for layouts 
   s->nwinstruts = 0;
+  s->winstruts = malloc(sizeof(strut_t) * s->config.maxstruts);
+
   getwinstruts(s, s->root);
 
   // Initialize virtual desktops
   s->curdesktop = malloc(sizeof(*s->curdesktop) * registered_monitors);
   if(s->curdesktop) {
     for(uint32_t i = 0; i < registered_monitors; i++) {
-      s->curdesktop[i].idx = desktopinit;
+      s->curdesktop[i].idx = s->config.desktopinit;
     }
   }
 }
@@ -252,7 +258,9 @@ terminate(state_t* s, int32_t exitcode) {
   // Give up the X connection
   xcb_disconnect(s->con);
 
-  logmsg(LogLevelTrace, "terminated with exit code %i.", exitcode);
+  logmsg(s,  LogLevelTrace, "terminated with exit code %i.", exitcode);
+
+  destroyconfig();
 
   // Free the window manager's state
   free(s);
@@ -356,17 +364,17 @@ makeclient(state_t* s, xcb_window_t win) {
   {
     uint16_t evmask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_MOTION;
     xcb_grab_button(s->con, 0, win, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s->root, XCB_NONE, 1, winmod);
+                    s->root, XCB_NONE, 1, s->config.winmod);
     xcb_grab_button(s->con, 0, win, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
-                    s->root, XCB_NONE, 3, winmod);
+                    s->root, XCB_NONE, 3, s->config.winmod);
   }
 
   // Adding the mapped client to our linked list
   client_t* cl = addclient(s, win);
 
   // Set initial border 
-  setbordercolor(s, cl, winbordercolor);
-  setborderwidth(s, cl, winborderwidth);
+  setbordercolor(s, cl, s->config.winbordercolor);
+  setborderwidth(s, cl, s->config.winborderwidth);
 
 
   // Set window type of client (e.g dialog)
@@ -445,7 +453,7 @@ cursorpos(state_t* s, bool* success) {
   xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(s->con, xcb_query_pointer(s->con, s->root), NULL);
   *success = (reply != NULL);
   if(!(*success)) {
-    logmsg(LogLevelError, "failed to retrieve cursor position."); 
+    logmsg(s,  LogLevelError, "failed to retrieve cursor position."); 
     free(reply);
     return (v2_t){0};
   }
@@ -473,7 +481,7 @@ winarea(state_t* s, xcb_window_t win, bool* success) {
   xcb_get_geometry_reply_t *reply = xcb_get_geometry_reply(s->con, xcb_get_geometry(s->con, win), NULL);
   *success = (reply != NULL);
   if(!(*success)) {
-    logmsg(LogLevelError, "failed to retrieve window geometry of window %i", win); 
+    logmsg(s,  LogLevelError, "failed to retrieve window geometry of window %i", win); 
     free(reply);
     return (area_t){0};
   }
@@ -499,7 +507,7 @@ truecolorwindow(state_t* s, area_t a, uint32_t bw) {
   xcb_window_t win;
   XVisualInfo vinfo;
   if (!XMatchVisualInfo(s->dsp, DefaultScreen(s->dsp), 32, TrueColor, &vinfo)) {
-    logmsg(LogLevelError, "no true-color visual found.");
+    logmsg(s,  LogLevelError, "no true-color visual found.");
     terminate(s, EXIT_FAILURE);
   }
 
@@ -513,10 +521,10 @@ truecolorwindow(state_t* s, area_t a, uint32_t bw) {
 
   win = XCreateWindow(s->dsp, DefaultRootWindow(s->dsp),
       a.pos.x, a.pos.y, a.size.x, a.size.y,
-      winborderwidth, vinfo.depth, InputOutput, vinfo.visual,
+      s->config.winborderwidth, vinfo.depth, InputOutput, vinfo.visual,
       mask, &attr);
 
-  logmsg(LogLevelTrace, "created window with true-color colormap.",
+  logmsg(s,  LogLevelTrace, "created window with true-color colormap.",
          a.pos.x, a.pos.y, a.size.x, a.size.y);
 
   return win;
@@ -618,7 +626,7 @@ resizeclient(state_t* s, client_t* cl, v2_t size) {
   }
 
   uint32_t sizeval[2] = { (uint32_t)size.x, (uint32_t)size.y };
-  uint32_t sizeval_content[2] = { (uint32_t)size.x, (uint32_t)size.y - ((cl->showtitlebar) ? titlebarheight : 0.0f)};
+  uint32_t sizeval_content[2] = { (uint32_t)size.x, (uint32_t)size.y - ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f)};
 
   // Resize the window by configuring its width and height property
   xcb_configure_window(s->con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
@@ -649,7 +657,7 @@ moveresizeclient(state_t* s, client_t* cl, area_t a) {
   };
   uint32_t values_content[4] = {
     (uint32_t)a.size.x,
-    (uint32_t)a.size.y - ((cl->showtitlebar) ? titlebarheight : 0.0f)
+    (uint32_t)a.size.y - ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f)
   };
 
   // Move and resize the window by configuring its x, y, width, and height properties
@@ -845,8 +853,8 @@ focusclient(state_t* s, client_t* cl) {
 
   if(!cl->fullscreen) {
     // Change border color to indicate selection
-    setbordercolor(s, cl, winbordercolor_selected);
-    setborderwidth(s, cl, winborderwidth);
+    setbordercolor(s, cl, s->config.winbordercolor_selected);
+    setborderwidth(s, cl, s->config.winborderwidth);
   }
 
   // Set the focused client
@@ -898,7 +906,7 @@ void
 frameclient(state_t* s, client_t* cl) {
   // Create the frame window 
   {
-    cl->frame = truecolorwindow(s, cl->area, winborderwidth);
+    cl->frame = truecolorwindow(s, cl->area, s->config.winborderwidth);
 
     // Select input events 
     unsigned long event_mask = StructureNotifyMask | SubstructureNotifyMask | SubstructureRedirectMask |
@@ -908,7 +916,7 @@ frameclient(state_t* s, client_t* cl) {
   setuptitlebar(s, cl);
 
   // Reparent the client's content to the newly created frame
-  xcb_reparent_window(s->con, cl->win, cl->frame, 0, s->showtitlebars ? titlebarheight : 0);
+  xcb_reparent_window(s->con, cl->win, cl->frame, 0, s->showtitlebars ? s->config.titlebarheight : 0);
 
   // Update the window's geometry
   {
@@ -918,7 +926,7 @@ frameclient(state_t* s, client_t* cl) {
 
     uint32_t sizeval[2] = { (uint32_t)cl->area.size.x, (uint32_t)cl->area.size.y };
     uint32_t sizeval_content[2] = { (uint32_t)cl->area.size.x, (uint32_t)cl->area.size.y - 
-      (s->showtitlebars ? titlebarheight : 0)};
+      (s->showtitlebars ? s->config.titlebarheight : 0)};
     // Resize the window by configuring it's width and height property
     xcb_configure_window(s->con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
     xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
@@ -958,7 +966,7 @@ unfocusclient(state_t* s, client_t* cl) {
   if (!cl) {
     return;
   }
-  setbordercolor(s, cl, winbordercolor);
+  setbordercolor(s, cl, s->config.winbordercolor);
   xcb_set_input_focus(s->con, XCB_INPUT_FOCUS_POINTER_ROOT, s->root, XCB_CURRENT_TIME);
   xcb_delete_property(s->con, s->root, s->ewmh_atoms[EWMHactiveWindow]);
 
@@ -986,11 +994,11 @@ configclient(state_t* s, client_t* cl) {
   // New X position of the window
   event.x = cl->area.pos.x;                
   // New Y position of the window
-  event.y = cl->area.pos.y + ((cl->showtitlebar) ? titlebarheight : 0.0f);
+  event.y = cl->area.pos.y + ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f);
   // New width of the window
   event.width = cl->area.size.x;            
   // New height of the window
-  event.height = cl->area.size.y - ((cl->showtitlebar) ? titlebarheight : 0.0f);
+  event.height = cl->area.size.y - ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f);
   // Border width
   event.border_width = cl->borderwidth;
   // Above sibling window (None in this case)
@@ -1112,14 +1120,14 @@ seturgent(state_t* s, client_t* cl, bool urgent) {
  * focused client.
  *
  * @param s The window manager's state
- * @param tiled Whether or not to skip floating clients
+ * @param skip_floating Whether or not to skip floating clients
  */
 client_t* 
-nextvisible(state_t* s, bool tiled) {
+nextvisible(state_t* s, bool skip_floating) {
   client_t* next = NULL;
   // Find the next client on the current monitor & desktop 
   for(client_t* cl = s->focus->next; cl != NULL; cl = cl->next) {
-    bool checktiled = (tiled) ? !cl->floating : true;
+    bool checktiled = (skip_floating) ? !cl->floating : true;
     if(checktiled && clientonscreen(s, cl, s->monfocus)) {
       next = cl;
       break;
@@ -1130,7 +1138,7 @@ nextvisible(state_t* s, bool tiled) {
   // current monitor & desktop
   if(!next) {
     for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    bool checktiled = (tiled) ? !cl->floating : true;
+    bool checktiled = (skip_floating) ? !cl->floating : true;
       if(checktiled && clientonscreen(s, cl, s->monfocus)) {
 	next = cl;
 	break;
@@ -1138,65 +1146,6 @@ nextvisible(state_t* s, bool tiled) {
     }
   }
   return next;
-}
-
-
-/**
- * @brief Returns the previous on-screen client before the 
- * focused client.
- *
- * @param s The window manager's state
- * @param tiled Whether or not to skip floating clients
- */
-client_t*
-prevvisible(state_t* s, bool tiled) {
-  client_t* prev = NULL;
-  client_t* temp = s->clients;
-
-  bool isfirst = (s->focus == s->clients);
-  if(!isfirst) {
-    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-      if(cl->next == s->focus && (cl->desktop != s->focus->desktop
-      || cl->mon != s->focus->mon)) {
-        isfirst = true;
-        break;
-      }
-    }
-  }
-  if(isfirst) {
-    for(client_t* cl = s->focus; cl != NULL; cl = cl->next) {
-      bool tile = (tiled && !cl->floating) || !tiled;
-      if((!cl->next || (cl->next && ((cl->next->desktop != s->focus->desktop) ||
-         (cl->next->mon != s->focus->mon)))) && tile) {
-        return cl;
-      }
-    }
-  }
-
-  while (temp != NULL && temp->next != s->focus) {
-    temp = temp->next;
-  }
-
-  if (temp != NULL && temp->next == s->focus) {
-    prev = temp;
-  }
-
-  while (prev != NULL) {
-    bool tile = (tiled && !prev->floating) || !tiled;
-    if(prev->desktop == mondesktop(s, prev->mon)->idx && 
-      prev->mon == s->monfocus && 
-      tile) {
-      return prev; 
-    }
-
-    prev = temp; 
-    temp = s->focus;
-    while (temp != prev && temp->next != prev) {
-      temp = temp->next;
-    }
-  }
-
-  return s->focus;
  }
 
 /**
@@ -1266,7 +1215,7 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
     // Set the client's area to the area before the last fullscreen occured 
     cl->area = cl->area_prev;
     cl->floating = cl->floating_prev;
-    cl->borderwidth = winborderwidth;
+    cl->borderwidth = s->config.winborderwidth;
   }
   // Update client's border width
   setborderwidth(s, cl, cl->borderwidth);
@@ -1298,7 +1247,7 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
 void
 switchclientdesktop(state_t* s, client_t* cl, int32_t desktop) {
   // Create the desktop if it was not created yet
-  if(!strinarr(s->monfocus->activedesktops, s->monfocus->desktopcount, desktopnames[desktop])) {
+  if(!strinarr(s->monfocus->activedesktops, s->monfocus->desktopcount, s->config.desktopnames[desktop])) {
     createdesktop(s, desktop, s->monfocus);
   }
 
@@ -1745,9 +1694,9 @@ uploaddesktopnames(state_t* s) {
  */
 void
 createdesktop(state_t* s, uint32_t idx, monitor_t* mon) {
-  mon->activedesktops[mon->desktopcount] = malloc(strlen(desktopnames[idx]) + 1);
+  mon->activedesktops[mon->desktopcount] = malloc(strlen(s->config.desktopnames[idx]) + 1);
   if(mon->activedesktops[mon->desktopcount]) {
-    strcpy(mon->activedesktops[mon->desktopcount], desktopnames[idx]);
+    strcpy(mon->activedesktops[mon->desktopcount], s->config.desktopnames[idx]);
   }
 
   mon->desktopcount++;
@@ -1756,7 +1705,7 @@ createdesktop(state_t* s, uint32_t idx, monitor_t* mon) {
       XCB_ATOM_CARDINAL, 32, 1, &mon->desktopcount);
   uploaddesktopnames(s);
 
-  logmsg(LogLevelTrace, "created virtual desktop %i.\n", idx);
+  logmsg(s,  LogLevelTrace, "created virtual desktop %i.\n", idx);
 }
 
 
@@ -1807,7 +1756,7 @@ setupatoms(state_t* s) {
 
   // Set _NET_CURRENT_DESKTOP property on the root window
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-      XCB_ATOM_CARDINAL, 32, 1, &desktopinit);
+      XCB_ATOM_CARDINAL, 32, 1, &s->config.desktopinit);
 
   // Set _NET_SUPPORTED property on the root window
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHsupported],
@@ -1819,7 +1768,7 @@ setupatoms(state_t* s) {
   s->monfocus = cursormon(s);
   // Create initial desktop for all monitors 
   for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
-    createdesktop(s, desktopinit, mon);
+    createdesktop(s, s->config.desktopinit, mon);
   }
 
   xcb_flush(s->con);
@@ -1827,7 +1776,7 @@ setupatoms(state_t* s) {
 
 
 /**
- * @brief Grabs all the keybinds specified in config.h for the window 
+ * @brief Grabs all the keybinds specified in the config for the window 
  * manager. The function also ungrabs all previously grabbed keys
  *
  * @param s The window manager's state 
@@ -1838,16 +1787,15 @@ grabkeybinds(state_t* s) {
   xcb_ungrab_key(s->con, XCB_GRAB_ANY, s->root, XCB_MOD_MASK_ANY);
 
   // Grab every keybind
-  size_t numkeybinds = sizeof(keybinds) / sizeof(keybinds[0]);
-  for (size_t i = 0; i < numkeybinds; ++i) {
+  for (size_t i = 0; i < s->config.numkeybinds; ++i) {
     // Get the keycode for the keysym of the keybind
-    xcb_keycode_t *keycode = getkeycodes(s, keybinds[i].key);
+    xcb_keycode_t *keycode = getkeycodes(s, s->config.keybinds[i].key);
     // Grab the key if it is valid 
     if (keycode != NULL) {
-      xcb_grab_key(s->con, 1, s->root, keybinds[i].modmask, *keycode,
+      xcb_grab_key(s->con, 1, s->root, s->config.keybinds[i].modmask, *keycode,
 	  XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
-      logmsg(LogLevelTrace, "grabbed key '%s' on X server.",
-             XKeysymToString(keybinds[i].key));
+      logmsg(s,  LogLevelTrace, "grabbed key '%s' on X server.",
+             XKeysymToString(s->config.keybinds[i].key));
 
     }
   }
@@ -1863,11 +1811,11 @@ loaddefaultcursor(state_t* s) {
   xcb_cursor_context_t* context;
   // Create the cursor context
   if (xcb_cursor_context_new(s->con, s->screen, &context) < 0) {
-    logmsg(LogLevelError, "cannot create cursor context.");
+    logmsg(s,  LogLevelError, "cannot create cursor context.");
     terminate(s, EXIT_FAILURE);
   }
   // Load the context
-  xcb_cursor_t cursor = xcb_cursor_load_cursor(context, cursorimage); 
+  xcb_cursor_t cursor = xcb_cursor_load_cursor(context, s->config.cursorimage); 
 
   // Set the cursor to the root window
   xcb_change_window_attributes(s->con, s->root, XCB_CW_CURSOR, &cursor);
@@ -1878,7 +1826,7 @@ loaddefaultcursor(state_t* s) {
   // Free allocated resources
   xcb_cursor_context_free(context);
 
-  logmsg(LogLevelTrace, "loaded cursor image '%s'.", cursorimage);
+  logmsg(s,  LogLevelTrace, "loaded cursor image '%s'.", s->config.cursorimage);
 }
 
 /**
@@ -1895,7 +1843,7 @@ loaddefaultcursor(state_t* s) {
  * */
 void
 setuptitlebar(state_t* s, client_t* cl) {
-  if(!usedecoration) return;
+  if(!s->config.usedecoration) return;
 
   // Initialize OpenGL
   if(!s->initgl) {
@@ -1908,14 +1856,14 @@ setuptitlebar(state_t* s, client_t* cl) {
 
   // Initialize background color
   XColor color;
-  color.red   = ((titlebarcolor >> 16) & 0xFF) * 256; 
-  color.green = ((titlebarcolor >> 8) & 0xFF) * 256;  
-  color.blue  = (titlebarcolor & 0xFF) * 256;
+  color.red   = ((s->config.titlebarcolor >> 16) & 0xFF) * 256; 
+  color.green = ((s->config.titlebarcolor >> 8) & 0xFF) * 256;  
+  color.blue  = (s->config.titlebarcolor & 0xFF) * 256;
   color.flags = DoRed | DoGreen | DoBlue;
 
   // Allocate the color in the colormap
   if (!XAllocColor(s->dsp, colormap, &color)) {
-    logmsg(LogLevelError, "unable to allocate X color.");
+    logmsg(s,  LogLevelError, "unable to allocate X color.");
     return;
   }
 
@@ -1927,7 +1875,7 @@ setuptitlebar(state_t* s, client_t* cl) {
   attribs.background_pixel = color.pixel;
 
   cl->titlebar = (xcb_window_t)XCreateWindow(s->dsp, root, 0, 0, cl->area.size.x,
-      titlebarheight, 0, s->glvis->depth, InputOutput, s->glvis->visual,
+      s->config.titlebarheight, 0, s->glvis->depth, InputOutput, s->glvis->visual,
       CWColormap | CWEventMask | CWBackPixel, &attribs);
   XReparentWindow(s->dsp, cl->titlebar, cl->frame, 0, 0);
   XMapWindow(s->dsp, cl->titlebar);
@@ -1952,22 +1900,20 @@ setuptitlebar(state_t* s, client_t* cl) {
   PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT = 
     (PFNGLXSWAPINTERVALEXTPROC) glXGetProcAddress((const GLubyte*)"glXSwapIntervalEXT");
   if (glXSwapIntervalEXT) {
-    glXSwapIntervalEXT(s->dsp, cl->titlebar, glvsync); 
-    logmsg(LogLevelTrace, "Set swap interval of titlebar window %i to %i (%s).",
-           cl->titlebar, (int32_t)glvsync, glvsync ? "vsync" : "no vsync");
+    glXSwapIntervalEXT(s->dsp, cl->titlebar, s->config.glvsync); 
+    logmsg(s,  LogLevelTrace, "Set swap interval of titlebar window %i to %i (%s).",
+           cl->titlebar, (int32_t)s->config.glvsync, s->config.glvsync ? "vsync" : "no vsync");
   } else {
-    logmsg(LogLevelError, "GLX_EXT_swap_control not supported.");
+    logmsg(s,  LogLevelError, "GLX_EXT_swap_control not supported.");
   }
   if(!s->ui.init) {
-    s->ui = lf_init_x11(cl->area.pos.x, titlebarheight);
+    s->ui = lf_init_x11(cl->area.pos.x, s->config.titlebarheight);
     lf_free_font(&s->ui.theme.font);
-    s->ui.theme.font = lf_load_font(fontpath, 24);
-    s->ui.theme.text_props.text_color = lf_color_from_hex(fontcolor);
-    s->closeicon = lf_load_texture(closeiconpath, LF_TEX_FILTER_LINEAR, false);
-    s->layouticon = lf_load_texture(layouticonpath, LF_TEX_FILTER_LINEAR, false);
+    s->ui.theme.font = lf_load_font(s->config.fontpath, 24);
+    s->ui.theme.text_props.text_color = lf_color_from_hex(s->config.fontcolor);
 
-    logmsg(LogLevelTrace, "created OpenGL context with version %s.", glGetString(GL_VERSION));
-    logmsg(LogLevelTrace, "initialized leif UI context and textures.");
+    logmsg(s,  LogLevelTrace, "created OpenGL context with version %s.", glGetString(GL_VERSION));
+    logmsg(s,  LogLevelTrace, "initialized leif UI context and textures.");
   }
   rendertitlebar(s, cl);
 
@@ -1988,93 +1934,18 @@ setuptitlebar(state_t* s, client_t* cl) {
  * */
 void
 rendertitlebar(state_t* s, client_t* cl) {
-  if(!usedecoration) return;
+  if(!s->config.usedecoration) return;
   if(!cl) return;
   if(cl->desktop != mondesktop(s, s->monfocus)->idx) return;
   setglcontext(s, cl->titlebar);
 
-  uint32_t btnsize = 12;
-  float btnmargin = 15;
-
   // Clear background
   {
-    LfColor color = lf_color_from_hex(titlebarcolor);
+    LfColor color = lf_color_from_hex(s->config.titlebarcolor);
     vec4s zto = lf_color_to_zto(color);
     glClearColor(zto.r, zto.g, zto.b, zto.a);
   }
   glClear(GL_COLOR_BUFFER_BIT);
-
-  // Set correct viewport dimension
-  lf_resize_display(&s->ui, cl->area.size.x, titlebarheight);
-  glViewport(0, 0, cl->area.size.x, titlebarheight);
-
-  lf_begin(&s->ui);
-  lf_set_line_should_overflow(&s->ui, false);
-
-  // Render layout button
-  if(cl->titlebar_render_additional && getcurlayout(s, cl->mon) != LayoutFloating && cl->floating)
-  {
-    LfUIElementProps props = s->ui.theme.button_props;
-    props.color = LF_NO_COLOR;
-    props.padding = 0;
-    props.margin_top = (titlebarheight - btnsize * 1.25) / 2.0f;
-    props.border_width = 0;
-    props.margin_left = btnmargin;
-    props.margin_right = 0;
-    lf_push_style_props(&s->ui, props);
-    cl->layoutbutton = (v2_t){lf_get_ptr_x(&s->ui), lf_get_ptr_y(&s->ui)};
-    lf_set_image_color(&s->ui, lf_color_from_hex(iconcolor));
-    lf_image_button(&s->ui, ((LfTexture){.id = s->layouticon.id, .width = btnsize * 1.25, .height = btnsize * 1.25}));
-    lf_unset_image_color(&s->ui);
-    lf_pop_style_props(&s->ui);
-  }
-
-  // Render client name
-  {
-    // Get client name
-    bool namevalid = (cl->name && strlen(cl->name));
-    char* displayname = (namevalid ? cl->name : "No name"); 
-    // Remove non-ASCII characters if configured 
-    if(!decoration_render_non_ascii) {
-      strtoascii(displayname);
-    }
-    // Center text
-    float textwidth = lf_text_dimension(&s->ui, displayname).x;
-    lf_set_ptr_x_absolute(&s->ui, (cl->area.size.x - textwidth) / 2.0f);
-
-    lf_set_cull_end_x(&s->ui, cl->area.size.x - btnsize * 2 - btnmargin);
-
-    // Display text and remove margin
-    LfUIElementProps props = s->ui.theme.text_props;
-    props.margin_left = 0.0f;
-    lf_push_style_props(&s->ui, props);
-    lf_text(&s->ui, displayname); 
-    lf_pop_style_props(&s->ui);
-
-    lf_unset_cull_end_x(&s->ui);
-  }
-
-  // Render close button
-  {
-    LfUIElementProps props = s->ui.theme.button_props;
-    lf_set_ptr_x_absolute(&s->ui, cl->area.size.x - btnsize - btnmargin);
-
-    props.color = LF_NO_COLOR;
-    props.padding = 0;
-    props.margin_top = (titlebarheight - btnsize) / 2.0f;
-    props.border_width = 0;
-    props.margin_left = 0;
-    props.margin_right = 0;
-    lf_push_style_props(&s->ui, props);
-    cl->closebutton = (v2_t){lf_get_ptr_x(&s->ui), lf_get_ptr_y(&s->ui)};
-    lf_set_image_color(&s->ui, lf_color_from_hex(iconcolor));
-    lf_image_button(&s->ui, ((LfTexture){.id = s->closeicon.id, .width = btnsize, .height = btnsize}));
-    lf_unset_image_color(&s->ui);
-    lf_pop_style_props(&s->ui);
-  }
-
-  lf_set_line_should_overflow(&s->ui, true);
-  lf_end(&s->ui);
 
   glXSwapBuffers(s->dsp, cl->titlebar);
 }
@@ -2088,7 +1959,7 @@ rendertitlebar(state_t* s, client_t* cl) {
  * */
 void
 updatetitlebar(state_t* s, client_t* cl) {
-  if(!usedecoration) return;
+  if(!s->config.usedecoration) return;
 
   bool success;
   // Update client geometry 
@@ -2098,7 +1969,7 @@ updatetitlebar(state_t* s, client_t* cl) {
   // Update decoration geometry
   uint32_t vals[2];
   vals[0] = cl->area.size.x;
-  vals[1] = titlebarheight;
+  vals[1] = s->config.titlebarheight;
   xcb_configure_window(s->con, cl->titlebar, 
       XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
 }
@@ -2271,12 +2142,12 @@ void
 showtitlebar(state_t* s, client_t* cl) {
   xcb_map_window(s->con, cl->titlebar);
   {
-    uint32_t vals[2] = {0, titlebarheight};
+    uint32_t vals[2] = {0, s->config.titlebarheight};
     xcb_configure_window(s->con, cl->win, 
 	XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, vals);
   }
   {
-    uint32_t vals[2] = {cl->area.size.x, cl->area.size.y - titlebarheight};
+    uint32_t vals[2] = {cl->area.size.x, cl->area.size.y - s->config.titlebarheight};
     xcb_configure_window(s->con, cl->win, 
 	XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
   }
@@ -2430,8 +2301,8 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
       if(cl->fullscreen) {
         continue;
       }
-      setbordercolor(s, cl, winbordercolor);
-      setborderwidth(s, cl, winborderwidth);
+      setbordercolor(s, cl, s->config.winbordercolor);
+      setborderwidth(s, cl, s->config.winborderwidth);
     }
   }
 
@@ -2473,12 +2344,11 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
   xcb_keysym_t keysym = getkeysym(s, e->detail);
 
   /* Iterate throguh the keybinds and check if one of them was pressed. */
-  size_t numkeybinds = sizeof(keybinds) / sizeof(keybinds[0]);
-  for (uint32_t i = 0; i < numkeybinds; ++i) {
+  for (uint32_t i = 0; i < s->config.numkeybinds; ++i) {
     // If it was pressed, call the callback of the keybind
-    if ((keysym == keybinds[i].key) && (e->state == keybinds[i].modmask)) {
-      if(keybinds[i].cb) {
-        keybinds[i].cb(s, keybinds[i].data);
+    if ((keysym == s->config.keybinds[i].key) && (e->state == s->config.keybinds[i].modmask)) {
+      if(s->config.keybinds[i].cb) {
+        s->config.keybinds[i].cb(s, s->config.keybinds[i].data);
       }
     }
   }
@@ -2518,11 +2388,11 @@ evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
     v2_t cursorpos = (v2_t){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
     area_t closebtnarea = (area_t){
       .pos = cl->closebutton,
-      .size = (v2_t){30, titlebarheight}
+      .size = (v2_t){30, s->config.titlebarheight}
     };
     area_t layoutbtnarea = (area_t){
       .pos = cl->layoutbutton,
-      .size = (v2_t){30, titlebarheight}
+      .size = (v2_t){30, s->config.titlebarheight}
     };
     if (pointinarea(cursorpos, closebtnarea)) {
       killclient(s, cl);
@@ -2614,7 +2484,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   // Throttle motiton notify events for performance and to avoid jiterring on certain 
   // high polling-rate mouses   
   uint32_t curtime = motion_ev->time;
-  if((curtime - s->lastmotiontime) <= (1000.0 / motion_notify_debounce_fps)) {
+  if((curtime - s->lastmotiontime) <= (1000.0 / s->config.motion_notify_debounce_fps)) {
     return;
   }
   s->lastmotiontime = curtime;
@@ -2628,7 +2498,8 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
   client_t* cl = clientfromwin(s, motion_ev->event);
 
-  if(!(motion_ev->state & winmod) && cl) {
+  if((!(motion_ev->state & s->config.movebtn) && 
+    !(motion_ev->state & s->config.resizebtn) && cl)) {
     if(s->ignore_enter_layout) {
       s->ignore_enter_layout = false;
     }
@@ -2654,7 +2525,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     xcb_flush(s->con);
     return;
   }
-  if(!(motion_ev->state & resizebtn || motion_ev->state & movebtn)) return;
+  if(!(motion_ev->state & s->config.resizebtn || motion_ev->state & s->config.movebtn)) return;
 
   if(!cl) {
     if(!(cl = clientfromtitlebar(s, motion_ev->event))) return;
@@ -2676,17 +2547,17 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     // Unset fullscreen
     cl->fullscreen = false;
     xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
-    cl->borderwidth = winborderwidth;
+    cl->borderwidth = s->config.winborderwidth;
     setborderwidth(s, cl, cl->borderwidth);
     showtitlebar(s, cl);
   }
 
   // Move the window
-  if(motion_ev->state & movebtn) {
+  if(motion_ev->state & s->config.movebtn) {
     moveclient(s, cl, movedest);
   } 
   // Resize the window
-  else if(motion_ev->state & resizebtn) {
+  else if(motion_ev->state & s->config.resizebtn) {
     // Resize delta (clamped)
     v2_t resizedelta  = (v2_t){.x = MAX(dragdelta.x, -s->grabwin.size.x), .y = MAX(dragdelta.y, -s->grabwin.size.y)};
     // New window size
@@ -2788,14 +2659,14 @@ evconfigrequest(state_t* s, xcb_generic_event_t* ev) {
       mask |= XCB_CONFIG_WINDOW_X;
       mask |= XCB_CONFIG_WINDOW_Y;
       values[i++] = 0;
-      values[i++] = ((cl->showtitlebar) ?  titlebarheight : 0.0f);
+      values[i++] = ((cl->showtitlebar) ?  s->config.titlebarheight : 0.0f);
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
         mask |= XCB_CONFIG_WINDOW_WIDTH;
         values[i++] = config_ev->width;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
         mask |= XCB_CONFIG_WINDOW_HEIGHT;
-        values[i++] = config_ev->height - ((cl->showtitlebar ? titlebarheight : 0.0f));
+        values[i++] = config_ev->height - ((cl->showtitlebar ? s->config.titlebarheight : 0.0f));
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
         mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
@@ -2863,7 +2734,7 @@ evpropertynotify(state_t* s, xcb_generic_event_t* ev) {
     if(prop_ev->atom == s->ewmh_atoms[EWMHwindowType]) {
       setwintype(s, cl);
     }
-    if(usedecoration) {
+    if(s->config.usedecoration) {
       if(prop_ev->atom == s->ewmh_atoms[EWMHname]) {
 	if(cl->name)
 	  free(cl->name);
@@ -2925,7 +2796,6 @@ void
 evexpose(state_t* s, xcb_generic_event_t* ev) {
   xcb_expose_event_t* expose_ev = (xcb_expose_event_t*)ev;
   client_t* cl = clientfromtitlebar(s, expose_ev->window);
-  if(cl->ignoreexpose && !dynamic_rerender_on_resize) return;
   rendertitlebar(s, cl);
   xcb_flush(s->con);
 }
@@ -2951,23 +2821,24 @@ addclient(state_t* s, xcb_window_t win) {
   if(!success) return cl;
 
   cl->area = area;
-  cl->borderwidth = winborderwidth;
+  cl->borderwidth = s->config.winborderwidth;
   cl->fullscreen = false;
   cl->floating = getcurlayout(s, s->monfocus) == LayoutFloating;
   cl->titlebar_render_additional = false;
   cl->name = getclientname(s, cl);
-  cl->showtitlebar = usedecoration;
+  cl->showtitlebar = s->config.usedecoration;
   cl->layoutsizeadd = 0;
 
   // Create frame window for the client
   frameclient(s, cl);
 
-  // Updating the linked list of clients
+  // Insert the new client at the beginning of the list
   cl->next = s->clients;
+  // Update the head of the list to the new client
   s->clients = cl;
 
 
-  logmsg(LogLevelTrace, "Added client ('%s') to the linked list of clients.", 
+  logmsg(s,  LogLevelTrace, "Added client ('%s') to the linked list of clients.", 
          cl->name ? cl->name : "No name");
 
   return cl;
@@ -3024,6 +2895,39 @@ clientfromwin(state_t* s, xcb_window_t win) {
 }
 
 /**
+ * @brief Returns a filtered linked list of all clients 
+ * that are currently visible on the given monitor
+ *
+ * @param s The window manager's state
+ * @param mon The monitor to get visible clients off
+ * @param tiled Whether or not to ignore floating clients
+ *
+ * @return A filtered linked list with all visible clients on 
+ * the given monitor
+ */
+client_t* 
+visibleclients(state_t* s, monitor_t* mon, bool tiled) {
+  client_t dummy;
+  client_t* tail = &dummy;
+  dummy.next = NULL;
+
+  client_t* current = s->clients;
+
+  while (current != NULL) {
+    bool tiled_check = tiled ? current->floating : !tiled;
+    if (tiled_check && clientonscreen(s, current, mon)) {
+      tail->next = current;
+      tail = current;
+    }
+    current = current->next;
+  }
+
+  tail->next = NULL;
+
+  return dummy.next;
+}
+
+/**
  * @brief Returns the associated client from a given titlebar window.
  * Returns NULL if there is no client associated with the titlebar window.
  *
@@ -3034,7 +2938,7 @@ clientfromwin(state_t* s, xcb_window_t win) {
  */
 client_t*
 clientfromtitlebar(state_t* s, xcb_window_t titlebar) {
-  if(!usedecoration) return NULL;
+  if(!s->config.usedecoration) return NULL;
   client_t* cl;
   for (cl = s->clients; cl != NULL; cl = cl->next) {
     // If the window is found in the clients, return the client
@@ -3061,20 +2965,21 @@ monitor_t* addmon(state_t* s, area_t a, uint32_t idx) {
   mon->next     = s->monitors;
   mon->idx      = idx;
   mon->desktopcount = 0;
+  mon->activedesktops = malloc(sizeof(char*) * s->config.maxdesktops);
 
   // Initialize the layout properties of all virtual desktops on the monitor
-  mon->layouts = malloc(sizeof(*mon->layouts) * MAX_DESKTOPS);
-  for(uint32_t i = 0; i < MAX_DESKTOPS; i++) {
+  mon->layouts = malloc(sizeof(*mon->layouts) * s->config.maxdesktops);
+  for(uint32_t i = 0; i < s->config.maxdesktops; i++) {
     mon->layouts[i].nmaster = 1;
-    mon->layouts[i].gapsize = winlayoutgap;
-    mon->layouts[i].masterarea = MIN(MAX(layoutmasterarea, 0.0), 1.0);
-    mon->layouts[i].curlayout = initlayout;
+    mon->layouts[i].gapsize = s->config.winlayoutgap;
+    mon->layouts[i].masterarea = MIN(MAX(s->config.layoutmasterarea, 0.0), 1.0);
+    mon->layouts[i].curlayout = s->config.initlayout;
   }
 
   // Update linked list pointer
   s->monitors    = mon;
 
-  logmsg(LogLevelTrace, "registered monitor %i (position: %ix%i size. %ix%i).", 
+  logmsg(s,  LogLevelTrace, "registered monitor %i (position: %ix%i size. %ix%i).", 
          mon->idx, (int32_t)mon->area.pos.x, (int32_t)mon->area.pos.y,
          (int32_t)mon->area.size.x, (int32_t)mon->area.size.y);
 
@@ -3193,7 +3098,7 @@ updatemons(state_t* s) {
     xcb_randr_get_screen_resources_current_reply(s->con, res_cookie, NULL);
 
   if (!res_reply) {
-    logmsg(LogLevelError, "cannot get Xrandr screen resources.");
+    logmsg(s,  LogLevelError, "cannot get Xrandr screen resources.");
     terminate(s, EXIT_FAILURE);
   }
 
@@ -3294,7 +3199,7 @@ readstrut(state_t* s, xcb_window_t win) {
   xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(s->con, cookie, NULL);
 
   if (!reply) {
-    logmsg(LogLevelError, "failed to get _NET_WM_STRUT_PARTIAL atom.");
+    logmsg(s,  LogLevelError, "failed to get _NET_WM_STRUT_PARTIAL atom.");
     return strut;
   }
 
@@ -3311,7 +3216,7 @@ readstrut(state_t* s, xcb_window_t win) {
     strut.endy 	  = data[5];
     strut.startx  = data[8];
     strut.endx	  = data[9];
-    logmsg(LogLevelTrace, "registered strut data of window %i: L: %i, R: %i, T: %i B: %i SX: %i EX: %i SY: %i EY: %i", win,
+    logmsg(s,  LogLevelTrace, "registered strut data of window %i: L: %i, R: %i, T: %i B: %i SX: %i EX: %i SY: %i EY: %i", win,
            strut.left, strut.right, strut.top, strut.bottom, strut.startx, strut.endx, 
            strut.starty, strut.endy); 
   } 
@@ -3334,7 +3239,7 @@ getwinstruts(state_t* s, xcb_window_t win) {
   xcb_query_tree_reply_t* reply = xcb_query_tree_reply(s->con, cookie, NULL);
 
   if (!reply) {
-    logmsg(LogLevelError, "failed to get the query tree for window %i.", win);
+    logmsg(s,  LogLevelError, "failed to get the query tree for window %i.", win);
     return;
   }
 
@@ -3346,7 +3251,7 @@ getwinstruts(state_t* s, xcb_window_t win) {
     strut_t strut = readstrut(s, child);
     if(!(strut.left == 0 && strut.right == 0 && 
       strut.top == 0 && strut.bottom == 0) &&
-      s->nwinstruts + 1 <= MAX_STRUTS) {
+      s->nwinstruts + 1 <= s->config.maxstruts) {
       s->winstruts[s->nwinstruts++] = strut;
     }
     getwinstruts(s, child);
@@ -3430,21 +3335,6 @@ compstrs(const void* a, const void* b) {
   return strcmp(*(const char **)a, *(const char **)b);
 }
 
-/*
- * @brief Converts a given string to ASCII by removing all non-ASCII
- * characters within it and replacing them with a replacement character.
- * @param str The string to un-ASCII-fy 
- * */
-void 
-strtoascii(char* str) {
-  while(*str) {
-    if((unsigned char)*str >= 127) {
-      *str = non_ascii_replacement;
-    }
-    str++;
-  }
-}
-
 /**
  * @brief Creates an GLX Context and sets up OpenGL visual. 
  * */
@@ -3457,14 +3347,14 @@ initglcontext(state_t* s) {
   int screen_num = DefaultScreen(s->dsp);
   s->glvis = glXChooseVisual(s->dsp, screen_num, attribs);
   if (!s->glvis) {
-    logmsg(LogLevelError, "no appropriate OpenGL visual found.");
+    logmsg(s,  LogLevelError, "no appropriate OpenGL visual found.");
     terminate(s, EXIT_FAILURE);
   }
 
   s->glcontext = glXCreateContext(s->dsp, s->glvis, NULL, GL_TRUE); 
 
   if(!s->glcontext) {
-    logmsg(LogLevelError, "failed to create OpenGL context");
+    logmsg(s,  LogLevelError, "failed to create OpenGL context");
     terminate(s, EXIT_FAILURE);
   }
 
@@ -3487,9 +3377,9 @@ setglcontext(state_t* s, xcb_window_t win) {
   if (curwin != win || curcontext != s->glcontext) {
     // Make the given window and context the current drawable
     if (!glXMakeCurrent(s->dsp, win, s->glcontext)) {
-      logmsg(LogLevelError, "failed to set OpenGL context to window %i.", win); 
+      logmsg(s,  LogLevelError, "failed to set OpenGL context to window %i.", win); 
     }
-    logmsg(LogLevelTrace, "set OpenGL context to window %i.", win); 
+    logmsg(s,  LogLevelTrace, "set OpenGL context to window %i.", win); 
   }
 }
 
@@ -3502,8 +3392,8 @@ setglcontext(state_t* s, xcb_window_t win) {
  * @param lvl The log level
  * @param fmt The format string
  * @param ... The variadic arguments */
-void logmsg(log_level_t lvl, const char* fmt, ...) {
-  if (!logmessages) return;
+void logmsg(state_t* s, log_level_t lvl, const char* fmt, ...) {
+  if (!s->config.logmessages) return;
 
   /* Print the log level */
   switch (lvl) {
@@ -3527,12 +3417,12 @@ void logmsg(log_level_t lvl, const char* fmt, ...) {
   fprintf((lvl == LogLevelError ? stderr : stdout), "\n");
   va_end(args);
 
-  if (shouldlogtofile) {
+  if (s->config.shouldlogtofile) {
     // Write the logged message to the logfile
     va_start(args, fmt);
     va_list args_copy;
     va_copy(args_copy, args);  // Copy the va_list
-    logtofile(fmt, args_copy); // Pass the copied va_list to logtofile
+    logtofile(s, fmt, args_copy); // Pass the copied va_list to logtofile
     va_end(args_copy);         // Clean up the copied va_list
     va_end(args);              // End the original va_list
   }
@@ -3543,11 +3433,11 @@ void logmsg(log_level_t lvl, const char* fmt, ...) {
  * config.
  * @param fmt The format string
  * @param args The variadic arguments list */
-void logtofile(const char* fmt, va_list args) {
-  if (!shouldlogtofile) return;
+void logtofile(state_t* s, const char* fmt, va_list args) {
+  if (!s->config.shouldlogtofile) return;
 
   // Open the file in append mode
-  FILE *file = fopen(logfile, "a");
+  FILE *file = fopen(s->config.logfile, "a");
 
   // Check if the file was opened successfully
   if (file == NULL) {
@@ -3616,7 +3506,7 @@ cmdoutput(const char* cmd) {
 
 
 int
-main() {
+main(void) {
 
   state_t* wm_state = malloc(sizeof(state_t));
   // Setup the window manager

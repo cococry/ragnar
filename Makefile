@@ -1,29 +1,19 @@
-CC = cc
+CC 			= cc
+CFLAGS 	= -O3 -ffast-math -Wall -Wextra -pedantic
+LIBS 		= -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm -lconfig
+SRC 		= ./src/*.c
+BIN 		= ragnar
 
-# includes and flags
-CFLAGS = -O3 -ffast-math -Wall -Wextra -pedantic
-LIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm
+all:
+	mkdir -p ./bin
+	${CC} -o bin/${BIN} ${SRC} ${LIBS} ${CFLAGS}
+	@if [ -f "~/.config/ragnarwm/" ]; then \
+		mkdir -p ~/.config/ragnarwm; \
+		cp ./cfg/ragnar.cfg ~/.config/ragnarwm; \
+	fi
 
-SRC = ragnar.c config.h keycallbacks.h 
-OBJ = ${SRC:.c=.o}
-
-all: ragnar
-
-print_options:
-	@echo ragnar build options:
-	@echo "CFLAGS = ${CFLAGS}"
-	@echo "LIBS   = ${LIBS}"
-	@echo "INCS   = ${INCS}"
-	@echo "CC     = ${CC}"
-
-.c.o:
-	${CC} -c ${CFLAGS} ${LIBS} ${INCS} $<
-
-ragnar: ${OBJ}
-	${CC} -o $@ ${OBJ} ${LIBS} ${INCS}
-
-install: ragnar
-	sudo cp -f ragnar /usr/bin
+install: 
+	sudo cp -f bin/${BIN} /usr/bin
 	sudo cp -f ragnar.desktop /usr/share/applications
 	sudo cp -f ragnarstart /usr/bin
 	sudo mkdir -p /usr/share/ragnarwm
@@ -32,7 +22,7 @@ install: ragnar
 	sudo chmod 755 /usr/bin/ragnar
 
 clean:
-	rm -f ragnar ragnar.o 
+	rm -f bin/*
 
 uninstall:
 	sudo rm -f /usr/bin/ragnar
