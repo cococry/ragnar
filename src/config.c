@@ -214,7 +214,9 @@ const key_cb_mapping_t key_cb_mappings[] = {
 
 static config_t cfghndl;
 
-static uint16_t kbmodsfromstr(const char* modifiers);
+static char* replace_placeholder(const char* str, const char* placeholder, const char* value);
+
+static uint16_t kbmodsfromstr(state_t* s, const char* modifiers);
 static keycode_t keycodefromstr(const char* keycode);
 static keycallback_t keycbfromstr(const char* cbstr);
 
@@ -229,11 +231,57 @@ static layout_type_t cfgevallayouttype(state_t* s, const char* label);
 static char** cfgevalstrarr(state_t* s, const char* label);
 static keybind_t* cfgevalkeybinds(state_t* s, uint32_t* numkeybinds, const char* label);
 
+char*
+replace_placeholder(const char* str, const char* placeholder, const char* value) {
+  char* result;
+  char* ins;
+  char* tmp;
+  size_t len_placeholder;
+  size_t len_front;
+  size_t count;
+
+  if (!str || !placeholder)
+    return NULL;
+  len_placeholder = strlen(placeholder);
+  if (len_placeholder == 0)
+    return NULL;
+  if (!value)
+    value = "";
+
+  // Count the number of replacements needed
+  ins = (char*)str;
+  for (count = 0; (tmp = strstr(ins, placeholder)); ++count) {
+    ins = tmp + len_placeholder;
+  }
+
+  tmp = result = malloc(strlen(str) + (strlen(value) - len_placeholder) * count + 1);
+  if (!result)
+    return NULL;
+
+  // Replace each occurrence of placeholder with the value
+  while (count--) {
+    ins = strstr(str, placeholder);
+    len_front = ins - str;
+    tmp = strncpy(tmp, str, len_front) + len_front;
+    tmp = strcpy(tmp, value) + strlen(value);
+    str += len_front + len_placeholder; 
+  }
+  strcpy(tmp, str);
+  return result;
+}
+
 uint16_t 
-kbmodsfromstr(const char* modifiers) {
+kbmodsfromstr(state_t* s, const char* modifiers) {
   uint16_t bitmask = 0;
   char buffer[64]; 
   const char *delim = " |";
+
+  const char* modstr;
+  if(!cfgreadstr(s, &modstr, "mod_key")) {
+    return bitmask;
+  }
+
+  modifiers = replace_placeholder(modifiers, "%mod_key", modstr);
 
   while (*modifiers) {
     while (isspace(*modifiers)) modifiers++;
@@ -448,7 +496,7 @@ cfgevalkeybinds(state_t* s, uint32_t* numkeybinds, const char* label) {
     config_setting_lookup_string(keybind, "key", &key_str);
     config_setting_lookup_string(keybind, "do", &do_str);
 
-    uint16_t mods = kbmodsfromstr(mods_str);
+    uint16_t mods = kbmodsfromstr(s, mods_str);
     keycode_t key = keycodefromstr(key_str);
     keycallback_t cb = keycbfromstr(do_str);
 

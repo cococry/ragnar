@@ -7,9 +7,18 @@ BIN 		= ragnar
 all:
 	mkdir -p ./bin
 	${CC} -o bin/${BIN} ${SRC} ${LIBS} ${CFLAGS}
-	@if [ -f "~/.config/ragnarwm/" ]; then \
-		mkdir -p ~/.config/ragnarwm; \
-		cp ./cfg/ragnar.cfg ~/.config/ragnarwm; \
+
+SOURCE_DIR := ./cfg/ 
+DEST_DIR := $(HOME)/.config/ragnarwm
+CONFIG_FILE := $(DEST_DIR)/ragnar.cfg
+
+config:
+	@if [ ! -f "$(CONFIG_FILE)" ]; then \
+		echo "Config file does not exist. Copying default config..."; \
+		mkdir -p "$(DEST_DIR)"; \
+		cp -r "./cfg/ragnar.cfg" "$(DEST_DIR)"; \
+	else \
+		echo "Config file already exists. Skipping copy."; \
 	fi
 
 install: 

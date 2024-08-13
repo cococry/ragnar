@@ -1334,9 +1334,8 @@ makelayout(state_t* s, monitor_t* mon) {
 void 
 resetlayoutsizes(state_t* s, monitor_t* mon) {
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(cl->floating || 
-      cl->desktop != mondesktop(s, mon)->idx || 
-      cl->mon != mon) continue;
+    if(cl->floating ||
+      !clientonscreen(s, cl, mon)) continue;
 
     cl->layoutsizeadd = 0.0f;
   }

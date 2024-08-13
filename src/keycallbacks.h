@@ -3,6 +3,7 @@
 #include "structs.h"
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 /**
@@ -414,6 +415,7 @@ inline void addmasterlayout(state_t* s, passthrough_data_t data) {
     layout->nmaster++;
   }
 
+  resetlayoutsizes(s, s->monfocus);
   makelayout(s, s->monfocus);
 }
 
@@ -433,6 +435,8 @@ inline void removemasterlayout(state_t* s, passthrough_data_t data) {
   if(layout->nmaster - 1 >= 1) {
     layout->nmaster--;
   }
+  
+  resetlayoutsizes(s, s->monfocus);
   makelayout(s, s->monfocus);
 }
 
@@ -525,10 +529,25 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
   if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)
       || (s->focus->next && s->focus->next->mon != s->focus->mon)) return;
 
+  uint32_t i = 0;
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
+      || cl->mon != s->monfocus) continue;
+    if(i == nmaster - 1 && cl == s->focus) {
+      return;
+    }
+    i++;
+  }
+
   // If the height of the window influenced by the focus is smaller 
   // than the minimum height a window can be in the layout, return
   float nextsize = horizontal ? s->focus->next->area.size.y : s->focus->next->area.size.x;
   if(nextsize - s->config.layoutsize_step < s->config.layoutsize_min) {
+    if(horizontal) {
+      s->focus->next->area.size.y = s->config.layoutsize_min;
+    } else {
+      s->focus->next->area.size.x = s->config.layoutsize_min;
+    }
     return;
   }
   
@@ -566,11 +585,26 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
   // influenced by the client ontop of it
   if(!s->focus->next || (s->focus->next && s->focus->next->desktop != s->focus->desktop)
       || (s->focus->next && s->focus->next->mon != s->focus->mon)) return;
+  
+  uint32_t i = 0;
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
+      || cl->mon != s->monfocus) continue;
+    if(i == nmaster - 1 && cl == s->focus) {
+      return;
+    }
+    i++;
+  }
 
   // If the height of the focus  is smaller 
   // than the minimum height a window can be in the layout, return
   float size = horizontal ? s->focus->area.size.y : s->focus->area.size.x;
   if(size - s->config.layoutsize_step < s->config.layoutsize_min) {
+    if(horizontal) {
+      s->focus->area.size.y = s->config.layoutsize_min;
+    } else {
+      s->focus->area.size.x = s->config.layoutsize_min;
+    }
     return;
   }
 
@@ -732,6 +766,8 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
 inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   (void)data;
   if(!s->focus) return;
+  
+  s->ignore_enter_layout = true;
 
   monitor_t* prevmon = NULL;
   {
@@ -754,6 +790,17 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   bool floating = s->focus->floating;
   if(fs) {
     setfullscreen(s, s->focus, false);
+  }
+  
+  // Unset fullscreen for all clients on the 
+  // previous monitor
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(clientonscreen(s, cl, prevmon)) {
+      if(cl->fullscreen) {
+        setfullscreen(s, cl, false);
+        cl->floating = floating;
+      }
+    }
   }
 
   // Moving
@@ -794,6 +841,7 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
     setfullscreen(s, s->focus, true);
   }
 
+
   s->monfocus = cursormon(s);
   s->focus->mon = prevmon;
 }
@@ -810,6 +858,8 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
   (void)data;
   if(!s->focus) return;
 
+  s->ignore_enter_layout = true;
+
   monitor_t* nextmon = s->focus->mon->next;
 
   if(!nextmon) return;
@@ -818,8 +868,20 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
 
   bool fs = s->focus->fullscreen;
   bool floating = s->focus->floating;
+
   if(fs) {
     setfullscreen(s, s->focus, false);
+  }
+ 
+  // Unset fullscreen for all clients on the 
+  // next monitor
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(clientonscreen(s, cl, nextmon)) {
+      if(cl->fullscreen) {
+        setfullscreen(s, cl, false);
+        cl->floating = floating;
+      }
+    }
   }
 
   // Moving
