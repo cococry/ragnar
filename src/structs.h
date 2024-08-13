@@ -9,6 +9,7 @@
 
 #include <GL/gl.h>
 #include <GL/glx.h>
+#include <xcb/xproto.h>
 
 #define _XCB_EV_LAST 36 
 
@@ -277,7 +278,12 @@ typedef struct client_t client_t;
 struct client_t {
   area_t area, area_prev;
   bool fullscreen, floating, floating_prev,
-       fixed;
+       fixed, hidden;
+  
+  bool is_scratchpad;
+
+  int32_t scratchpad_index;
+
   xcb_window_t win, frame, titlebar;
 
   bool showtitlebar;
@@ -290,6 +296,7 @@ struct client_t {
 
   monitor_t* mon;
   uint32_t desktop;
+
 
   bool urgent, ignoreunmap, ignoreexpose; 
   bool titlebar_render_additional; 
@@ -341,7 +348,7 @@ void movefocusleft(state_t* s, passthrough_data_t data);
 void movefocusright(state_t* s, passthrough_data_t data);
 void cyclefocusmonitordown(state_t* s, passthrough_data_t data);
 void cyclefocusmonitorup(state_t* s, passthrough_data_t data);
-
+void togglescratchpad(state_t* s, passthrough_data_t data);
 
 struct monitor_t {
   area_t area;
@@ -356,6 +363,7 @@ struct monitor_t {
 typedef struct {
   uint32_t maxstruts;
   uint32_t maxdesktops;
+  uint32_t maxscratchpads;
 
   uint32_t winborderwidth;
   uint32_t winbordercolor;
@@ -410,6 +418,11 @@ typedef struct {
   char* cursorimage;
 } config_data_t;
 
+typedef struct {
+  xcb_window_t win;
+  bool hidden, needs_restart;
+} scratchpad_t;
+
 struct state_t {
   xcb_connection_t* con;
   xcb_ewmh_connection_t ewmh;
@@ -449,6 +462,9 @@ struct state_t {
   uint32_t nwinstruts;
 
   config_data_t config;
+
+  scratchpad_t* scratchpads;
+  int32_t mapping_scratchpad_index;
 };
 
 typedef void (*event_handler_t)(state_t* s, xcb_generic_event_t* ev);

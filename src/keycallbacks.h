@@ -44,7 +44,7 @@ inline void cyclefocusdown(state_t* s, passthrough_data_t data) {
  */
 inline void killfocus(state_t* s, passthrough_data_t data) { 
   (void)data;
-  if(!s->focus) {
+  if(!s->focus || s->focus->is_scratchpad) {
     return;
   }
   killclient(s, s->focus);
@@ -267,7 +267,11 @@ inline void runcmd(state_t* s, passthrough_data_t data) {
 inline void addfocustolayout(state_t* s, passthrough_data_t data) { 
   (void)data;
 
+  if(s->focus->is_scratchpad) return;
+
   s->focus->floating = false;
+
+  resetlayoutsizes(s, s->monfocus);
   makelayout(s, s->monfocus);
 }
 
@@ -283,7 +287,7 @@ inline void settiledmaster(state_t* s, passthrough_data_t data) {
   (void)data;
 
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(clientonscreen(s, cl, s->monfocus)) {
+    if(clientonscreen(s, cl, s->monfocus) && !cl->is_scratchpad) {
       cl->floating = false;
     }
   }
@@ -307,7 +311,7 @@ inline void setverticalstripes(state_t* s, passthrough_data_t data) {
   (void)data;
 
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(clientonscreen(s, cl, s->monfocus)) {
+    if(clientonscreen(s, cl, s->monfocus) && !cl->is_scratchpad) {
       cl->floating = false;
     }
   }
@@ -331,7 +335,7 @@ inline void sethorizontalstripes(state_t* s, passthrough_data_t data) {
   (void)data;
 
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(clientonscreen(s, cl, s->monfocus)) {
+    if(clientonscreen(s, cl, s->monfocus) && !cl->is_scratchpad) {
       cl->floating = false;
     }
   }
@@ -923,4 +927,23 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
 
   s->monfocus = cursormon(s);
   s->focus->mon = nextmon;
+}
+
+inline void togglescratchpad(state_t* s, passthrough_data_t data) {
+  if(s->scratchpads[data.i].needs_restart) {
+    s->mapping_scratchpad_index = data.i;
+    runcmd(s, data);
+    return;
+  }
+
+  client_t* cl = clientfromwin(s, s->scratchpads[data.i].win);
+
+  if(s->scratchpads[data.i].hidden) {
+    showclient(s, cl);
+    raiseclient(s, cl);
+  } else {
+    hideclient(s, cl);
+  }
+
+  s->scratchpads[data.i].hidden = !s->scratchpads[data.i].hidden;
 }

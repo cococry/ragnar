@@ -210,6 +210,7 @@ const key_cb_mapping_t key_cb_mappings[] = {
     {"movefocusright", movefocusright},
     {"cyclefocusmonitordown", cyclefocusmonitordown},
     {"cyclefocusmonitorup", cyclefocusmonitorup},
+    {"togglescratchpad", togglescratchpad},
 };
 
 static config_t cfghndl;
@@ -563,6 +564,7 @@ readconfig(state_t* s, config_data_t* data) {
 
   success = cfgreadint(s, (int32_t*)&data->maxstruts, "max_struts");
   success = cfgreadint(s, (int32_t*)&data->maxdesktops, "max_desktops");
+  success = cfgreadint(s, (int32_t*)&data->maxscratchpads, "max_scratchpads");
 
   success = cfgreadint(s, (int32_t*)&data->winborderwidth, "win_border_width");
   success = cfgreadint(s, (int32_t*)&data->winbordercolor, "win_border_color");
@@ -590,8 +592,8 @@ readconfig(state_t* s, config_data_t* data) {
 
   success = cfgreadfloat(s, &data->layoutmasterarea, "layout_master_area");
   success = cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_min");
-  success = cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_max");
-  success = cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_step");
+  success = cfgreadfloat(s, &data->layoutmasterarea_max, "layout_master_area_max");
+  success = cfgreadfloat(s, &data->layoutmasterarea_step, "layout_master_area_step");
 
   success = cfgreadfloat(s, &data->layoutsize_step, "layout_size_step");
   success = cfgreadfloat(s, &data->layoutsize_min, "layout_size_min");

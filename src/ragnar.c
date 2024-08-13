@@ -200,6 +200,15 @@ setup(state_t* s) {
       s->curdesktop[i].idx = s->config.desktopinit;
     }
   }
+
+  s->scratchpads = malloc(sizeof(*s->scratchpads) * s->config.maxscratchpads);
+  for(uint32_t i = 0; i < s->config.maxscratchpads; i++) {
+    s->scratchpads[i].needs_restart = true;
+    s->scratchpads[i].hidden = true;
+    s->scratchpads[i].win = 0;
+  }
+
+  s->mapping_scratchpad_index = -1;
 }
 
 /**
@@ -352,7 +361,7 @@ managewins(state_t* s) {
   }
 }
 
-void 
+client_t*
 makeclient(state_t* s, xcb_window_t win) {
   // Setup listened events for the mapped window
   {
@@ -372,6 +381,7 @@ makeclient(state_t* s, xcb_window_t win) {
   // Adding the mapped client to our linked list
   client_t* cl = addclient(s, win);
 
+
   // Set initial border 
   setbordercolor(s, cl, s->config.winbordercolor);
   setborderwidth(s, cl, s->config.winborderwidth);
@@ -389,7 +399,7 @@ makeclient(state_t* s, xcb_window_t win) {
 
   bool success;
   cl->area = winarea(s, cl->frame, &success);
-  if(!success) return;
+  if(!success) return NULL;
 
   cl->area.size = applysizehints(s, cl, cl->area.size);
   if(!cl->floating) {
@@ -413,13 +423,15 @@ makeclient(state_t* s, xcb_window_t win) {
   // Retrieving cursor position
   bool cursor_success;
   v2_t cursor = cursorpos(s, &cursor_success);
-  if(!cursor_success) return;
+  if(!cursor_success) return NULL;
   // If the cursor is on the mapped window when it spawned, focus it.
   if(pointinarea(cursor, cl->area)) {
     focusclient(s, cl);
   }
   // Raise the newly created client over all other clients
   raiseclient(s, cl);
+
+  return cl;
 }
 
 /**
@@ -973,6 +985,11 @@ unfocusclient(state_t* s, client_t* cl) {
   cl->ignoreexpose = false;
 }
 
+void 
+removescratchpad(state_t* s, uint32_t idx) {
+  s->scratchpads[idx].needs_restart = true;
+}
+
 /**
  * @brief Notifies a given client window about it's configuration 
  * (geometry) by sending a configure notify event to it.
@@ -1018,6 +1035,7 @@ configclient(state_t* s, client_t* cl) {
 void
 hideclient(state_t* s, client_t* cl) {
   cl->ignoreunmap = true;
+  cl->hidden = true;
   xcb_unmap_window(s->con, cl->frame);
 }
 
@@ -1029,6 +1047,7 @@ hideclient(state_t* s, client_t* cl) {
  */
 void
 showclient(state_t* s, client_t* cl) {
+  cl->hidden = false;
   xcb_map_window(s->con, cl->frame);
 }
 
@@ -1304,6 +1323,7 @@ makelayout(state_t* s, monitor_t* mon) {
   while(nlayout - mon->layouts[deskidx].nmaster == 0 && nlayout != 1) {
     mon->layouts[deskidx].nmaster--;
   }
+  
 
   switch(curlayout) {
     case LayoutTiledMaster:  {
@@ -2047,6 +2067,13 @@ applysizehints(state_t* s, client_t* cl, v2_t size) {
 void
 addtolayout(state_t* s, client_t* cl)  {
   cl->floating = false;
+  // Add all fullscreened clients to the layout
+  for(client_t* it = s->clients; it != NULL; it = it->next) {
+    if(clientonscreen(s, it, s->monfocus) && it->fullscreen) {
+      setfullscreen(s, it, false);
+      it->floating = false; 
+    }
+  }
   makelayout(s, cl->mon);
 }
 
@@ -2190,11 +2217,32 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   }
 
   // Handle new client
-  makeclient(s, map_ev->window);
+  client_t* cl = makeclient(s, map_ev->window);
 
   resetlayoutsizes(s, s->monfocus); 
 
-  makelayout(s, s->monfocus);
+  for(client_t* it = s->clients; it != NULL; it = it->next) {
+    if(clientonscreen(s, it, s->monfocus) && it->fullscreen) {
+      setfullscreen(s, it, false);
+      it->floating = false; 
+    }
+  }
+
+  cl->scratchpad_index = s->mapping_scratchpad_index;
+  cl->is_scratchpad = s->mapping_scratchpad_index != -1;
+
+  if(s->mapping_scratchpad_index == -1) {
+    makelayout(s, s->monfocus);
+  } else {
+    cl->floating = true;
+
+    s->scratchpads[s->mapping_scratchpad_index] = (scratchpad_t) {
+      .win = cl->win,
+      .hidden = false,
+      .needs_restart = false,
+    };
+    s->mapping_scratchpad_index = -1;
+  }
 
   xcb_flush(s->con);
 }
@@ -2216,7 +2264,12 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
     cl->ignoreunmap = false;
     return;
   }
+
+
   if(cl) {
+    if(cl->is_scratchpad) {
+      removescratchpad(s, cl->scratchpad_index);
+    }
     unframeclient(s, cl);
   } else {
     xcb_unmap_window(s->con, unmap_ev->window);
@@ -2251,6 +2304,9 @@ evdestroynotify(state_t* s, xcb_generic_event_t* ev) {
   client_t* cl = clientfromwin(s, destroy_ev->window);
   if(!cl) {
     return;
+  }
+  if(cl->is_scratchpad) {
+    removescratchpad(s, cl->scratchpad_index);
   }
   unframeclient(s, cl);
   releaseclient(s, destroy_ev->window);
@@ -2537,6 +2593,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
     if(!cl->floating) {
       // Remove the client from the layout when the user moved it 
+      resetlayoutsizes(s, s->monfocus);
       removefromlayout(s, cl);
     }
     xcb_flush(s->con);
@@ -2569,6 +2626,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
   if(!cl->floating) {
     // Remove the client from the layout when the user moved it 
+    resetlayoutsizes(s, s->monfocus);
     removefromlayout(s, cl);
   }
 
@@ -2822,6 +2880,7 @@ addclient(state_t* s, xcb_window_t win) {
   cl->area = area;
   cl->borderwidth = s->config.winborderwidth;
   cl->fullscreen = false;
+  cl->hidden = false;
   cl->floating = getcurlayout(s, s->monfocus) == LayoutFloating;
   cl->titlebar_render_additional = false;
   cl->name = getclientname(s, cl);

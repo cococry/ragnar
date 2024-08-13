@@ -50,7 +50,7 @@ void             managewins(state_t* s);
  * @param s The window manager' state
  * @param win The window from which to create a client 
  */
-void             makeclient(state_t* s, xcb_window_t win);
+client_t*       makeclient(state_t* s, xcb_window_t win);
 
 /**
  * @brief Evaluates if a given point is inside a given area 
@@ -258,6 +258,8 @@ void             unframeclient(state_t* s, client_t* cl);
  * @param cl The client to unfocus
  */
 void             unfocusclient(state_t* s, client_t* cl);
+
+void             removescratchpad(state_t* s, uint32_t idx);
 
 /**
  * @brief Notifies a given client window about it's configuration 
