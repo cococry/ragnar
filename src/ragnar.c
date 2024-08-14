@@ -93,7 +93,7 @@ xerror(Display *dpy, XErrorEvent *ee)
  * @param s The window manager's state
  * This function establishes a connection to the X server,
  * sets up the root window and window manager keybindings.
- * The event mask of the root window is being cofigured to
+ * The event mask of the root window is being cofigured to  
  * listen to necessary events. 
  * After the configuration of the root window, all the specified
  * keybinds in the config are grabbed by the window manager.
@@ -113,7 +113,6 @@ setup(state_t* s) {
   initconfig(s);
   readconfig(s, &s->config);
 
-  /* Initializing default variables */
   s->clients = NULL;
 
   if(!s->config.usedecoration) {
@@ -128,10 +127,10 @@ setup(state_t* s) {
   // Opening Xorg display
   s->dsp = XOpenDisplay(NULL);
   if(!s->dsp) {
-    logmsg(s,  LogLevelError, "open X Display.");
+    logmsg(s, LogLevelError, "Failed to open X Display.");
     terminate(s, EXIT_FAILURE);
   }
-  logmsg(s,  LogLevelTrace, "successfully opened X display.");
+  logmsg(s, LogLevelTrace, "successfully opened X display.");
 
 
   /* Checking for other window manager and terminating if one is found. */
@@ -185,7 +184,6 @@ setup(state_t* s) {
 
   // Setup atoms for EWMH and NetWM standards
   setupatoms(s);
-
 
   // Gather strut information for layouts 
   s->nwinstruts = 0;
@@ -620,7 +618,7 @@ moveclient(state_t* s, client_t* cl, v2_t pos) {
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(s, cl);
   cl->desktop = mondesktop(s, cl->mon)->idx;
-  uploaddesktopnames(s);
+  uploaddesktopnames(s, s->monfocus);
   s->monfocus = cl->mon;
 }
 
@@ -683,7 +681,7 @@ moveresizeclient(state_t* s, client_t* cl, area_t a) {
   cl->area = a;
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(s, cl);
-  uploaddesktopnames(s);
+  uploaddesktopnames(s, s->monfocus);
 
   s->monfocus = cl->mon; 
   updatetitlebar(s, cl);
@@ -871,7 +869,7 @@ focusclient(state_t* s, client_t* cl) {
 
   // Set the focused client
   s->focus = cl;
-  uploaddesktopnames(s);
+  uploaddesktopnames(s, s->monfocus);
   s->monfocus = cursormon(s);
 
   if(s->monfocus != lastmon && lastmon != NULL) {
@@ -1265,10 +1263,15 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
  */
 void
 switchclientdesktop(state_t* s, client_t* cl, int32_t desktop) {
+  char** names = (char**)malloc(s->monfocus->desktopcount * sizeof(char*));
+  for (size_t i = 0; i < s->monfocus->desktopcount ; i++) {
+    names[i] = strdup(s->monfocus->activedesktops[i].name);
+  }
   // Create the desktop if it was not created yet
-  if(!strinarr(s->monfocus->activedesktops, s->monfocus->desktopcount, s->config.desktopnames[desktop])) {
+  if(!strinarr(names, s->monfocus->desktopcount, s->config.desktopnames[desktop])) {
     createdesktop(s, desktop, s->monfocus);
   }
+  free(names);
 
   cl->desktop = desktop;
   if(cl == s->focus) {
@@ -1671,12 +1674,12 @@ swapclients(state_t* s, client_t* c1, client_t* c2) {
  * @param s The window manager's state
  */
 void
-uploaddesktopnames(state_t* s) {
-  qsort(s->monfocus->activedesktops, s->monfocus->desktopcount, sizeof(const char*), compstrs);
+uploaddesktopnames(state_t* s, monitor_t* mon) {
   // Calculate the total length of the property value
   size_t total_length = 0;
-  for (uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-    total_length += strlen(s->monfocus->activedesktops[i]) + 1; // +1 for the null byte
+  for (uint32_t i = 0; i < mon->desktopcount; i++) {
+    if(!mon->activedesktops[i].init) continue;
+    total_length += strlen(mon->activedesktops[i].name) + 1; // +1 for the null byte
   }
 
   // Allocate memory for the data
@@ -1684,9 +1687,10 @@ uploaddesktopnames(state_t* s) {
 
   // Concatenate the desktop names into the data buffer
   char* ptr = data;
-  for (uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-    strcpy(ptr, s->monfocus->activedesktops[i]);
-    ptr += strlen(s->monfocus->activedesktops[i]) + 1; 
+  for (uint32_t i = 0; i < mon->desktopcount; i++) {
+    if(!mon->activedesktops[i].init) continue;
+    strcpy(ptr, mon->activedesktops[i].name);
+    ptr += strlen(mon->activedesktops[i].name) + 1; 
   }
 
   // Get the root window
@@ -1713,16 +1717,13 @@ uploaddesktopnames(state_t* s) {
  */
 void
 createdesktop(state_t* s, uint32_t idx, monitor_t* mon) {
-  mon->activedesktops[mon->desktopcount] = malloc(strlen(s->config.desktopnames[idx]) + 1);
-  if(mon->activedesktops[mon->desktopcount]) {
-    strcpy(mon->activedesktops[mon->desktopcount], s->config.desktopnames[idx]);
+  mon->activedesktops[mon->desktopcount].name = malloc(strlen(s->config.desktopnames[idx]) + 1);
+  mon->activedesktops[mon->desktopcount].init = false; 
+  if(mon->activedesktops[mon->desktopcount].name != NULL) {
+    strcpy(mon->activedesktops[mon->desktopcount].name, s->config.desktopnames[idx]);
   }
 
   mon->desktopcount++;
-  // Set number of desktops (_NET_NUMBER_OF_DESKTOPS)
-  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
-      XCB_ATOM_CARDINAL, 32, 1, &mon->desktopcount);
-  uploaddesktopnames(s);
 
   logmsg(s,  LogLevelTrace, "created virtual desktop %i.\n", idx);
 }
@@ -1787,8 +1788,17 @@ setupatoms(state_t* s) {
   s->monfocus = cursormon(s);
   // Create initial desktop for all monitors 
   for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
-    createdesktop(s, s->config.desktopinit, mon);
+    for(uint32_t i = 0; i < s->config.maxdesktops; i++) {
+      createdesktop(s, i, mon);
+    }
+    mon->activedesktops[s->config.desktopinit].init = true;
   }
+
+  int32_t desktopcount = 1;
+  // Set number of desktops (_NET_NUMBER_OF_DESKTOPS)
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
+                      XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
+  uploaddesktopnames(s, s->monfocus);
 
   xcb_flush(s->con);
 }
@@ -2345,7 +2355,7 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
       rendertitlebar(s, cl);
     }
     focusclient(s, cl);
-    uploaddesktopnames(s);
+    uploaddesktopnames(s, s->monfocus);
   }
   else if(enter_ev->event == s->root) {
     // Set Input focus to root
@@ -2570,7 +2580,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   if(motion_ev->event == s->root) {
     // Update the focused monitor to the monitor under the cursor
     monitor_t* mon = cursormon(s);
-    uploaddesktopnames(s);
+    uploaddesktopnames(s, s->monfocus);
     s->monfocus = mon;
     desktop_t* desk = mondesktop(s, s->monfocus);
     if(desk) {
@@ -3023,7 +3033,8 @@ monitor_t* addmon(state_t* s, area_t a, uint32_t idx) {
   mon->next     = s->monitors;
   mon->idx      = idx;
   mon->desktopcount = 0;
-  mon->activedesktops = malloc(sizeof(char*) * s->config.maxdesktops);
+  mon->activedesktops = malloc(sizeof(*mon->activedesktops) * s->config.maxdesktops);
+
 
   // Initialize the layout properties of all virtual desktops on the monitor
   mon->layouts = malloc(sizeof(*mon->layouts) * s->config.maxdesktops);
@@ -3033,9 +3044,9 @@ monitor_t* addmon(state_t* s, area_t a, uint32_t idx) {
     mon->layouts[i].masterarea = MIN(MAX(s->config.layoutmasterarea, 0.0), 1.0);
     mon->layouts[i].curlayout = s->config.initlayout;
   }
-
   // Update linked list pointer
   s->monitors    = mon;
+
 
   logmsg(s,  LogLevelTrace, "registered monitor %i (position: %ix%i size. %ix%i).", 
          mon->idx, (int32_t)mon->area.pos.x, (int32_t)mon->area.pos.y,
@@ -3149,6 +3160,7 @@ cursormon(state_t* s) {
  */
 uint32_t
 updatemons(state_t* s) {
+
   // Get xrandr screen resources
   xcb_randr_get_screen_resources_current_cookie_t res_cookie = 
     xcb_randr_get_screen_resources_current(s->con, s->screen->root);

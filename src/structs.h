@@ -349,13 +349,19 @@ void movefocusright(state_t* s, passthrough_data_t data);
 void cyclefocusmonitordown(state_t* s, passthrough_data_t data);
 void cyclefocusmonitorup(state_t* s, passthrough_data_t data);
 void togglescratchpad(state_t* s, passthrough_data_t data);
+void reloadconfigfile(state_t* s, passthrough_data_t data);
+
+typedef struct {
+  char* name;
+  bool init;
+} named_desktop_t;
 
 struct monitor_t {
   area_t area;
   monitor_t* next;
   uint32_t idx;
 
-  char** activedesktops;
+  named_desktop_t* activedesktops;
   uint32_t desktopcount;
   layout_props_t* layouts;
 };
@@ -456,7 +462,6 @@ struct state_t {
   xcb_atom_t ewmh_atoms[EWMHcount];
 
   desktop_t* curdesktop;
-  desktop_t lastdesktop;
 
   strut_t* winstruts;
   uint32_t nwinstruts;

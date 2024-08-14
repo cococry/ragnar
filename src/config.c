@@ -5,6 +5,7 @@
 #include <libconfig.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct {
     const char *name;
@@ -16,7 +17,7 @@ typedef struct {
   keycallback_t cb;
 } key_cb_mapping_t;
 
-const key_mapping_t key_mappings[] = {
+const key_mapping_t keymappings[] = {
     {"KeyVoidSymbol", KeyVoidSymbol},
     {"KeyBackSpace", KeyBackSpace},
     {"KeyTab", KeyTab},
@@ -174,7 +175,7 @@ const key_mapping_t key_mappings[] = {
     {"KeyHyper_L", KeyHyper_L},
     {"KeyHyper_R", KeyHyper_R}
 };
-const key_cb_mapping_t key_cb_mappings[] = {
+const key_cb_mapping_t keycbmappings[] = {
     {"terminate_successfully", terminate_successfully},
     {"cyclefocusdown", cyclefocusdown},
     {"killfocus", killfocus},
@@ -211,11 +212,12 @@ const key_cb_mapping_t key_cb_mappings[] = {
     {"cyclefocusmonitordown", cyclefocusmonitordown},
     {"cyclefocusmonitorup", cyclefocusmonitorup},
     {"togglescratchpad", togglescratchpad},
+    {"reloadconfigfile", reloadconfigfile},
 };
 
 static config_t cfghndl;
 
-static char* replace_placeholder(const char* str, const char* placeholder, const char* value);
+static char* replaceplaceholder(const char* str, const char* placeholder, const char* value);
 
 static uint16_t kbmodsfromstr(state_t* s, const char* modifiers);
 static keycode_t keycodefromstr(const char* keycode);
@@ -233,7 +235,7 @@ static char** cfgevalstrarr(state_t* s, const char* label);
 static keybind_t* cfgevalkeybinds(state_t* s, uint32_t* numkeybinds, const char* label);
 
 char*
-replace_placeholder(const char* str, const char* placeholder, const char* value) {
+replaceplaceholder(const char* str, const char* placeholder, const char* value) {
   char* result;
   char* ins;
   char* tmp;
@@ -282,7 +284,7 @@ kbmodsfromstr(state_t* s, const char* modifiers) {
     return bitmask;
   }
 
-  modifiers = replace_placeholder(modifiers, "%mod_key", modstr);
+  modifiers = replaceplaceholder(modifiers, "%mod_key", modstr);
 
   while (*modifiers) {
     while (isspace(*modifiers)) modifiers++;
@@ -311,9 +313,9 @@ kbmodsfromstr(state_t* s, const char* modifiers) {
 
 keycode_t 
 keycodefromstr(const char* keycode) {
-  for (size_t i = 0; i < sizeof(key_mappings) / sizeof(key_mappings[0]); ++i) {
-    if (strcmp(keycode, key_mappings[i].name) == 0) {
-      return key_mappings[i].value;
+  for (size_t i = 0; i < sizeof(keymappings) / sizeof(keymappings[0]); ++i) {
+    if (strcmp(keycode, keymappings[i].name) == 0) {
+      return keymappings[i].value;
     }
   }
   return -1; 
@@ -321,9 +323,9 @@ keycodefromstr(const char* keycode) {
 
 keycallback_t 
 keycbfromstr(const char* cbstr) {
-  for (size_t i = 0; i < sizeof(key_cb_mappings) / sizeof(key_cb_mappings[0]); ++i) {
-    if (strcmp(cbstr, key_cb_mappings[i].name) == 0) {
-      return key_cb_mappings[i].cb;
+  for (size_t i = 0; i < sizeof(keycbmappings) / sizeof(keycbmappings[0]); ++i) {
+    if (strcmp(cbstr, keycbmappings[i].name) == 0) {
+      return keycbmappings[i].cb;
     }
   }
   return NULL; 
@@ -541,12 +543,10 @@ initconfig(state_t* s) {
   }
 
   const char* relpath = "/.config/ragnarwm/ragnar.cfg";
-
   char cfgpath[strlen(home) + strlen(relpath) + 2];
-
   sprintf(cfgpath, "%s%s", home, relpath);
 
-  if(!config_read_file(&cfghndl, "/home/cococry/.config/ragnarwm/ragnar.cfg")) {
+  if(!config_read_file(&cfghndl, cfgpath)) {
     logmsg(s, LogLevelError, "%s:%d - %s\n", config_error_file(&cfghndl),
             config_error_line(&cfghndl), config_error_text(&cfghndl));
 
@@ -563,7 +563,7 @@ readconfig(state_t* s, config_data_t* data) {
   bool success = false;
 
   success = cfgreadint(s, (int32_t*)&data->maxstruts, "max_struts");
-  success = cfgreadint(s, (int32_t*)&data->maxdesktops, "max_desktops");
+  success = cfgreadint(s, (int32_t*)&data->maxdesktops, "num_desktops");
   success = cfgreadint(s, (int32_t*)&data->maxscratchpads, "max_scratchpads");
 
   success = cfgreadint(s, (int32_t*)&data->winborderwidth, "win_border_width");
@@ -623,6 +623,93 @@ readconfig(state_t* s, config_data_t* data) {
 
   if(!success) {
     terminate(s, EXIT_FAILURE);
+  }
+}
+
+void 
+reloadconfig(state_t* s, config_data_t* data) {
+  destroyconfig();
+
+  bool using_decoration = s->config.usedecoration;
+
+  initconfig(s);
+  readconfig(s, data);
+
+  // Load the default root cursor image
+  loaddefaultcursor(s);
+
+  // Grab the window manager's keybinds
+  grabkeybinds(s);
+
+  if(!using_decoration) {
+    s->config.usedecoration = false;
+    s->config.showtitlebars_init = false;
+    s->showtitlebars = false;
+  }
+
+  // Reload struts 
+  s->nwinstruts = 0;
+  getwinstruts(s, s->root);
+
+  // Reload desktops
+  for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    for(uint32_t i = 0; i < s->config.maxdesktops; i++) {
+      mon->layouts[i].nmaster = 1;
+      mon->layouts[i].gapsize = s->config.winlayoutgap;
+      mon->layouts[i].masterarea = MIN(MAX(s->config.layoutmasterarea, 0.0), 1.0);
+      mon->layouts[i].curlayout = s->config.initlayout;
+    }
+
+    uint32_t lastdesktopcount = mon->desktopcount;
+    uint32_t curdesktop = mondesktop(s, mon)->idx;
+
+    mon->desktopcount = 0;
+    free(mon->activedesktops);
+    mon->activedesktops = malloc(sizeof(*mon->activedesktops) * s->config.maxdesktops);
+    for(uint32_t i = 0; i < s->config.maxdesktops; i++) {   
+      createdesktop(s, i, mon);
+      mon->activedesktops[i].init = true; 
+    }
+
+    uint32_t desktopcount = 0;
+    for(uint32_t i = 0; i < mon->desktopcount; i++) {
+      if(mon->activedesktops[i].init) {
+        desktopcount++;
+      }
+    }
+    xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
+                        XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
+    uploaddesktopnames(s, mon);
+
+    if(lastdesktopcount > mon->desktopcount) {
+      if(curdesktop > mon->desktopcount) {
+        switchdesktop(s, (passthrough_data_t){.i = mon->desktopcount - 1});
+      }
+      for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+        if(cl->mon == mon && cl->desktop >= s->config.maxdesktops) {
+          switchclientdesktop(s, cl, s->config.maxdesktops - 1);
+        }
+      }
+    }
+  }
+
+  free(s->scratchpads);
+  s->scratchpads = malloc(sizeof(*s->scratchpads) * s->config.maxscratchpads);
+  for(uint32_t i = 0; i < s->config.maxscratchpads; i++) {
+    s->scratchpads[i].needs_restart = true;
+    s->scratchpads[i].hidden = true;
+    s->scratchpads[i].win = 0;
+  }
+
+  s->mapping_scratchpad_index = -1;
+
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    setbordercolor(s, cl, s->config.winbordercolor);
+    setborderwidth(s, cl, s->config.winborderwidth);
+  }
+
+  for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    makelayout(s, mon);
   }
 }
 

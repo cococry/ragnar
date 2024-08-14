@@ -1,4 +1,5 @@
 #pragma once
+#include "config.h"
 #include "funcs.h"
 #include "structs.h"
 #include <string.h>
@@ -170,21 +171,32 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   if(!s->monfocus) return;
   if(data.i == (int32_t)mondesktop(s, s->monfocus)->idx) return;
 
-  // Create the desktop if it was not created yet
-  if(!strinarr(s->monfocus->activedesktops, s->monfocus->desktopcount, s->config.desktopnames[data.i])) {
-    createdesktop(s, data.i, s->monfocus);
-  }
+  s->monfocus->activedesktops[data.i].init = true;
+
 
   uint32_t desktopidx = 0;
+  uint32_t init_i = 0;
   for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-    if(strcmp(s->monfocus->activedesktops[i], s->config.desktopnames[data.i]) == 0) {
-      desktopidx = i;
+    if(!s->monfocus->activedesktops[i].init) continue;
+    if(strcmp(s->monfocus->activedesktops[i].name, s->config.desktopnames[data.i]) == 0) {
+      desktopidx = init_i;
       break;
     }
+    init_i++;
   }
   // Notify EWMH for desktop change
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
       XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
+
+  uint32_t desktopcount = 0;
+  for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
+    if(s->monfocus->activedesktops[i].init) {
+      desktopcount++;
+    }
+  }
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
+                      XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
+  uploaddesktopnames(s, s->monfocus);
 
 
   for (client_t* cl = s->clients; cl != NULL; cl = cl->next) {
@@ -202,8 +214,6 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     unfocusclient(s, cl);
   }
-
-  s->lastdesktop = *mondesktop(s, s->monfocus);
 
   mondesktop(s, s->monfocus)->idx = data.i;
   makelayout(s, s->monfocus);
@@ -946,4 +956,9 @@ inline void togglescratchpad(state_t* s, passthrough_data_t data) {
   }
 
   s->scratchpads[data.i].hidden = !s->scratchpads[data.i].hidden;
+}
+
+inline void reloadconfigfile(state_t* s, passthrough_data_t data) {
+  (void)data;
+  reloadconfig(s, &s->config);
 }

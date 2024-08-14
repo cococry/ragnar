@@ -432,7 +432,7 @@ void 		         swapclients(state_t* s, client_t* c1, client_t* c2);
  * @brief Uploads the active desktop names and sends them to EWMH 
  * @param s The window manager's state
  */
-void             uploaddesktopnames(state_t* s);
+void             uploaddesktopnames(state_t* s, monitor_t* mon);
 
 /**
  * @brief Creates a new virtual desktop and notifies EWMH about it.
