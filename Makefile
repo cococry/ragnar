@@ -1,7 +1,7 @@
 CC 			= cc
 CFLAGS 	= -O3 -ffast-math -Wall -Wextra -pedantic
 LIBS 		= -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lX11 -lX11-xcb -lGL -lleif -lclipboard -lm -lconfig
-SRC 		= ./src/*.c
+SRC 		= ./src/*.c ./src/ipc/*.c
 BIN 		= ragnar
 
 all:

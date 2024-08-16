@@ -706,7 +706,7 @@ void             evexpose(state_t* s, xcb_generic_event_t* ev);
  *
  * @return The newly created client
  */
-client_t*        addclient(state_t* s, xcb_window_t win);
+client_t*        addclient(state_t* s, client_t** clients, xcb_window_t win);
 
 /**
  * @brief Removes a given client from the list of clients
@@ -934,7 +934,7 @@ void             logmsg(state_t* s, log_level_t lvl, const char* fmt, ...);
  * config. 
  * @param fmt The format string
  * @param ... The variadic arguments */
-void 		         logtofile(state_t* s, const char* fmt, va_list args); 
+void 		         logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args); 
 
 
 /**

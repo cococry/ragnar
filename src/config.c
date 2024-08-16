@@ -1,11 +1,11 @@
 #include "config.h"
 #include "funcs.h"
-#include "structs.h"
 #include <ctype.h>
 #include <libconfig.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <xcb/xproto.h>
 
 typedef struct {
     const char *name;
@@ -412,17 +412,16 @@ cfgevalmousebtn(state_t* s, mousebtn_t* btn, const char* label) {
 
   if(strcmp(btnstr, "LeftMouse") == 0) {
     *btn = LeftMouse; 
-  }
-  if(strcmp(btnstr, "MiddleMouse") == 0) {
+  } else if(strcmp(btnstr, "MiddleMouse") == 0) {
     *btn = MiddleMouse;
     return success;
-  }
-  if(strcmp(btnstr, "RightMouse") == 0) {
+  } else if(strcmp(btnstr, "RightMouse") == 0) {
     *btn = RightMouse;
     return success;
+  } else {
+    logmsg(s, LogLevelError, "config: invalid mouse button specified.");
+    return false;
   }
-
-  logmsg(s, LogLevelError, "config: invalid mouse button specified.");
   return false;
 }
 
@@ -444,9 +443,9 @@ cfgevallayouttype(state_t* s, const char* label) {
     layout = LayoutVerticalStripes;
   } else {
     layout = -1;
+    logmsg(s, LogLevelError, "config: invalid layout type specified.");
   }
 
-  logmsg(s, LogLevelError, "config: invalid layout type specified.");
 
   return layout;
 }
@@ -693,12 +692,15 @@ reloadconfig(state_t* s, config_data_t* data) {
     }
   }
 
-  free(s->scratchpads);
-  s->scratchpads = malloc(sizeof(*s->scratchpads) * s->config.maxscratchpads);
+  s->scratchpads = realloc(s->scratchpads, sizeof(*s->scratchpads) * s->config.maxscratchpads);
+
   for(uint32_t i = 0; i < s->config.maxscratchpads; i++) {
-    s->scratchpads[i].needs_restart = true;
-    s->scratchpads[i].hidden = true;
-    s->scratchpads[i].win = 0;
+    if(s->scratchpads[i].win != 0) {
+      xcb_unmap_window(s->con, s->scratchpads[i].win);
+      s->scratchpads[i].win = 0;
+      s->scratchpads[i].hidden = true;
+      s->scratchpads[i].needs_restart = true;
+    }
   }
 
   s->mapping_scratchpad_index = -1;

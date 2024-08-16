@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdarg.h>
+#include <pthread.h>
 #include <sys/wait.h>
 
 #include <xcb/xcb.h>
@@ -34,7 +35,9 @@
 #include <GL/glx.h>
 
 #include "config.h"
+#include "ipc/sockets.h"
 #include "structs.h"
+
 #include "funcs.h"
 #include "keycallbacks.h"
 
@@ -100,18 +103,21 @@ xerror(Display *dpy, XErrorEvent *ee)
  */
 void
 setup(state_t* s) {
-  // Setup SIGCHLD handler
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
-  sa.sa_flags = SA_RESTART;
+  sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
   sigemptyset(&sa.sa_mask);
-  if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-    perror("sigaction");
-    exit(EXIT_FAILURE);
-  }
+  sigaction(SIGCHLD, &sa, NULL);
+
+  signal(SIGINT, sigchld_handler);
+  signal(SIGTERM, sigchld_handler);
+  signal(SIGQUIT, sigchld_handler);
+
 
   initconfig(s);
   readconfig(s, &s->config);
+
+  fclose(fopen(s->config.logfile, "w"));
 
   s->clients = NULL;
 
@@ -123,6 +129,12 @@ setup(state_t* s) {
   s->lastmotiontime = 0;
 
   s->showtitlebars = s->config.showtitlebars_init;
+
+  // Create IPC thread
+  pthread_t ipc_thread;
+  if(pthread_create(&ipc_thread, NULL, ipcserverthread, s) != 0) {
+    logmsg(s, LogLevelError, "Failed to create IPC thread.");
+  }
 
   // Opening Xorg display
   s->dsp = XOpenDisplay(NULL);
@@ -262,6 +274,8 @@ terminate(state_t* s, int32_t exitcode) {
       mon = next;
     }
   }
+
+  XCloseDisplay(s->dsp);
   // Give up the X connection
   xcb_disconnect(s->con);
 
@@ -377,7 +391,7 @@ makeclient(state_t* s, xcb_window_t win) {
   }
 
   // Adding the mapped client to our linked list
-  client_t* cl = addclient(s, win);
+  client_t* cl = addclient(s, &s->clients, win);
 
 
   // Set initial border 
@@ -2877,7 +2891,7 @@ evexpose(state_t* s, xcb_generic_event_t* ev) {
  * @return The newly created client
  */
 client_t*
-addclient(state_t* s, xcb_window_t win) {
+addclient(state_t* s, client_t** clients, xcb_window_t win) {
   // Allocate client structure
   client_t* cl = (client_t*)malloc(sizeof(*cl));
   cl->win = win;
@@ -2901,9 +2915,9 @@ addclient(state_t* s, xcb_window_t win) {
   frameclient(s, cl);
 
   // Insert the new client at the beginning of the list
-  cl->next = s->clients;
+  cl->next = *clients;
   // Update the head of the list to the new client
-  s->clients = cl;
+  *clients = cl;
 
 
   logmsg(s,  LogLevelTrace, "Added client ('%s') to the linked list of clients.", 
@@ -3484,7 +3498,7 @@ void logmsg(state_t* s, log_level_t lvl, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
   vprintf(fmt, args);
-  fprintf((lvl == LogLevelError ? stderr : stdout), "\n");
+  printf("\n");
   va_end(args);
 
   if (s->config.shouldlogtofile) {
@@ -3492,7 +3506,7 @@ void logmsg(state_t* s, log_level_t lvl, const char* fmt, ...) {
     va_start(args, fmt);
     va_list args_copy;
     va_copy(args_copy, args);  // Copy the va_list
-    logtofile(s, fmt, args_copy); // Pass the copied va_list to logtofile
+    logtofile(lvl, s, fmt, args_copy); // Pass the copied va_list to logtofile
     va_end(args_copy);         // Clean up the copied va_list
     va_end(args);              // End the original va_list
   }
@@ -3503,11 +3517,11 @@ void logmsg(state_t* s, log_level_t lvl, const char* fmt, ...) {
  * config.
  * @param fmt The format string
  * @param args The variadic arguments list */
-void logtofile(state_t* s, const char* fmt, va_list args) {
+void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
   if (!s->config.shouldlogtofile) return;
 
   // Open the file in append mode
-  FILE *file = fopen(s->config.logfile, "a");
+  FILE *file = fopen("/home/cococry/ragnarwm.log", "a");
 
   // Check if the file was opened successfully
   if (file == NULL) {
@@ -3519,6 +3533,20 @@ void logtofile(state_t* s, const char* fmt, va_list args) {
   char* date = cmdoutput("date +\"%d.%m.%y %H:%M:%S\"");
   fprintf(file, "%s | ", date);
 
+  switch(lvl) {
+    case LogLevelTrace: {
+      fprintf(file, "TRACE: ");
+      break;
+    }
+    case LogLevelWarn: {
+      fprintf(file, "WARN: ");
+      break;
+    }
+    case LogLevelError: {
+      fprintf(file, "ERROR: ");
+      break;
+    }
+  }
   // Write the formatted string to the file
   vfprintf(file, fmt, args);
 
@@ -3577,7 +3605,6 @@ cmdoutput(const char* cmd) {
 
 int
 main(void) {
-
   state_t* wm_state = malloc(sizeof(state_t));
   // Setup the window manager
   setup(wm_state);

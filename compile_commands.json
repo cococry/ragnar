@@ -32,5 +32,39 @@
     "directory": "/home/cococry/dev/ragnar",
     "file": "/home/cococry/dev/ragnar/src/ragnar.c",
     "output": "/home/cococry/dev/ragnar/bin/ragnar"
+  },
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-O3",
+      "-ffast-math",
+      "-Wall",
+      "-Wextra",
+      "-pedantic",
+      "-o",
+      "bin/ragnar",
+      "./src/ipc/shm.c"
+    ],
+    "directory": "/home/cococry/dev/ragnar",
+    "file": "/home/cococry/dev/ragnar/src/ipc/shm.c",
+    "output": "/home/cococry/dev/ragnar/bin/ragnar"
+  },
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-O3",
+      "-ffast-math",
+      "-Wall",
+      "-Wextra",
+      "-pedantic",
+      "-o",
+      "bin/ragnar",
+      "./src/ipc/sockets.c"
+    ],
+    "directory": "/home/cococry/dev/ragnar",
+    "file": "/home/cococry/dev/ragnar/src/ipc/sockets.c",
+    "output": "/home/cococry/dev/ragnar/bin/ragnar"
   }
 ]

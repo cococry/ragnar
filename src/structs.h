@@ -11,6 +11,49 @@
 #include <GL/glx.h>
 #include <xcb/xproto.h>
 
+typedef struct state_t state_t;
+typedef struct passthrough_data_t passthrough_data_t;
+
+void terminate_successfully(state_t* s, passthrough_data_t data);
+void cyclefocusdown(state_t* s, passthrough_data_t data);
+void killfocus(state_t* s, passthrough_data_t data);
+void togglefullscreen(state_t* s, passthrough_data_t data);
+void raisefocus(state_t* s, passthrough_data_t data);
+void cycledesktopup(state_t* s, passthrough_data_t data); 
+void cycledesktopdown(state_t* s, passthrough_data_t data);
+void cyclefocusdesktopup(state_t* s, passthrough_data_t data);
+void cyclefocusdesktopdown(state_t* s, passthrough_data_t data);
+void switchdesktop(state_t* s, passthrough_data_t data); 
+void switchfocusdesktop(state_t* s, passthrough_data_t data);
+void runcmd(state_t* s, passthrough_data_t data);
+void addfocustolayout(state_t* s, passthrough_data_t data);
+void settiledmaster(state_t* s, passthrough_data_t data);
+void setverticalstripes(state_t* s, passthrough_data_t data);
+void sethorizontalstripes(state_t* s, passthrough_data_t data); 
+void setfloatingmode(state_t* s, passthrough_data_t data);
+void updatebarslayout(state_t* s, passthrough_data_t data);
+void cycledownlayout(state_t* s, passthrough_data_t data);
+void addmasterlayout(state_t* s, passthrough_data_t data);
+void removemasterlayout(state_t* s, passthrough_data_t data);
+void incmasterarealayout(state_t* s, passthrough_data_t data);
+void decmasterarealayout(state_t* s, passthrough_data_t data);
+void incgapsizelayout(state_t* s, passthrough_data_t data);
+void decgapsizelayout(state_t* s, passthrough_data_t data);
+void inclayoutsizefocus(state_t* s, passthrough_data_t data);
+void declayoutsizefocus(state_t* s, passthrough_data_t data);
+void togglefocustitlebar(state_t* s, passthrough_data_t data); 
+void toggletitlebars(state_t* s, passthrough_data_t data);
+void movefocusup(state_t* s, passthrough_data_t data);
+void movefocusdown(state_t* s, passthrough_data_t data);
+void movefocusleft(state_t* s, passthrough_data_t data);
+void movefocusright(state_t* s, passthrough_data_t data);
+void cyclefocusmonitordown(state_t* s, passthrough_data_t data);
+void cyclefocusmonitorup(state_t* s, passthrough_data_t data);
+void togglescratchpad(state_t* s, passthrough_data_t data);
+void reloadconfigfile(state_t* s, passthrough_data_t data);
+
+
+
 #define _XCB_EV_LAST 36 
 
 /* Evaluates to the length (count of elements) in a given array */
@@ -71,10 +114,10 @@ typedef enum {
   LogLevelError 
 } log_level_t;
 
-typedef struct {
+struct passthrough_data_t {
   const char* cmd;
   int32_t i;
-} passthrough_data_t;
+};
 
 typedef struct state_t state_t;
 
@@ -312,45 +355,6 @@ struct client_t {
 typedef struct {
   uint32_t idx;
 } desktop_t;
-
-void terminate_successfully(state_t* s, passthrough_data_t data);
-void cyclefocusdown(state_t* s, passthrough_data_t data);
-void killfocus(state_t* s, passthrough_data_t data);
-void togglefullscreen(state_t* s, passthrough_data_t data);
-void raisefocus(state_t* s, passthrough_data_t data);
-void cycledesktopup(state_t* s, passthrough_data_t data); 
-void cycledesktopdown(state_t* s, passthrough_data_t data);
-void cyclefocusdesktopup(state_t* s, passthrough_data_t data);
-void cyclefocusdesktopdown(state_t* s, passthrough_data_t data);
-void switchdesktop(state_t* s, passthrough_data_t data); 
-void switchfocusdesktop(state_t* s, passthrough_data_t data);
-void runcmd(state_t* s, passthrough_data_t data);
-void addfocustolayout(state_t* s, passthrough_data_t data);
-void settiledmaster(state_t* s, passthrough_data_t data);
-void setverticalstripes(state_t* s, passthrough_data_t data);
-void sethorizontalstripes(state_t* s, passthrough_data_t data); 
-void setfloatingmode(state_t* s, passthrough_data_t data);
-void updatebarslayout(state_t* s, passthrough_data_t data);
-void cycledownlayout(state_t* s, passthrough_data_t data);
-void addmasterlayout(state_t* s, passthrough_data_t data);
-void removemasterlayout(state_t* s, passthrough_data_t data);
-void incmasterarealayout(state_t* s, passthrough_data_t data);
-void decmasterarealayout(state_t* s, passthrough_data_t data);
-void incgapsizelayout(state_t* s, passthrough_data_t data);
-void decgapsizelayout(state_t* s, passthrough_data_t data);
-void inclayoutsizefocus(state_t* s, passthrough_data_t data);
-void declayoutsizefocus(state_t* s, passthrough_data_t data);
-void togglefocustitlebar(state_t* s, passthrough_data_t data); 
-void toggletitlebars(state_t* s, passthrough_data_t data);
-void movefocusup(state_t* s, passthrough_data_t data);
-void movefocusdown(state_t* s, passthrough_data_t data);
-void movefocusleft(state_t* s, passthrough_data_t data);
-void movefocusright(state_t* s, passthrough_data_t data);
-void cyclefocusmonitordown(state_t* s, passthrough_data_t data);
-void cyclefocusmonitorup(state_t* s, passthrough_data_t data);
-void togglescratchpad(state_t* s, passthrough_data_t data);
-void reloadconfigfile(state_t* s, passthrough_data_t data);
-
 typedef struct {
   char* name;
   bool init;
@@ -472,4 +476,6 @@ struct state_t {
   int32_t mapping_scratchpad_index;
 };
 
+
 typedef void (*event_handler_t)(state_t* s, xcb_generic_event_t* ev);
+
