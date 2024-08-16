@@ -310,3 +310,52 @@ rg_cmd_first_window(rg_window_t* first) {
   
   return 0;
 }
+int32_t 
+rg_cmd_get_focus(rg_window_t* focus) {
+  socket_client_t cl;
+  establishconn(&cl);
+  
+  if(sendcmd(&cl, RgCommandGetFocus, NULL, 0) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetFocus: failed to send command.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if (recvdata(&cl, focus, sizeof(rg_window_t)) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetFocus: failed to receive first window.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(s_logging) {
+    printf("ragnar api: RgCommandGetFocus: successfully sent command.\n");
+  }
+  closeconn(&cl);
+  
+  return 0;
+}
+
+int32_t rg_cmd_get_monitor_focus(int32_t* idx) {
+  socket_client_t cl;
+  establishconn(&cl);
+  
+  if(sendcmd(&cl, RgCommandGetMonitorFocus, NULL, 0) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetMonitorFocus: failed to send command.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if (recvdata(&cl, idx, sizeof(int32_t)) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetMonitorFocus: failed to receive first window.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(s_logging) {
+    printf("ragnar api: RgCommandGetMonitorFocus: successfully sent command.\n");
+  }
+
+  closeconn(&cl);
+  
+  return 0;
+}
