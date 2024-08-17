@@ -32,35 +32,5 @@
           glibc
         ] ++ libs;
       };
-
-      packages.ragnarwm = pkgs.stdenv.mkDerivation {
-        name = "ragnarwm";
-        src = ./.;
-
-        makeFlags = [
-          "CC=${pkgs.stdenv.cc}/bin/cc"
-        ];
-
-        buildInputs = libs;
-        hardeningDisable = [ "format" "fortify" ];
-
-        installPhase = ''
-          runHook preInstall
-
-          mkdir -p $out/bin
-          mkdir -p $out/share/applications
-          mkdir -p $out/share/xessions
-
-	      cp -f ragnar $out/bin
-	      cp -f ragnar.desktop $out/share/applications
-	      cp -f ragnar.desktop $out/share/xsessions
-	      cp -f ragnarstart $out/bin
-	      chmod 755 $out/bin/ragnar
-
-          runHook postInstall
-        '';
-      };
-
-      packages.default = self.packages.${system}.ragnarwm;
     });
 }
