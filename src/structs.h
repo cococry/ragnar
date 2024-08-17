@@ -52,8 +52,6 @@ void cyclefocusmonitorup(state_t* s, passthrough_data_t data);
 void togglescratchpad(state_t* s, passthrough_data_t data);
 void reloadconfigfile(state_t* s, passthrough_data_t data);
 
-
-
 #define _XCB_EV_LAST 36 
 
 /* Evaluates to the length (count of elements) in a given array */
@@ -302,8 +300,6 @@ typedef struct {
   int32_t startx, endx;
   int32_t starty, endy;
 } strut_t;
-
-
 
 typedef struct monitor_t monitor_t;
 

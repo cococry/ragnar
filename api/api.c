@@ -21,9 +21,10 @@ typedef struct {
 static int32_t clientconnect(socket_client_t* cl);
 static int32_t senddata(socket_client_t* cl, const void* data, size_t size);
 static int32_t recvdata(socket_client_t* cl, void* data, size_t size);
-static int32_t setcmdtype(socket_client_t* cl, rg_command_type_t type);
+static int32_t recvv2(socket_client_t* cl, Rgv2* v2);
+static int32_t setcmdtype(socket_client_t* cl, RgCommandType type);
 static int32_t setdatalength(socket_client_t* cl, uint32_t len); 
-static int32_t sendcmd(socket_client_t* cl, rg_command_type_t type, uint8_t* data, uint32_t len);
+static int32_t sendcmd(socket_client_t* cl, RgCommandType type, uint8_t* data, uint32_t len);
 static int32_t clientinit(socket_client_t* cl); 
 static int32_t clientclose(socket_client_t* cl); 
 static void establishconn(socket_client_t* cl);
@@ -52,7 +53,19 @@ recvdata(socket_client_t* cl, void* data, size_t size) {
 }
 
 int32_t 
-setcmdtype(socket_client_t* cl, rg_command_type_t type) {
+recvv2(socket_client_t* cl, Rgv2* v2) {
+  if(recvdata(cl, &v2->x, sizeof(float)) != 0) {
+    return 1;
+  }
+  if(recvdata(cl, &v2->y, sizeof(float)) != 0) {
+    return 1;
+  }
+
+  return 0;
+}
+
+int32_t 
+setcmdtype(socket_client_t* cl, RgCommandType type) {
   uint8_t typecode = (uint8_t)type;
   return senddata(cl, &typecode, sizeof(typecode));
 }
@@ -64,7 +77,7 @@ setdatalength(socket_client_t* cl, uint32_t len) {
 }
 
 int32_t
-sendcmd(socket_client_t* cl, rg_command_type_t type, uint8_t* data, uint32_t len) {
+sendcmd(socket_client_t* cl, RgCommandType type, uint8_t* data, uint32_t len) {
   if(setcmdtype(cl, type) != 0) { 
     fprintf(stderr, "ragnar api: failed to upload command type.\n");
     return 1;
@@ -162,7 +175,7 @@ rg_cmd_terminate(uint32_t exitcode) {
 }
 
 int32_t 
-rg_cmd_get_windows(rg_window_t** wins, uint32_t* numwins) {
+rg_cmd_get_windows(RgWindow** wins, uint32_t* numwins) {
   (void)wins;
   (void)numwins;
   uint32_t len = 0;
@@ -184,14 +197,14 @@ rg_cmd_get_windows(rg_window_t** wins, uint32_t* numwins) {
     exit(EXIT_FAILURE);
   }
 
-  rg_window_t* buf = malloc(num * sizeof(rg_window_t));
+  RgWindow* buf = malloc(num * sizeof(RgWindow));
   if (!buf) {
     fprintf(stderr, "ragnar api: RgCommandGetWindows: failed to allocate memory for windows.\n");
     closeconn(&cl);
     return 1;
   }
 
-  if (recvdata(&cl, buf, num * sizeof(rg_window_t)) != 0) {
+  if (recvdata(&cl, buf, num * sizeof(RgWindow)) != 0) {
     fprintf(stderr, "ragnar api: RgCommandGetWindows: failed to receive client windows.\n");
     closeconn(&cl);
     return 1;
@@ -210,11 +223,11 @@ rg_cmd_get_windows(rg_window_t** wins, uint32_t* numwins) {
 }
 
 int32_t 
-rg_cmd_kill_window(rg_window_t win) {
+rg_cmd_kill_window(RgWindow win) {
   socket_client_t cl;
   establishconn(&cl);
 
-  uint32_t len = sizeof(rg_window_t);
+  uint32_t len = sizeof(RgWindow);
 
   uint8_t data[len]; 
   memcpy(data, &win, sizeof(win));
@@ -233,11 +246,11 @@ rg_cmd_kill_window(rg_window_t win) {
 }
 
 int32_t 
-rg_cmd_focus_window(rg_window_t win) {
+rg_cmd_focus_window(RgWindow win) {
   socket_client_t cl;
   establishconn(&cl);
 
-  uint32_t len = sizeof(rg_window_t);
+  uint32_t len = sizeof(RgWindow);
 
   uint8_t data[len]; 
   memcpy(data, &win, sizeof(win));
@@ -257,12 +270,11 @@ rg_cmd_focus_window(rg_window_t win) {
 }
 
 int32_t 
-rg_cmd_next_window(rg_window_t win, rg_window_t* next) {
+rg_cmd_next_window(RgWindow win, RgWindow* next) {
   socket_client_t cl;
   establishconn(&cl);
 
-  uint32_t len = sizeof(rg_window_t);
-
+  uint32_t len = sizeof(RgWindow);
   uint8_t data[len]; 
   memcpy(data, &win, sizeof(win));
 
@@ -272,7 +284,7 @@ rg_cmd_next_window(rg_window_t win, rg_window_t* next) {
     return 1;
   }
 
-  if (recvdata(&cl, next, sizeof(rg_window_t)) != 0) {
+  if (recvdata(&cl, next, sizeof(RgWindow)) != 0) {
     fprintf(stderr, "ragnar api: RgCommandNextWindow: failed to receive next window.\n");
     closeconn(&cl);
     return 1;
@@ -287,7 +299,7 @@ rg_cmd_next_window(rg_window_t win, rg_window_t* next) {
 }
 
 int32_t 
-rg_cmd_first_window(rg_window_t* first) {
+rg_cmd_first_window(RgWindow* first) {
   socket_client_t cl;
   establishconn(&cl);
   
@@ -297,7 +309,7 @@ rg_cmd_first_window(rg_window_t* first) {
     return 1;
   }
 
-  if (recvdata(&cl, first, sizeof(rg_window_t)) != 0) {
+  if (recvdata(&cl, first, sizeof(RgWindow)) != 0) {
     fprintf(stderr, "ragnar api: RgCommandFirstWindow: failed to receive first window.\n");
     closeconn(&cl);
     return 1;
@@ -311,7 +323,7 @@ rg_cmd_first_window(rg_window_t* first) {
   return 0;
 }
 int32_t 
-rg_cmd_get_focus(rg_window_t* focus) {
+rg_cmd_get_focus(RgWindow* focus) {
   socket_client_t cl;
   establishconn(&cl);
   
@@ -321,7 +333,7 @@ rg_cmd_get_focus(rg_window_t* focus) {
     return 1;
   }
 
-  if (recvdata(&cl, focus, sizeof(rg_window_t)) != 0) {
+  if (recvdata(&cl, focus, sizeof(RgWindow)) != 0) {
     fprintf(stderr, "ragnar api: RgCommandGetFocus: failed to receive first window.\n");
     closeconn(&cl);
     return 1;
@@ -335,7 +347,8 @@ rg_cmd_get_focus(rg_window_t* focus) {
   return 0;
 }
 
-int32_t rg_cmd_get_monitor_focus(int32_t* idx) {
+int32_t 
+rg_cmd_get_monitor_focus(int32_t* idx) {
   socket_client_t cl;
   establishconn(&cl);
   
@@ -359,3 +372,66 @@ int32_t rg_cmd_get_monitor_focus(int32_t* idx) {
   
   return 0;
 }
+
+int32_t 
+rg_cmd_get_cursor(Rgv2* cursor) {
+  socket_client_t cl;
+  establishconn(&cl);
+  
+  if(sendcmd(&cl, RgCommandGetCursor, NULL, 0) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetCursor: failed to send command.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(recvv2(&cl, cursor) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetCursor: failed to receive cursor data.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(s_logging) {
+    printf("ragnar api: RgCommandGetCursor: successfully sent command.\n");
+  }
+
+  closeconn(&cl);
+  
+  return 0;
+}
+
+int32_t 
+rg_cmd_get_window_area(RgWindow win, RgArea* area) {
+  socket_client_t cl;
+  establishconn(&cl);
+ 
+  uint32_t len = sizeof(RgWindow);
+  uint8_t data[len]; 
+  memcpy(data, &win, sizeof(win));
+
+  if(sendcmd(&cl, RgCommandGetWindowArea, data, len) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetWindowArea: failed to send command.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(recvv2(&cl, &area->pos) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetWindowArea: failed to receive window position.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(recvv2(&cl, &area->size) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandGetWindowArea: failed to receive window size.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(s_logging) {
+    printf("ragnar api: RgCommandGetWindowArea: successfully sent command.\n");
+  }
+
+  closeconn(&cl);
+  
+  return 0;
+}
+

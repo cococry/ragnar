@@ -12,7 +12,7 @@
 
 #include "../funcs.h"
 #include "../structs.h"
-#include "../include/ragnar/api.h"
+#include <ragnar/api.h>
 
 #define SOCKPATH "/tmp/ragnar_socket"
 #define MSGSIZE 256
@@ -24,10 +24,11 @@ typedef void (*cmd_handler_t)(state_t* s, const uint8_t* data, int32_t clientfd)
 typedef struct {
   cmd_handler_t handler;
   uint32_t len;
-  rg_command_type_t type;
+  RgCommandType type;
 } cmd_data_t;
 
 static client_t* extractclient(state_t* s, const uint8_t* data);
+static void sendv2(int32_t clientfd, state_t* s, v2_t* v);
 
 static void cmdterminate(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetwins(state_t* s, const uint8_t* data, int32_t clientfd);
@@ -37,6 +38,8 @@ static void cmdnextwin(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdfirstwin(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetfocus(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetmonfocus(state_t* s, const uint8_t* data, int32_t clientfd);
+static void cmdgetcursor(state_t* s, const uint8_t* data, int32_t clientfd);
+static void cmdgetwinarea(state_t* s, const uint8_t* data, int32_t clientfd);
 
 static void handlecmd(state_t* s, uint8_t cmdid, const uint8_t* data, 
                       size_t len, int32_t clientfd);
@@ -44,18 +47,20 @@ static void handlecmd(state_t* s, uint8_t cmdid, const uint8_t* data,
 static cmd_data_t cmdhandlers[] = {
   { .handler = cmdterminate,    .len = sizeof(uint32_t),      .type = RgCommandTerminate },
   { .handler = cmdgetwins,      .len = 0,                     .type = RgCommandGetWindows },
-  { .handler = cmdkillwin,      .len = sizeof(rg_window_t),   .type = RgCommandKillWindow },
-  { .handler = cmdfocuswin,     .len = sizeof(rg_window_t),   .type = RgCommandFocusWindow },
-  { .handler = cmdnextwin,      .len = sizeof(rg_window_t),   .type = RgCommandNextWindow },
+  { .handler = cmdkillwin,      .len = sizeof(RgWindow),      .type = RgCommandKillWindow },
+  { .handler = cmdfocuswin,     .len = sizeof(RgWindow),      .type = RgCommandFocusWindow },
+  { .handler = cmdnextwin,      .len = sizeof(RgWindow),      .type = RgCommandNextWindow },
   { .handler = cmdfirstwin,     .len = 0,                     .type = RgCommandFirstWindow },
   { .handler = cmdgetfocus,     .len = 0,                     .type = RgCommandGetFocus },
   { .handler = cmdgetmonfocus,  .len = 0,                     .type = RgCommandGetMonitorFocus },
+  { .handler = cmdgetcursor,    .len = 0,                     .type = RgCommandGetCursor },
+  { .handler = cmdgetwinarea,   .len = sizeof(RgWindow),      .type = RgCommandGetWindowArea },
 };
 
 client_t*
 extractclient(state_t* s, const uint8_t* data) {
-  rg_window_t win;
-  memcpy(&win, data, sizeof(rg_window_t));
+  RgWindow win;
+  memcpy(&win, data, sizeof(RgWindow));
 
   client_t* cl = clientfromwin(s, win);
   if(!cl) {
@@ -65,6 +70,24 @@ extractclient(state_t* s, const uint8_t* data) {
   }
 
   return cl;
+}
+
+void
+sendv2(int32_t clientfd, state_t* s, v2_t* v) {
+  Rgv2 v_rg = (Rgv2){
+    .x = v->x, 
+    .y = v->y
+  };
+
+  if(write(clientfd, &v_rg.x, sizeof(float)) == -1) {
+    logmsg(s, LogLevelError, 
+           "ipc: failed to send vec2 X position.");
+  }
+
+  if(write(clientfd, &v_rg.y, sizeof(float)) == -1) {
+    logmsg(s, LogLevelError, 
+           "ipc: failed to send vec2 Y position.");
+  }
 }
 
 void 
@@ -87,7 +110,7 @@ cmdgetwins(state_t* s, const uint8_t* data, int32_t clientfd) {
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     numwins++;
   }
-  rg_window_t wins[numwins];
+  RgWindow wins[numwins];
   uint32_t i = 0;
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     wins[i++] = cl->win;
@@ -108,8 +131,12 @@ cmdkillwin(state_t* s, const uint8_t* data, int32_t clientfd) {
   (void)clientfd;
   client_t* cl;
   logmsg(s, LogLevelTrace, 
-         "ipc: RgCommandKillWindow received command.");
-  if(!(cl = extractclient(s, data))) return;
+         "ipc: RgCommandKillWindow: received command.");
+  if(!(cl = extractclient(s, data))) {
+    logmsg(s, LogLevelError, 
+           "ipc: RgCommandKillWindow: No client associated with window.");
+    return;
+  }
   killclient(s, cl);
 }
 
@@ -119,7 +146,11 @@ cmdfocuswin(state_t* s, const uint8_t* data, int32_t clientfd) {
   client_t* cl;
   logmsg(s, LogLevelTrace, 
          "ipc: RgCommandFocusWindow: received command.");
-  if(!(cl = extractclient(s, data))) return;
+  if(!(cl = extractclient(s, data))) {
+    logmsg(s, LogLevelError, 
+           "ipc: RgCommandFocusWindow: No client associated with window.");
+    return;
+  }
   focusclient(s, cl);
 }
 
@@ -129,9 +160,13 @@ cmdnextwin(state_t* s, const uint8_t* data, int32_t clientfd) {
   client_t* cl;
   logmsg(s, LogLevelTrace, 
          "ipc: RgCommandNextWindow: received command.");
-  if(!(cl = extractclient(s, data))) return;
+  if(!(cl = extractclient(s, data))) {
+    logmsg(s, LogLevelError, 
+           "ipc: RgCommandNextWindow: No client associated with window.");
+    return;
+  }
 
-  rg_window_t next = RG_INVALID_WINDOW;
+  RgWindow next = RG_INVALID_WINDOW;
   if(cl->next) {
     next = cl->next->win;
   }
@@ -148,9 +183,9 @@ cmdfirstwin(state_t* s, const uint8_t* data, int32_t clientfd) {
   logmsg(s, LogLevelTrace, 
          "ipc: RgCommandFirstWindow: received command.");
 
-  rg_window_t first = RG_INVALID_WINDOW;
+  RgWindow first = RG_INVALID_WINDOW;
   if(s->clients) {
-    first = s->clients->win ? (rg_window_t)s->clients->win : -1;
+    first = s->clients->win ? (RgWindow)s->clients->win : RG_INVALID_WINDOW;
   }
 
   if(write(clientfd, &first, sizeof(first)) == -1) {
@@ -165,7 +200,7 @@ cmdgetfocus(state_t* s, const uint8_t* data, int32_t clientfd) {
   logmsg(s, LogLevelTrace, 
          "ipc: RgCommandGetFocus: received command.");
   
-  rg_window_t focus = s->focus ? (rg_window_t)s->focus->win : RG_INVALID_WINDOW;
+  RgWindow focus = s->focus ? (RgWindow)s->focus->win : RG_INVALID_WINDOW;
 
   if(write(clientfd, &focus, sizeof(focus)) == -1) {
     logmsg(s, LogLevelError, 
@@ -189,6 +224,38 @@ cmdgetmonfocus(state_t* s, const uint8_t* data, int32_t clientfd) {
     logmsg(s, LogLevelError, 
            "ipc: RgCommandGetMonitorFocus: failed to send first client window.");
   }
+}
+
+void 
+cmdgetcursor(state_t* s, const uint8_t* data, int32_t clientfd) {
+  (void)data;
+  logmsg(s, LogLevelTrace, 
+         "ipc: RgCommandGetCursor: received command.");
+
+  bool success;
+  v2_t cursor = cursorpos(s, &success);
+  if(!success) {
+    logmsg(s, LogLevelError, 
+           "ipc: RgCommandGetCursor: failed to get cursor position.");
+    return;
+  }
+
+  sendv2(clientfd, s, &cursor);
+}
+void 
+cmdgetwinarea(state_t* s, const uint8_t* data, int32_t clientfd) {
+  (void)data;
+  logmsg(s, LogLevelTrace, 
+         "ipc: RgCommandGetWindowArea: received command.");
+  client_t* cl;
+  if(!(cl = extractclient(s, data))) {
+    logmsg(s, LogLevelError, 
+           "ipc: RgCommandGetWindowArea: No client associated with window.");
+    return;
+  }
+
+  sendv2(clientfd, s, &cl->area.pos);
+  sendv2(clientfd, s, &cl->area.size);
 }
 
 void 
