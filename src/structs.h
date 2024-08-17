@@ -1,6 +1,7 @@
 #pragma once
 
-#include <leif/leif.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
@@ -340,8 +341,8 @@ struct client_t {
   bool urgent, ignoreunmap, ignoreexpose; 
   bool titlebar_render_additional; 
 
-  vec2s minsize;
-  vec2s maxsize;
+  v2_t minsize;
+  v2_t maxsize;
 
   float layoutsizeadd;
 
@@ -446,8 +447,6 @@ struct state_t {
 
   bool showtitlebars;
 
-  LfState ui;
-  LfTexture closeicon, layouticon;
 
   client_t* clients;
   client_t* focus;

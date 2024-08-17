@@ -1116,7 +1116,7 @@ setwintype(state_t* s, client_t* cl) {
     hidetitlebar(s, cl);
   } 
   if(wintype == s->ewmh_atoms[EWMHwindowTypeDialog]) {
-    removefromlayout(s, cl);
+    cl->floating = true;
   }
 }
 
@@ -1949,15 +1949,6 @@ setuptitlebar(state_t* s, client_t* cl) {
   } else {
     logmsg(s,  LogLevelError, "GLX_EXT_swap_control not supported.");
   }
-  if(!s->ui.init) {
-    s->ui = lf_init_x11(cl->area.pos.x, s->config.titlebarheight);
-    lf_free_font(&s->ui.theme.font);
-    s->ui.theme.font = lf_load_font(s->config.fontpath, 24);
-    s->ui.theme.text_props.text_color = lf_color_from_hex(s->config.fontcolor);
-
-    logmsg(s,  LogLevelTrace, "created OpenGL context with version %s.", glGetString(GL_VERSION));
-    logmsg(s,  LogLevelTrace, "initialized leif UI context and textures.");
-  }
   rendertitlebar(s, cl);
 
   if(!s->showtitlebars) {
@@ -1984,9 +1975,7 @@ rendertitlebar(state_t* s, client_t* cl) {
 
   // Clear background
   {
-    LfColor color = lf_color_from_hex(s->config.titlebarcolor);
-    vec4s zto = lf_color_to_zto(color);
-    glClearColor(zto.r, zto.g, zto.b, zto.a);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   }
   glClear(GL_COLOR_BUFFER_BIT);
 

@@ -611,7 +611,12 @@ readconfig(state_t* s, config_data_t* data) {
 
   success = cfgreadstr(s, (const char**)&data->cursorimage, "cursor_image");
 
-  success = cfgreadstr(s, (const char**)&data->logfile, "log_file");
+  const char* home = getenv("HOME");
+  const char* relpath = "/.ragnarwm.log";
+  char* logpath = malloc(strlen(home) + strlen(relpath) + 2);
+  sprintf(logpath, "%s%s", home, relpath);
+  data->logfile = logpath;
+
   success = cfgreadbool(s, &data->logmessages, "log_messages");
   success = cfgreadbool(s, &data->shouldlogtofile, "should_log_to_file");
 

@@ -1,5 +1,5 @@
-ragnar
 ragnar.o
 ragnarstart
 *.patch
 .cache/
+bin/
