@@ -1461,7 +1461,7 @@ tiledmaster(state_t* s, monitor_t* mon) {
     lastadd = cl->layoutsizeadd;
     float width = (ismaster ? (uint32_t)wmaster : (uint32_t)w - wmaster);
 
-    if(width > cl->maxsize.x && cl->maxsize.x != 0) {
+    /*if(width > cl->maxsize.x && cl->maxsize.x != 0) {
       width = cl->maxsize.x;
     } if(width < cl->minsize.x && cl->minsize.x != 0) {
       width = cl->minsize.x;
@@ -1469,7 +1469,7 @@ tiledmaster(state_t* s, monitor_t* mon) {
       height = cl->maxsize.y;
     } if(height < cl->minsize.y && cl->minsize.y != 0) {
       height = cl->minsize.y;
-    }
+    }*/
 
     bool singleclient = !nslaves;
 
