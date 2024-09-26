@@ -275,7 +275,8 @@ terminate(state_t* s, int32_t exitcode) {
     }
   }
 
-  XCloseDisplay(s->dsp);
+  if (s->dsp != NULL)
+      XCloseDisplay(s->dsp);
   // Give up the X connection
   xcb_disconnect(s->con);
 
@@ -3594,7 +3595,7 @@ cmdoutput(const char* cmd) {
 
 int
 main(void) {
-  state_t* wm_state = malloc(sizeof(state_t));
+  state_t* wm_state = calloc(1, sizeof(state_t));
   // Setup the window manager
   setup(wm_state);
   // Manage all windows on the display
