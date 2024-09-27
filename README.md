@@ -21,7 +21,7 @@ Installing ragnarwm is a process that involes two main steps.
 xcb-util, xcb-proto, xcb-util-keysyms, xcb-util-cursor, xcb-util-wm, xorg-server, xorg-xinit, mesa, libconfig
 ```
 
-- Build the window manager
+- Install the window manager
 ```console
 $ ./install.sh
 ```
