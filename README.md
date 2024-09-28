@@ -11,6 +11,7 @@ Since Version 2.0, the window manager uses the **XCB API** for communicating wit
 which is far less bloated compared to the Xlib API.
 
 <img src="https://github.com/cococry/ragnar/blob/main/branding/screenshot.png" width="500px">
+
 ---
 
 # Installation
