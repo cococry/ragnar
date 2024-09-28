@@ -10,6 +10,7 @@ tiling layouts, EWMH & ICCM implementation and much more key features.
 Since Version 2.0, the window manager uses the **XCB API** for communicating with the X server,
 which is far less bloated compared to the Xlib API.
 
+<img src="https://github.com/cococry/ragnar/blob/main/branding/screenshot.png" width="500px">
 ---
 
 # Installation
