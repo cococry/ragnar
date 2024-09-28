@@ -443,7 +443,7 @@ struct state_t {
   GLXContext glcontext;
   bool initgl;
 
-  bool ignore_enter_layout, switching_desktop;
+  bool ignore_enter_layout;
 
   bool showtitlebars;
 

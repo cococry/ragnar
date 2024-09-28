@@ -129,7 +129,6 @@ setup(state_t* s) {
   s->lastmotiontime = 0;
 
   s->showtitlebars = s->config.showtitlebars_init;
-  s->switching_desktop = false;
 
   // Create IPC thread
   pthread_t ipc_thread;

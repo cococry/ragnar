@@ -200,7 +200,6 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   uploaddesktopnames(s, s->monfocus);
 
 
-  s->switching_desktop = true;
   for (client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     if(cl->mon != s->monfocus) continue;
     if(cl->scratchpad_index != -1) continue;
@@ -212,7 +211,6 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
       showclient(s, cl);
     }
   }
-  s->switching_desktop = false;
 
   // Unfocus all selected clients
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
