@@ -200,8 +200,10 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   uploaddesktopnames(s, s->monfocus);
 
 
+  s->switching_desktop = true;
   for (client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     if(cl->mon != s->monfocus) continue;
+    if(cl->scratchpad_index != -1) continue;
     // Hide the clients on the current desktop
     if(cl->desktop == mondesktop(s, s->monfocus)->idx) {
       hideclient(s, cl);
@@ -210,6 +212,7 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
       showclient(s, cl);
     }
   }
+  s->switching_desktop = false;
 
   // Unfocus all selected clients
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
@@ -223,6 +226,17 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
       s->monfocus->idx, data.i);
 
   s->ignore_enter_layout = false;
+
+  // Retrieving cursor position
+  bool cursor_success;
+  v2_t cursor = cursorpos(s, &cursor_success);
+  if(!cursor_success)  return;
+  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    if(pointinarea(cursor, cl->area)) {
+      focusclient(s, cl);
+      break;
+    }
+  }
 }
 
 

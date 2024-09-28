@@ -1,3 +1,4 @@
 setxkbmap de &
 boron &
 nitrogen --restore &
+xrandr --output eDP1 --primary --auto --output eDP1 --left-of HDMI2 --auto

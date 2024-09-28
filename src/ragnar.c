@@ -129,6 +129,7 @@ setup(state_t* s) {
   s->lastmotiontime = 0;
 
   s->showtitlebars = s->config.showtitlebars_init;
+  s->switching_desktop = false;
 
   // Create IPC thread
   pthread_t ipc_thread;
@@ -441,6 +442,11 @@ makeclient(state_t* s, xcb_window_t win) {
   if(pointinarea(cursor, cl->area)) {
     focusclient(s, cl);
   }
+
+  if(!cl->floating) {
+    addtolayout(s, cl);
+  }
+
   // Raise the newly created client over all other clients
   raiseclient(s, cl);
 
@@ -2088,6 +2094,7 @@ addtolayout(state_t* s, client_t* cl)  {
       it->floating = false; 
     }
   }
+  resetlayoutsizes(s, s->monfocus); 
   makelayout(s, cl->mon);
 }
 
@@ -2164,6 +2171,7 @@ isclientmaster(state_t* s, client_t* cl, monitor_t* mon) {
 void 
 removefromlayout(state_t* s, client_t* cl) {
   cl->floating = true;
+  resetlayoutsizes(s, s->monfocus); 
   makelayout(s, cl->mon);
 
   // Apply the size hints of the clients if it left 
@@ -2233,12 +2241,12 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   // Handle new client
   client_t* cl = makeclient(s, map_ev->window);
 
-  resetlayoutsizes(s, s->monfocus); 
-
-  for(client_t* it = s->clients; it != NULL; it = it->next) {
-    if(clientonscreen(s, it, s->monfocus) && it->fullscreen) {
-      setfullscreen(s, it, false);
-      it->floating = false; 
+  if(!cl->floating) {
+    for(client_t* it = s->clients; it != NULL; it = it->next) {
+      if(clientonscreen(s, it, s->monfocus) && it->fullscreen) {
+        setfullscreen(s, it, false);
+        it->floating = false; 
+      }
     }
   }
 
@@ -2295,8 +2303,6 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
   // Update the EWMH client list
   ewmh_updateclients(s);
 
-  // Reset the sizes of all clients
-  resetlayoutsizes(s, s->monfocus); 
 
   // Re-establish the window layout
   makelayout(s, s->monfocus);
@@ -2607,7 +2613,6 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
     if(!cl->floating) {
       // Remove the client from the layout when the user moved it 
-      resetlayoutsizes(s, s->monfocus);
       removefromlayout(s, cl);
     }
     xcb_flush(s->con);
@@ -2640,7 +2645,6 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
   if(!cl->floating) {
     // Remove the client from the layout when the user moved it 
-    resetlayoutsizes(s, s->monfocus);
     removefromlayout(s, cl);
   }
 
@@ -3510,8 +3514,7 @@ void logmsg(state_t* s, log_level_t lvl, const char* fmt, ...) {
 void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
   if (!s->config.shouldlogtofile) return;
 
-  // Open the file in append mode
-  FILE *file = fopen("/home/cococry/ragnarwm.log", "a");
+  FILE *file = fopen(s->config.logfile, "a");
 
   // Check if the file was opened successfully
   if (file == NULL) {
