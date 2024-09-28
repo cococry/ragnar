@@ -480,7 +480,8 @@ pointinarea(v2_t p, area_t area) {
 v2_t 
 cursorpos(state_t* s, bool* success) {
   // Query the pointer position
-  xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(s->con, xcb_query_pointer(s->con, s->root), NULL);
+  xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(
+    s->con, xcb_query_pointer(s->con, s->root), NULL);
   *success = (reply != NULL);
   if(!(*success)) {
     logmsg(s,  LogLevelError, "failed to retrieve cursor position."); 
