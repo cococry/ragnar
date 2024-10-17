@@ -2,10 +2,12 @@
 #include "funcs.h"
 #include <ctype.h>
 #include <libconfig.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <xcb/xproto.h>
+#include <stdio.h> // for sprintf and system()
 
 typedef struct {
     const char *name;
@@ -37,7 +39,7 @@ const key_mapping_t keymappings[] = {
     {"KeyPage_Up", KeyPage_Up},
     {"KeyPage_Down", KeyPage_Down},
     {"KeyEnd", KeyEnd},
-    {"KeyBegin", KeyBegin},
+    {"KeyBegin", KeyBegin}, 
     {"KeySpace", KeySpace},
     {"KeyExclam", KeyExclam},
     {"KeyQuotedbl", KeyQuotedbl},
@@ -531,6 +533,31 @@ cfgevalkeybinds(state_t* s, uint32_t* numkeybinds, const char* label) {
   return keys;
 }
 
+// set keyboad layout on startup
+static void configure_keyboard_layout(state_t* s, const char* layout) {
+  
+    if (layout == NULL) {
+        logmsg(s, LogLevelError, "Failed to set keyboard layout: layout is NULL.");
+        return;
+    }
+
+    size_t len = strlen(layout);
+    for (size_t i = 0; i < len; i++) {
+        if (!isalnum(layout[i]) && layout[i] != '-' && layout[i] != '_') {
+            logmsg(s, LogLevelError, "Failed to set keyboard layout: invalid layout name.");
+            return;
+        }
+    }
+
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "setxkbmap %s", layout);
+    int ret = system(cmd);
+    if (ret != 0) {
+        logmsg(s, LogLevelError, "Failed to set keyboard layout: system() returned %d.", ret);
+    } 
+
+}
+
 
 void 
 initconfig(state_t* s) {
@@ -539,12 +566,17 @@ initconfig(state_t* s) {
   const char* home = getenv("HOME");
   if(!home) {
     logmsg(s, LogLevelError, "cannot read config file because HOME is not defined.");
+    terminate(s, EXIT_FAILURE); // Exit programm if HOME is not defined
+     
   }
 
   char *cfg_path;
   char const cfg_path_global[] = "/etc/ragnarwm/ragnar.cfg";
 
-  asprintf(&cfg_path, "%s/.config/ragnarwm/ragnar.cfg", home);
+  if(asprintf(&cfg_path, "%s/.config/ragnarwm/ragnar.cfg", home) == -1) {
+        logmsg(s, LogLevelError, "Failed to allocate memory for config path.");
+        terminate(s, EXIT_FAILURE);
+  } // failsave allocation
 
   if (
     !config_read_file(&cfghndl, cfg_path)
@@ -553,9 +585,12 @@ initconfig(state_t* s) {
     logmsg(s, LogLevelError, "%s:%d - %s\n", config_error_file(&cfghndl),
             config_error_line(&cfghndl), config_error_text(&cfghndl));
 
+    free(cfg_path); // free the allocated memory
     destroyconfig();
     terminate(s, EXIT_FAILURE);
   }
+
+    free(cfg_path); // free the allocated memory
 
 }
 
@@ -628,6 +663,16 @@ readconfig(state_t* s, config_data_t* data) {
   data->keybinds = cfgevalkeybinds(s, (uint32_t*)&data->numkeybinds, "keybinds");
 
   success = data->keybinds != NULL;
+
+
+  success &= cfgreadstr(s, &data->keyboard_layout, "keyboard_layout");
+    
+  if (success && data->keyboard_layout != NULL) {
+    configure_keyboard_layout(s, data->keyboard_layout);
+  } else {
+      logmsg(s, LogLevelError, "Failed to read 'keyboard_layout' from config.");
+      terminate(s, EXIT_FAILURE);
+  }
 
   if(!success) {
     terminate(s, EXIT_FAILURE);
