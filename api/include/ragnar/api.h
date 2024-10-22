@@ -18,6 +18,7 @@ typedef enum {
   RgCommandGetMonitorFocus,
   RgCommandGetCursor,
   RgCommandGetWindowArea,
+  RgCommandReloadConfig,
 } RgCommandType;
 
 typedef struct {
@@ -49,4 +50,6 @@ int32_t rg_cmd_get_monitor_focus(int32_t* idx);
 int32_t rg_cmd_get_cursor(Rgv2* cursor);
 
 int32_t rg_cmd_get_window_area(RgWindow win, RgArea* area);
+
+int32_t rg_cmd_reload_config(void);
 

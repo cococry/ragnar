@@ -394,11 +394,9 @@ makeclient(state_t* s, xcb_window_t win) {
   // Adding the mapped client to our linked list
   client_t* cl = addclient(s, &s->clients, win);
 
-
   // Set initial border 
   setbordercolor(s, cl, s->config.winbordercolor);
   setborderwidth(s, cl, s->config.winborderwidth);
-
 
   // Set window type of client (e.g dialog)
   setwintype(s, cl);
@@ -2586,6 +2584,8 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     xcb_flush(s->con);
     return;
   }
+
+  if(!(motion_ev->state & s->config.modkey)) return;
 
   if(motion_ev->event == s->root) {
     // Update the focused monitor to the monitor under the cursor

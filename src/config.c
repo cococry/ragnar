@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <xcb/xcb.h>
 #include <xcb/xproto.h>
 
 typedef struct {
@@ -722,6 +723,8 @@ reloadconfig(state_t* s, config_data_t* data) {
   for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
     makelayout(s, mon);
   }
+
+  xcb_flush(s->con);
 }
 
 void 

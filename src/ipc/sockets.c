@@ -12,6 +12,7 @@
 
 #include "../funcs.h"
 #include "../structs.h"
+#include "../config.h"
 #include <ragnar/api.h>
 
 #define SOCKPATH "/tmp/ragnar_socket"
@@ -40,6 +41,7 @@ static void cmdgetfocus(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetmonfocus(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetcursor(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetwinarea(state_t* s, const uint8_t* data, int32_t clientfd);
+static void cmdreloadconfig(state_t* s, const uint8_t* data, int32_t clientfd);
 
 static void handlecmd(state_t* s, uint8_t cmdid, const uint8_t* data, 
                       size_t len, int32_t clientfd);
@@ -55,6 +57,7 @@ static cmd_data_t cmdhandlers[] = {
   { .handler = cmdgetmonfocus,  .len = 0,                     .type = RgCommandGetMonitorFocus },
   { .handler = cmdgetcursor,    .len = 0,                     .type = RgCommandGetCursor },
   { .handler = cmdgetwinarea,   .len = sizeof(RgWindow),      .type = RgCommandGetWindowArea },
+  { .handler = cmdreloadconfig, .len = 0,                     .type = RgCommandReloadConfig},
 };
 
 client_t*
@@ -256,6 +259,16 @@ cmdgetwinarea(state_t* s, const uint8_t* data, int32_t clientfd) {
 
   sendv2(clientfd, s, &cl->area.pos);
   sendv2(clientfd, s, &cl->area.size);
+}
+
+void 
+cmdreloadconfig(state_t* s, const uint8_t* data, int32_t clientfd) {
+  (void)data;
+  (void)clientfd;
+  logmsg(s, LogLevelTrace, 
+         "ipc: RgCommandReloadConfig: received command.");
+
+  reloadconfig(s, &s->config);
 }
 
 void 

@@ -435,3 +435,21 @@ rg_cmd_get_window_area(RgWindow win, RgArea* area) {
   return 0;
 }
 
+int32_t 
+rg_cmd_reload_config(void) {
+  socket_client_t cl;
+  establishconn(&cl);
+
+  if(sendcmd(&cl, RgCommandReloadConfig, NULL, 0) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandReloadConfig: failed to send command.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(s_logging) {
+    printf("ragnar api: RgCommandReloadConfig: successfully sent command.\n");
+  }
+  closeconn(&cl);
+  return 0;
+
+}
