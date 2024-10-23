@@ -423,6 +423,8 @@ typedef struct {
   bool shouldlogtofile;
 
   char* cursorimage;
+
+  const char* keyboard_layout;
 } config_data_t;
 
 typedef struct {
