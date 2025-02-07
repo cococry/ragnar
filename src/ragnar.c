@@ -18,8 +18,6 @@
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_util.h>
 #include <xcb/xcb_keysyms.h>
-#include <xcb/xcb_icccm.h>
-#include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
 #include <xcb/composite.h>
 
