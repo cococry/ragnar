@@ -201,7 +201,6 @@ setup(state_t* s) {
   s->nwinstruts = 0;
   s->winstruts = malloc(sizeof(strut_t) * s->config.maxstruts);
 
-  getwinstruts(s, s->root);
 
   // Initialize virtual desktops
   s->curdesktop = malloc(sizeof(*s->curdesktop) * registered_monitors);
@@ -219,6 +218,15 @@ setup(state_t* s) {
   }
 
   s->mapping_scratchpad_index = -1;
+
+  xcb_set_input_focus(s->con, XCB_INPUT_FOCUS_POINTER_ROOT, s->root, XCB_CURRENT_TIME);
+  XSync(s->dsp, False);
+  xcb_flush(s->con);
+  managewins(s);
+  xcb_flush(s->con);
+  s->nwinstruts = 0;
+  getwinstruts(s, s->root);
+  xcb_flush(s->con);
 }
 
 /**
@@ -290,89 +298,125 @@ terminate(state_t* s, int32_t exitcode) {
   exit(exitcode);
 }
 
-/**
- * @brief Manages all windows that are avaiable on the 
- * X display.
- *
- * @param s The window manager' state
- */
-void
-managewins(state_t* s) {
-  xcb_get_window_attributes_reply_t* wareply;
-  xcb_get_window_attributes_cookie_t wacookie;
-  xcb_atom_t atomtransientfor;
-  xcb_get_property_cookie_t transientcookie;
-  xcb_get_property_reply_t* transientreply;
-  xcb_atom_t* transientlist;
-  xcb_window_t transientwindow;
-  xcb_get_window_attributes_cookie_t transientwacookie;
-  xcb_get_window_attributes_reply_t* transientwareply;
-  xcb_window_t* allwindows;
-  xcb_window_t* windowlist;
-  int i, num;
+long
+getstate(state_t* s, xcb_window_t w)
+{
+    long result = -1;
+    xcb_get_property_reply_t *prop_reply;
 
-  atomtransientfor = getatom(s, "WM_TRANSIENT_FOR"); 
-
-  // Query the list of windows on the root
-  xcb_query_tree_cookie_t treecookie = xcb_query_tree(s->con, s->root);
-  xcb_query_tree_reply_t *treereply = xcb_query_tree_reply(s->con, treecookie, NULL);
-  if (!treereply) {
-    return; 
-  }
-
-  allwindows = xcb_query_tree_children(treereply);
-  num = xcb_query_tree_children_length(treereply);
-
-  windowlist = malloc(num * sizeof(xcb_window_t));
-  if (!windowlist) {
-    return; 
-  }
-
-  for (i = 0; i < num; i++) {
-    windowlist[i] = allwindows[i];
-  }
-  free(treereply);
-
-  // Scan for windows
-  for (i = 0; i < num; i++) {
-    xcb_window_t window = windowlist[i];
-
-    wacookie = xcb_get_window_attributes(s->con, window);
-    wareply = xcb_get_window_attributes_reply(s->con, wacookie, NULL);
-    if (!wareply) {
-      continue; 
+    prop_reply = xcb_get_property_reply(
+        s->con, xcb_get_property(s->con, 0, w, s->wm_atoms[WMstate], XCB_ATOM_ANY, 0, 2), NULL);
+    if (!prop_reply || xcb_get_property_value_length(prop_reply) == 0) {
+        free(prop_reply);
+        return -1;
     }
+    
+    result = *((unsigned char *) xcb_get_property_value(prop_reply));
+    free(prop_reply);
+    return result;
+}
 
-    if (wareply->override_redirect || wareply->map_state != XCB_MAP_STATE_VIEWABLE) {
-      free(wareply);
+
+bool wait_for_mapped(state_t* s, xcb_window_t win) {
+    for (int i = 0; i < 10; i++) {  // Try up to 10 times
+        xcb_get_window_attributes_cookie_t attr_cookie = xcb_get_window_attributes(s->con, win);
+        xcb_get_window_attributes_reply_t *attr_reply = xcb_get_window_attributes_reply(s->con, attr_cookie, NULL);
+
+        if (attr_reply) {
+            if (attr_reply->map_state == XCB_MAP_STATE_VIEWABLE) {
+                free(attr_reply);
+                return true;
+            }
+            free(attr_reply);
+        }
+        usleep(5000);  // Wait 5ms before retrying
+    }
+    return false;
+}
+
+
+void managewins(state_t* s) {
+  xcb_query_tree_cookie_t tree_cookie;
+  xcb_query_tree_reply_t *tree_reply;
+  xcb_window_t *wins;
+  uint32_t num;
+
+  tree_cookie = xcb_query_tree(s->con, s->root);
+  tree_reply = xcb_query_tree_reply(s->con, tree_cookie, NULL);
+  if (!tree_reply || tree_reply->children_len == 0) {
+    free(tree_reply);
+    return;
+  }
+  num = tree_reply->children_len;
+  wins = xcb_query_tree_children(tree_reply);
+
+  for (uint32_t i = 0; i < num; i++) {
+    xcb_get_window_attributes_cookie_t attr_cookie;
+    xcb_get_window_attributes_reply_t *attr_reply;
+    xcb_window_t transient_for;
+    xcb_get_property_cookie_t trans_cookie;
+    xcb_get_property_reply_t *trans_reply;
+
+    attr_cookie = xcb_get_window_attributes(s->con, wins[i]);
+    attr_reply = xcb_get_window_attributes_reply(s->con, attr_cookie, NULL);
+    if (!attr_reply || attr_reply->override_redirect) {
+      if(attr_reply)
+        free(attr_reply);
       continue;
     }
 
-    transientcookie = xcb_get_property(s->con, 0, window, atomtransientfor, XCB_ATOM_WINDOW, 0, sizeof(xcb_window_t));
-    transientreply = xcb_get_property_reply(s->con, transientcookie, NULL);
-    if (transientreply) {
-      if (xcb_get_property_value_length(transientreply) > 0) {
-        transientlist = xcb_get_property_value(transientreply);
-        transientwindow = *transientlist;
-        transientwacookie = xcb_get_window_attributes(s->con, transientwindow);
-        transientwareply = xcb_get_window_attributes_reply(s->con, transientwacookie, NULL);
-        if (transientwareply &&
-          transientwareply->map_state == XCB_MAP_STATE_VIEWABLE) {
-          makeclient(s, transientwindow);
-        }
-        free(transientwareply);
-      }
-      free(transientreply);
+    trans_cookie = xcb_get_property(s->con, 0, wins[i], XCB_ATOM_WM_TRANSIENT_FOR,
+                                    XCB_ATOM_WINDOW, 0, sizeof(xcb_window_t));
+    trans_reply = xcb_get_property_reply(s->con, trans_cookie, NULL);
+    transient_for = trans_reply && xcb_get_property_value_length(trans_reply) ?
+      *(xcb_window_t *) xcb_get_property_value(trans_reply) : XCB_NONE;
+
+    if (trans_reply)
+      free(trans_reply);
+
+    if (transient_for)
+      continue;
+
+    if (wait_for_mapped(s, wins[i]) || getstate(s, wins[i]) == 3) {
+      makeclient(s, wins[i]);
     }
 
-    free(wareply);
+    free(attr_reply);
   }
 
-  // Clean up
-  if (windowlist) {
-    free(windowlist);
+  for (uint32_t i = 0; i < num; i++) {
+    xcb_get_window_attributes_cookie_t attr_cookie;
+    xcb_get_window_attributes_reply_t *attr_reply;
+    xcb_window_t transient_for;
+    xcb_get_property_cookie_t trans_cookie;
+    xcb_get_property_reply_t *trans_reply;
+
+    attr_cookie = xcb_get_window_attributes(s->con, wins[i]);
+    attr_reply = xcb_get_window_attributes_reply(s->con, attr_cookie, NULL);
+    if (!attr_reply) {
+      continue;
+    }
+
+    trans_cookie = xcb_get_property(s->con, 0, wins[i], XCB_ATOM_WM_TRANSIENT_FOR,
+                                    XCB_ATOM_WINDOW, 0, sizeof(xcb_window_t));
+    trans_reply = xcb_get_property_reply(s->con, trans_cookie, NULL);
+    transient_for = trans_reply && xcb_get_property_value_length(trans_reply) ?
+      *(xcb_window_t *) xcb_get_property_value(trans_reply) : XCB_NONE;
+
+    if (trans_reply)
+      free(trans_reply);
+
+    if (transient_for && (wait_for_mapped(s, wins[i])  || getstate(s, wins[i]) == 3)) {
+      makeclient(s, wins[i]); 
+    }
+
+    free(attr_reply);
   }
+
+  free(tree_reply);
 }
+
+
 
 client_t*
 makeclient(state_t* s, xcb_window_t win) {
@@ -394,9 +438,29 @@ makeclient(state_t* s, xcb_window_t win) {
   // Adding the mapped client to our linked list
   client_t* cl = addclient(s, &s->clients, win);
 
-  // Set initial border 
-  setbordercolor(s, cl, s->config.winbordercolor);
-  setborderwidth(s, cl, s->config.winborderwidth);
+  // Setting border 
+  xcb_atom_t motif_hints = getatom(s, "_MOTIF_WM_HINTS");
+  xcb_get_property_cookie_t prop_cookie = xcb_get_property(
+    s->con, 0, cl->win, motif_hints, motif_hints, 0, 5
+  );
+  xcb_get_property_reply_t* prop_reply = xcb_get_property_reply(s->con, prop_cookie, NULL);
+  if (prop_reply && xcb_get_property_value_length(prop_reply) >= (int32_t)sizeof(motif_wm_hints_t)) {
+    motif_wm_hints_t* hints = (motif_wm_hints_t*) xcb_get_property_value(prop_reply);
+    if (hints->flags & MWM_HINTS_DECORATIONS) {
+      if (hints->decorations) {
+        setbordercolor(s, cl, s->config.winbordercolor);
+        setborderwidth(s, cl, s->config.winborderwidth);
+        cl->decorated = true;
+      } else {
+        setborderwidth(s, cl, 0);
+        cl->decorated = false;
+      }
+    }
+  } else {
+    setbordercolor(s, cl, s->config.winbordercolor);
+    setborderwidth(s, cl, s->config.winborderwidth);
+    cl->decorated = true;
+  }
 
   // Set window type of client (e.g dialog)
   setwintype(s, cl);
@@ -584,7 +648,7 @@ getoverlaparea(area_t a, area_t b) {
 void
 setbordercolor(state_t* s, client_t* cl, uint32_t color) {
   // Return if the client is NULL
-  if(!cl) {
+  if(!cl || !cl->decorated) {
     return;
   }
   // Change the configuration for the border color of the clients window
@@ -601,7 +665,7 @@ setbordercolor(state_t* s, client_t* cl, uint32_t color) {
  */
 void
 setborderwidth(state_t* s, client_t* cl, uint32_t width) {
-  if(!cl) {
+  if(!cl || !cl->decorated) {
     return;
   }
   // Change the configuration for the border width of the clients window
@@ -2561,6 +2625,29 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     return;
   }
   s->lastmotiontime = curtime;
+  if(motion_ev->event == s->root && !(motion_ev->state & s->config.modkey)) {
+    // Update the focused monitor to the monitor under the cursor
+    monitor_t* mon = cursormon(s);
+    if(mon != s->monfocus) {
+      s->monfocus = mon;
+      uint32_t desktopcount = 0;
+      for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
+        if(s->monfocus->activedesktops[i].init) {
+          desktopcount++;
+        }
+      }
+      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
+                          XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
+      uploaddesktopnames(s, s->monfocus);
+      desktop_t* desk = mondesktop(s, s->monfocus);
+      if(desk) {
+        xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
+                            XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
+      }
+      xcb_flush(s->con);
+    }
+    s->monfocus = mon;
+  }
 
   // Position of the cursor in the drag event
   v2_t dragpos    = (v2_t){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
@@ -2586,20 +2673,6 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   }
 
   if(!(motion_ev->state & s->config.modkey)) return;
-
-  if(motion_ev->event == s->root) {
-    // Update the focused monitor to the monitor under the cursor
-    monitor_t* mon = cursormon(s);
-    uploaddesktopnames(s, s->monfocus);
-    s->monfocus = mon;
-    desktop_t* desk = mondesktop(s, s->monfocus);
-    if(desk) {
-      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-                          XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
-    }
-    xcb_flush(s->con);
-    return;
-  }
   if(!(motion_ev->state & s->config.resizebtn || motion_ev->state & s->config.movebtn)) return;
 
   if(!cl) {
@@ -2899,6 +2972,7 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
   cl->borderwidth = s->config.winborderwidth;
   cl->fullscreen = false;
   cl->hidden = false;
+  cl->decorated = true;
   cl->floating = getcurlayout(s, s->monfocus) == LayoutFloating;
   cl->titlebar_render_additional = false;
   cl->name = getclientname(s, cl);
@@ -3602,7 +3676,6 @@ main(void) {
   // Setup the window manager
   setup(wm_state);
   // Manage all windows on the display
-  managewins(wm_state);
   // Enter the event loop
   loop(wm_state);
   // Terminate after the loop

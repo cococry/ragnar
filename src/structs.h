@@ -62,6 +62,9 @@ void reloadconfigfile(state_t* s, passthrough_data_t data);
 /* Evaluates to the maximum of two given numbers */
 #define MAX(a, b) (((a)>(b))?(a):(b))
 
+#define MWM_HINTS_DECORATIONS   2
+#define MWM_DECOR_ALL           1
+
 typedef enum {
   Shift     = XCB_MOD_MASK_SHIFT,
   Control   = XCB_MOD_MASK_CONTROL,
@@ -128,6 +131,14 @@ typedef struct {
   keycallback_t cb;
   passthrough_data_t data;
 } keybind_t;
+
+typedef struct {
+  uint32_t flags;
+  uint32_t functions;
+  uint32_t decorations;
+  int32_t  input_mode;
+  uint32_t status;
+} motif_wm_hints_t;
 
 typedef enum {
     KeyVoidSymbol = XK_VoidSymbol,
@@ -338,7 +349,7 @@ struct client_t {
   uint32_t desktop;
 
 
-  bool urgent, ignoreunmap, ignoreexpose; 
+  bool urgent, ignoreunmap, ignoreexpose, decorated; 
   bool titlebar_render_additional; 
 
   v2_t minsize;
