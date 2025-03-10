@@ -154,7 +154,7 @@ cmdfocuswin(state_t* s, const uint8_t* data, int32_t clientfd) {
            "ipc: RgCommandFocusWindow: No client associated with window.");
     return;
   }
-  focusclient(s, cl);
+  focusclient(s, cl, true);
 }
 
 void 

@@ -204,8 +204,6 @@ const key_cb_mapping_t keycbmappings[] = {
     {"decgapsizelayout", decgapsizelayout},
     {"inclayoutsizefocus", inclayoutsizefocus},
     {"declayoutsizefocus", declayoutsizefocus},
-    {"togglefocustitlebar", togglefocustitlebar},
-    {"toggletitlebars", toggletitlebars},
     {"movefocusup", movefocusup},
     {"movefocusdown", movefocusdown},
     {"movefocusleft", movefocusleft},
@@ -586,13 +584,6 @@ readconfig(state_t* s, config_data_t* data) {
   success = data->desktopnames != NULL;
 
   success = cfgreadbool(s, &data->usedecoration, "use_decoration");
-  success = cfgreadbool(s, &data->showtitlebars_init, "show_titlebars_init");
-
-  success = cfgreadint(s, (int32_t*)&data->titlebarheight, "titlebar_height");
-  success = cfgreadint(s, (int32_t*)&data->titlebarcolor, "titlebar_color");
-
-  success = cfgreadint(s, (int32_t*)&data->fontcolor, "font_color");
-  success = cfgreadstr(s, (const char**)&data->fontpath, "font_path");
 
   success = cfgreadfloat(s, &data->layoutmasterarea, "layout_master_area");
   success = cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_min");
@@ -652,8 +643,6 @@ reloadconfig(state_t* s, config_data_t* data) {
 
   if(!using_decoration) {
     s->config.usedecoration = false;
-    s->config.showtitlebars_init = false;
-    s->showtitlebars = false;
   }
 
   // Reload struts 

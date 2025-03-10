@@ -47,16 +47,13 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_UNMAP_NOTIFY]        = evunmapnotify,
   [XCB_DESTROY_NOTIFY]      = evdestroynotify,
   [XCB_ENTER_NOTIFY]        = eventernotify,
-  [XCB_LEAVE_NOTIFY]        = evleavenotify,
   [XCB_KEY_PRESS]           = evkeypress,
   [XCB_BUTTON_PRESS]        = evbuttonpress,
-  [XCB_BUTTON_RELEASE]      = evbuttonrelease,
   [XCB_MOTION_NOTIFY]       = evmotionnotify,
   [XCB_CONFIGURE_REQUEST]   = evconfigrequest,
   [XCB_CONFIGURE_NOTIFY]    = evconfignotify,
   [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
   [XCB_CLIENT_MESSAGE]      = evclientmessage,
-  [XCB_EXPOSE]              = evexpose,
 };
 
 /* --- Static functions to handle another running X window manager */
@@ -120,15 +117,8 @@ setup(state_t* s) {
   fclose(fopen(s->config.logfile, "w"));
 
   s->clients = NULL;
-
-  if(!s->config.usedecoration) {
-    s->config.titlebarheight = 0;
-  }
-
   s->lastexposetime = 0;
   s->lastmotiontime = 0;
-
-  s->showtitlebars = s->config.showtitlebars_init;
 
   // Create IPC thread
   pthread_t ipc_thread;
@@ -168,8 +158,6 @@ setup(state_t* s) {
   // Lock the display to prevent concurrency issues
   XSetEventQueueOwner(s->dsp, XCBOwnsEventQueue);
 
-  s->initgl = false;
-
   xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(s->con)).data;
   s->root = screen->root;
   s->screen = screen;
@@ -177,11 +165,13 @@ setup(state_t* s) {
   /* Setting event mask for root window */
   uint32_t evmask[] = {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-      XCB_EVENT_MASK_STRUCTURE_NOTIFY |
-      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-      XCB_EVENT_MASK_ENTER_WINDOW |
-      XCB_EVENT_MASK_FOCUS_CHANGE | 
-      XCB_EVENT_MASK_POINTER_MOTION
+    XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+    XCB_EVENT_MASK_STRUCTURE_NOTIFY |
+    XCB_EVENT_MASK_BUTTON_PRESS | 
+    XCB_EVENT_MASK_POINTER_MOTION | 
+    XCB_EVENT_MASK_ENTER_WINDOW | 
+    XCB_EVENT_MASK_LEAVE_WINDOW | 
+    XCB_EVENT_MASK_PROPERTY_CHANGE
   };
   xcb_change_window_attributes_checked(s->con, s->root, XCB_CW_EVENT_MASK, evmask);
 
@@ -422,7 +412,7 @@ client_t*
 makeclient(state_t* s, xcb_window_t win) {
   // Setup listened events for the mapped window
   {
-    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_POINTER_MOTION };
+    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE|  XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_POINTER_MOTION_HINT};
     xcb_change_window_attributes_checked(s->con, win, XCB_CW_EVENT_MASK, evmask);
   }
 
@@ -501,7 +491,7 @@ makeclient(state_t* s, xcb_window_t win) {
   if(!cursor_success) return NULL;
   // If the cursor is on the mapped window when it spawned, focus it.
   if(pointinarea(cursor, cl->area)) {
-    focusclient(s, cl);
+    focusclient(s, cl, true);
   }
 
   if(!cl->floating) {
@@ -696,13 +686,14 @@ moveclient(state_t* s, client_t* cl, v2_t pos) {
   cl->area.pos = pos;
 
   configclient(s, cl);
-  updatetitlebar(s, cl);
 
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(s, cl);
-  cl->desktop = mondesktop(s, cl->mon)->idx;
-  uploaddesktopnames(s, s->monfocus);
+  if(cl->mon != s->monfocus) {
+    updateewmhdesktops(s, cl->mon);
+  }
   s->monfocus = cl->mon;
+  cl->desktop = mondesktop(s, cl->mon)->idx;
 }
 
 /**
@@ -719,14 +710,11 @@ resizeclient(state_t* s, client_t* cl, v2_t size) {
   }
 
   uint32_t sizeval[2] = { (uint32_t)size.x, (uint32_t)size.y };
-  uint32_t sizeval_content[2] = { (uint32_t)size.x, (uint32_t)size.y - ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f)};
+  uint32_t sizeval_content[2] = { (uint32_t)size.x, (uint32_t)size.y};
 
   // Resize the window by configuring its width and height property
   xcb_configure_window(s->con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
   xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
-
-  updatetitlebar(s, cl);
-
   cl->area.size = size;
 }
 
@@ -750,7 +738,7 @@ moveresizeclient(state_t* s, client_t* cl, area_t a) {
   };
   uint32_t values_content[4] = {
     (uint32_t)a.size.x,
-    (uint32_t)a.size.y - ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f)
+    (uint32_t)a.size.y
   };
 
   // Move and resize the window by configuring its x, y, width, and height properties
@@ -767,7 +755,6 @@ moveresizeclient(state_t* s, client_t* cl, area_t a) {
   uploaddesktopnames(s, s->monfocus);
 
   s->monfocus = cl->mon; 
-  updatetitlebar(s, cl);
 }
 
 /**
@@ -923,17 +910,11 @@ killclient(state_t* s, client_t* cl) {
  * @param s The window manager's state
  * @param cl The client to focus
  */
-
-// Helper to reduce EWMH property changes 
-static monitor_t* lastmon;
-
 void
-focusclient(state_t* s, client_t* cl) {
+focusclient(state_t* s, client_t* cl, bool upload_ewmh_desktops) {
   if(!cl || cl->win == s->root) {
     return;
   }
-
-  s->ignore_enter_layout = false;
 
   // Unfocus the previously focused window to ensure that there is only
   // one focused (highlighted) window at a time.
@@ -952,19 +933,12 @@ focusclient(state_t* s, client_t* cl) {
 
   // Set the focused client
   s->focus = cl;
-  uploaddesktopnames(s, s->monfocus);
-  s->monfocus = cursormon(s);
 
-  if(s->monfocus != lastmon && lastmon != NULL) {
-    desktop_t* desk = mondesktop(s, s->monfocus); 
-
-    if(desk) {
-      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-                          XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
-      xcb_flush(s->con);
-    }
+  monitor_t* mon = cl->mon; 
+  if(mon != s->monfocus && upload_ewmh_desktops) {
+    updateewmhdesktops(s, mon);
   }
-  lastmon = s->monfocus;
+  s->monfocus = cl->mon;
 }
 
 /**
@@ -1006,10 +980,9 @@ frameclient(state_t* s, client_t* cl) {
       PropertyChangeMask | EnterWindowMask | FocusChangeMask | ButtonPressMask;
     XSelectInput(s->dsp, cl->frame, event_mask); 
   }
-  setuptitlebar(s, cl);
 
   // Reparent the client's content to the newly created frame
-  xcb_reparent_window(s->con, cl->win, cl->frame, 0, s->showtitlebars ? s->config.titlebarheight : 0);
+  xcb_reparent_window(s->con, cl->win, cl->frame, 0, 0);
 
   // Update the window's geometry
   {
@@ -1018,8 +991,7 @@ frameclient(state_t* s, client_t* cl) {
     xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, posval);
 
     uint32_t sizeval[2] = { (uint32_t)cl->area.size.x, (uint32_t)cl->area.size.y };
-    uint32_t sizeval_content[2] = { (uint32_t)cl->area.size.x, (uint32_t)cl->area.size.y - 
-      (s->showtitlebars ? s->config.titlebarheight : 0)};
+    uint32_t sizeval_content[2] = { (uint32_t)cl->area.size.x, (uint32_t)cl->area.size.y};
     // Resize the window by configuring it's width and height property
     xcb_configure_window(s->con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
     xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
@@ -1038,10 +1010,8 @@ frameclient(state_t* s, client_t* cl) {
  */
 void
 unframeclient(state_t* s, client_t* cl) {
-  xcb_unmap_window(s->con, cl->titlebar);
   xcb_unmap_window(s->con, cl->frame);
   xcb_reparent_window(s->con, cl->win, s->root, 0, 0);
-  xcb_destroy_window(s->con, cl->titlebar);
   xcb_destroy_window(s->con, cl->frame);
   xcb_flush(s->con);
 }
@@ -1092,11 +1062,11 @@ configclient(state_t* s, client_t* cl) {
   // New X position of the window
   event.x = cl->area.pos.x;                
   // New Y position of the window
-  event.y = cl->area.pos.y + ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f);
+  event.y = cl->area.pos.y; 
   // New width of the window
   event.width = cl->area.size.x;            
   // New height of the window
-  event.height = cl->area.size.y - ((cl->showtitlebar) ? s->config.titlebarheight : 0.0f);
+  event.height = cl->area.size.y; 
   // Border width
   event.border_width = cl->borderwidth;
   // Above sibling window (None in this case)
@@ -1182,7 +1152,6 @@ setwintype(state_t* s, client_t* cl) {
 
   if(state == s->ewmh_atoms[EWMHfullscreen]) {
     setfullscreen(s, cl, true);
-    hidetitlebar(s, cl);
   } 
   if(wintype == s->ewmh_atoms[EWMHwindowTypeDialog]) {
     cl->floating = true;
@@ -1792,6 +1761,25 @@ uploaddesktopnames(state_t* s, monitor_t* mon) {
   free(data);
 }
 
+void 
+updateewmhdesktops(state_t* s, monitor_t* mon) {
+  s->monfocus = mon;
+  uint32_t desktopcount = 0;
+  for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
+    if(s->monfocus->activedesktops[i].init) {
+      desktopcount++;
+    }
+  }
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
+                      XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
+  uploaddesktopnames(s, s->monfocus);
+  desktop_t* desk = mondesktop(s, s->monfocus);
+  if(desk) {
+    xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
+                        XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
+  }
+}
+
 /**
  * @brief Creates a new virtual desktop and notifies EWMH about it.
  * @param s The window manager's state 
@@ -1942,162 +1930,6 @@ loaddefaultcursor(state_t* s) {
 }
 
 /**
- * @brief Sets up the titlebar window for a given client.
- * This involves:
- *  - initializing an OpenGL & leif context if there is none
- *  - creating an X window for the titlebar and reparenting it 
- *  - Setting OpenGL context to the created window 
- *  - Setting swap interval for the window 
- *  - Rendering the initial state of the titlebar
- *
- *  @param s The window manager's state 
- *  @param cl The client to setup a titlebar window for
- * */
-void
-setuptitlebar(state_t* s, client_t* cl) {
-  if(!s->config.usedecoration) return;
-
-  // Initialize OpenGL
-  if(!s->initgl) {
-    initglcontext(s);
-    s->initgl = true;
-  }
-
-
-  Colormap colormap = DefaultColormap(s->dsp, DefaultScreen(s->dsp));
-
-  // Initialize background color
-  XColor color;
-  color.red   = ((s->config.titlebarcolor >> 16) & 0xFF) * 256; 
-  color.green = ((s->config.titlebarcolor >> 8) & 0xFF) * 256;  
-  color.blue  = (s->config.titlebarcolor & 0xFF) * 256;
-  color.flags = DoRed | DoGreen | DoBlue;
-
-  // Allocate the color in the colormap
-  if (!XAllocColor(s->dsp, colormap, &color)) {
-    logmsg(s,  LogLevelError, "unable to allocate X color.");
-    return;
-  }
-
-
-  Window root = DefaultRootWindow(s->dsp);
-  XSetWindowAttributes attribs;
-  attribs.colormap = XCreateColormap(s->dsp, s->root, s->glvis->visual, AllocNone); 
-  attribs.event_mask = EnterWindowMask | LeaveWindowMask | ExposureMask | StructureNotifyMask;
-  attribs.background_pixel = color.pixel;
-
-  cl->titlebar = (xcb_window_t)XCreateWindow(s->dsp, root, 0, 0, cl->area.size.x,
-      s->config.titlebarheight, 0, s->glvis->depth, InputOutput, s->glvis->visual,
-      CWColormap | CWEventMask | CWBackPixel, &attribs);
-  XReparentWindow(s->dsp, cl->titlebar, cl->frame, 0, 0);
-  XMapWindow(s->dsp, cl->titlebar);
-  XSync(s->dsp, false);
- 
-  // Grab Buttons
-  {
-    unsigned int event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
-    // Grab Button 1
-    XGrabButton(s->dsp, Button1, AnyModifier, cl->titlebar, 
-	False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
-
-    // Grab Button 3
-    XGrabButton(s->dsp, Button3, AnyModifier, cl->titlebar, 
-	False, event_mask, GrabModeAsync, GrabModeAsync, None, None);
-  }
-
-  // Set OpenGL context
-  setglcontext(s, cl->titlebar);
-
-  // Set GL swap interval which disables or enables vsync 
-  PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT = 
-    (PFNGLXSWAPINTERVALEXTPROC) glXGetProcAddress((const GLubyte*)"glXSwapIntervalEXT");
-  if (glXSwapIntervalEXT) {
-    glXSwapIntervalEXT(s->dsp, cl->titlebar, s->config.glvsync); 
-    logmsg(s,  LogLevelTrace, "Set swap interval of titlebar window %i to %i (%s).",
-           cl->titlebar, (int32_t)s->config.glvsync, s->config.glvsync ? "vsync" : "no vsync");
-  } else {
-    logmsg(s,  LogLevelError, "GLX_EXT_swap_control not supported.");
-  }
-  rendertitlebar(s, cl);
-
-  if(!s->showtitlebars) {
-    hidetitlebar(s, cl);
-  }
-}
-
-
-/**
- * @brief Renders the content of the titlebar of a given client 
- * to the associated titlebar window. By default, this renders the 
- * name of the client, a close button and a additional 'put-in-layout'
- * button if the titlebar is hovered.
- *
- * @param s The window manager's state
- * @param cl The client to render the titlebar of
- * */
-void
-rendertitlebar(state_t* s, client_t* cl) {
-  if(!s->config.usedecoration) return;
-  if(!cl) return;
-  if(cl->desktop != mondesktop(s, s->monfocus)->idx) return;
-  setglcontext(s, cl->titlebar);
-
-  // Clear background
-  {
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-  }
-  glClear(GL_COLOR_BUFFER_BIT);
-
-  glXSwapBuffers(s->dsp, cl->titlebar);
-}
-
-/**
- * @brief Updates the geometry of the titlebar of a given client 
- * to match the client's geometry.
- *
- * @param s The window manager's state
- * @param cl The client of which to update the titlebar geometry of 
- * */
-void
-updatetitlebar(state_t* s, client_t* cl) {
-  if(!s->config.usedecoration) return;
-
-  bool success;
-  // Update client geometry 
-  cl->area = winarea(s, cl->frame, &success);
-  if(!success) return;
-
-  // Update decoration geometry
-  uint32_t vals[2];
-  vals[0] = cl->area.size.x;
-  vals[1] = s->config.titlebarheight;
-  xcb_configure_window(s->con, cl->titlebar, 
-      XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
-}
-
-/**
- * @brief Hides the titlebar window of a given client 
- *
- * @param s The window manager's state
- * @param cl The client of which to hide the titlebar of 
- * */
-void
-hidetitlebar(state_t* s, client_t* cl) {
-  xcb_unmap_window(s->con, cl->titlebar);
-  {
-    uint32_t vals[2] = {0, 0};
-    xcb_configure_window(s->con, cl->win, 
-                         XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, vals);
-  }
-  {
-    uint32_t vals[2] = {cl->area.size.x, cl->area.size.y};
-    xcb_configure_window(s->con, cl->win, 
-	XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
-  }
-  cl->showtitlebar = false;
-}
-
-/**
  * @brief Takes in a size for a client window and adjusts it 
  * if it does not meet the requirements of the client's hints.
  * The adjusted value is returned.
@@ -2240,28 +2072,6 @@ removefromlayout(state_t* s, client_t* cl) {
   // the layout. 
   cl->area.size = applysizehints(s, cl, cl->area.size);
   resizeclient(s, cl, cl->area.size);
-}
-
-/**
- * @brief Shows the titlebar window of a given client 
- *
- * @param s The window manager's state
- * @param cl The client of which to show the titlebar of 
- * */
-void
-showtitlebar(state_t* s, client_t* cl) {
-  xcb_map_window(s->con, cl->titlebar);
-  {
-    uint32_t vals[2] = {0, s->config.titlebarheight};
-    xcb_configure_window(s->con, cl->win, 
-	XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, vals);
-  }
-  {
-    uint32_t vals[2] = {cl->area.size.x, cl->area.size.y - s->config.titlebarheight};
-    xcb_configure_window(s->con, cl->win, 
-	XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals);
-  }
-  cl->showtitlebar = true;
 }
 
 /**
@@ -2412,26 +2222,19 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
   }
 
   client_t* cl = clientfromwin(s, enter_ev->event);
-  bool istitlebar = false;
-  if(!cl) {
-    cl = clientfromtitlebar(s, enter_ev->event);
-    istitlebar = cl != NULL;
-
-    if(!cl && enter_ev->event != s->root) return;
-  }
+  if(!cl && enter_ev->event != s->root) return;
 
   // Focus entered client
   if(cl) {
-    if(istitlebar) {
-      cl->titlebar_render_additional = true;
-      rendertitlebar(s, cl);
-    }
-    focusclient(s, cl);
-    uploaddesktopnames(s, s->monfocus);
+    focusclient(s, cl, true);
   }
   else if(enter_ev->event == s->root) {
     // Set Input focus to root
     xcb_set_input_focus(s->con, XCB_INPUT_FOCUS_POINTER_ROOT, s->root, XCB_CURRENT_TIME);
+
+    monitor_t* mon = cursormon(s);
+    updateewmhdesktops(s, mon);
+    s->monfocus = mon;
     /* Reset border color to unactive for every client */
     client_t* cl;
     for (cl = s->clients; cl != NULL; cl = cl->next) {
@@ -2445,26 +2248,6 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
 
   xcb_flush(s->con);
  }
-
-
-/**
- * @brief Handles a X leave-window event by unsetting 
- * the titlebar_render_additional on the associated titlebar which 
- * un-renders the additional UI of it. 
- *
- * @param s The window manager's state
- * @param ev The generic event 
- */
-void 
-evleavenotify(state_t* s, xcb_generic_event_t* ev) {
-  xcb_leave_notify_event_t* leave_ev = (xcb_leave_notify_event_t*)ev;
-  client_t* cl = clientfromtitlebar(s, leave_ev->event);
-  if(!cl) return;
-  cl->titlebar_render_additional = false;
-  rendertitlebar(s, cl);
-
-  xcb_flush(s->con);
-}
 
 /**
  * @brief Handles a X key press event by checking if the pressed 
@@ -2519,40 +2302,17 @@ evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
   }
 
   client_t* cl = clientfromwin(s, button_ev->event);
-  if (!cl) {
-    cl = clientfromtitlebar(s, button_ev->event);
-    if (!cl) return;
-    v2_t cursorpos = (v2_t){.x = (float)button_ev->root_x - cl->area.pos.x, .y = (float)button_ev->root_y - cl->area.pos.y};
-    area_t closebtnarea = (area_t){
-      .pos = cl->closebutton,
-      .size = (v2_t){30, s->config.titlebarheight}
-    };
-    area_t layoutbtnarea = (area_t){
-      .pos = cl->layoutbutton,
-      .size = (v2_t){30, s->config.titlebarheight}
-    };
-    if (pointinarea(cursorpos, closebtnarea)) {
-      killclient(s, cl);
-      return;
+  if (!cl) return;
+  // Focusing client 
+  if (cl != s->focus) {
+    // Unfocus the previously focused window to ensure that there is only
+    // one focused (highlighted) window at a time.
+    if (s->focus) {
+      unfocusclient(s, s->focus);
     }
-    if (pointinarea(cursorpos, layoutbtnarea) &&
-      getcurlayout(s, cl->mon) != LayoutFloating && cl->floating &&
-      cl->titlebar_render_additional) {
-      addtolayout(s, cl);
-      return;
-    }
-    focusclient(s, cl);
-  } else {
-    // Focusing client 
-    if (cl != s->focus) {
-      // Unfocus the previously focused window to ensure that there is only
-      // one focused (highlighted) window at a time.
-      if (s->focus) {
-        unfocusclient(s, s->focus);
-      }
-      focusclient(s, cl);
-    }
+    focusclient(s, cl, true);
   }
+
   bool success;
   area_t area = winarea(s, cl->frame, &success);
   if(!success) return;
@@ -2568,28 +2328,6 @@ evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
   raiseclient(s, cl);
   xcb_flush(s->con);
 }
-
-/**
- * @brief Handles a X button release event by fullscreening the associated client 
- * if the event happend on the client's titlebar and the mouse position is <= 0.
- *
- * @param s The window manager's state
- * @param ev The generic event 
- */
-void
-evbuttonrelease(state_t* s, xcb_generic_event_t* ev) {
-  xcb_button_release_event_t* button_ev = (xcb_button_release_event_t*)ev;
-  client_t* cl = clientfromtitlebar(s, button_ev->event);
-  if(!cl) return;
-
-  if(button_ev->root_y <= 0) {
-    setfullscreen(s, cl, true);
-  }
-  cl->ignoreexpose = false;
-  rendertitlebar(s, cl);
-  xcb_flush(s->con);
-}
-
 
 // Function definition
 void print_to_file(const char *filename, const char *format, ...) {
@@ -2629,22 +2367,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     // Update the focused monitor to the monitor under the cursor
     monitor_t* mon = cursormon(s);
     if(mon != s->monfocus) {
-      s->monfocus = mon;
-      uint32_t desktopcount = 0;
-      for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-        if(s->monfocus->activedesktops[i].init) {
-          desktopcount++;
-        }
-      }
-      xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
-                          XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
-      uploaddesktopnames(s, s->monfocus);
-      desktop_t* desk = mondesktop(s, s->monfocus);
-      if(desk) {
-        xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-                            XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
-      }
-      xcb_flush(s->con);
+      updateewmhdesktops(s, mon);
     }
     s->monfocus = mon;
   }
@@ -2660,13 +2383,16 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
   if((!(motion_ev->state & s->config.movebtn) && 
     !(motion_ev->state & s->config.resizebtn) && cl)) {
-    if(s->ignore_enter_layout) {
-      s->ignore_enter_layout = false;
-    }
     if(pointinarea(dragpos, cl->area)) {
-      if(cl != s->focus) {
-        focusclient(s, cl);
+      monitor_t* mon = cl->mon; 
+      if(mon != s->monfocus) {
+        updateewmhdesktops(s, mon);
       }
+      if(cl != s->focus) {
+        focusclient(s, cl, true);
+      }
+      s->monfocus = mon;
+
     }
     xcb_flush(s->con);
     return;
@@ -2674,36 +2400,18 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
   if(!(motion_ev->state & s->config.modkey)) return;
   if(!(motion_ev->state & s->config.resizebtn || motion_ev->state & s->config.movebtn)) return;
+  if(!cl) return;
 
-  if(!cl) {
-    if(!(cl = clientfromtitlebar(s, motion_ev->event))) return;
-    if(cl->fullscreen) {
-      setfullscreen(s, cl, false);
-      s->grabwin = cl->area;
-      movedest = (v2_t){.x = (float)(s->grabwin.pos.x + dragdelta.x), .y = (float)(s->grabwin.pos.y + dragdelta.y)};
-    }
-    moveclient(s, cl, movedest);
-
-    if(!cl->floating) {
-      // Remove the client from the layout when the user moved it 
-      removefromlayout(s, cl);
-    }
-    xcb_flush(s->con);
-    return;
-  }
   if(cl->fullscreen) {
-    // Unset fullscreen
-    cl->fullscreen = false;
-    xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
-    cl->borderwidth = s->config.winborderwidth;
-    setborderwidth(s, cl, cl->borderwidth);
-    showtitlebar(s, cl);
+    setfullscreen(s, cl, false);
+    s->grabwin = cl->area;
   }
 
   // Move the window
   if(motion_ev->state & s->config.movebtn) {
     moveclient(s, cl, movedest);
-  } 
+  }
+
   // Resize the window
   else if(motion_ev->state & s->config.resizebtn) {
     // Resize delta (clamped)
@@ -2807,14 +2515,14 @@ evconfigrequest(state_t* s, xcb_generic_event_t* ev) {
       mask |= XCB_CONFIG_WINDOW_X;
       mask |= XCB_CONFIG_WINDOW_Y;
       values[i++] = 0;
-      values[i++] = ((cl->showtitlebar) ?  s->config.titlebarheight : 0.0f);
+      values[i++] = 0; 
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_WIDTH) {
         mask |= XCB_CONFIG_WINDOW_WIDTH;
         values[i++] = config_ev->width;
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_HEIGHT) {
         mask |= XCB_CONFIG_WINDOW_HEIGHT;
-        values[i++] = config_ev->height - ((cl->showtitlebar ? s->config.titlebarheight : 0.0f));
+        values[i++] = config_ev->height; 
       }
       if (config_ev->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH) {
         mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
@@ -2834,7 +2542,6 @@ evconfigrequest(state_t* s, xcb_generic_event_t* ev) {
     cl->area = winarea(s, cl->frame, &success);
     if(!success) return;
 
-    updatetitlebar(s, cl);
     configclient(s, cl);
   }
 
@@ -2861,7 +2568,6 @@ evconfignotify(state_t* s, xcb_generic_event_t* ev) {
   // Update the client's titlebar geometry
   client_t* cl = clientfromwin(s, config_ev->window);
   if(!cl) return;
-  updatetitlebar(s, cl);
 
   xcb_flush(s->con);
 }
@@ -2884,10 +2590,9 @@ evpropertynotify(state_t* s, xcb_generic_event_t* ev) {
     }
     if(s->config.usedecoration) {
       if(prop_ev->atom == s->ewmh_atoms[EWMHname]) {
-	if(cl->name)
-	  free(cl->name);
-	cl->name = getclientname(s, cl);
-	rendertitlebar(s, cl);
+        if(cl->name)
+          free(cl->name);
+        cl->name = getclientname(s, cl);
       }
     }
   }
@@ -2917,34 +2622,12 @@ evclientmessage(state_t* s, xcb_generic_event_t* ev) {
       // Set/unset client fullscreen 
       bool fs =  (msg_ev->data.data32[0] == 1 || (msg_ev->data.data32[0] == 2 && !cl->fullscreen));
       setfullscreen(s, cl, fs);
-      if(s->showtitlebars) {
-        if(fs) {
-          hidetitlebar(s, cl);
-        } else {
-          showtitlebar(s, cl);
-        }
-      }
     }
   } else if(msg_ev->type == s->ewmh_atoms[EWMHactiveWindow]) {
     if(s->focus != cl && !cl->urgent) {
       seturgent(s, cl, true);
     }
   }
-  xcb_flush(s->con);
-}
-
-/**
- * @brief Handles a X expose event by redrawing the content of 
- * the associated titlebar with the event.
- *
- * @param s The window manager's state
- * @param ev The generic event 
- */
-void
-evexpose(state_t* s, xcb_generic_event_t* ev) {
-  xcb_expose_event_t* expose_ev = (xcb_expose_event_t*)ev;
-  client_t* cl = clientfromtitlebar(s, expose_ev->window);
-  rendertitlebar(s, cl);
   xcb_flush(s->con);
 }
 
@@ -2974,9 +2657,7 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
   cl->hidden = false;
   cl->decorated = true;
   cl->floating = getcurlayout(s, s->monfocus) == LayoutFloating;
-  cl->titlebar_render_additional = false;
   cl->name = getclientname(s, cl);
-  cl->showtitlebar = s->config.usedecoration;
   cl->layoutsizeadd = 0;
 
   // Create frame window for the client
@@ -3075,28 +2756,6 @@ visibleclients(state_t* s, monitor_t* mon, bool tiled) {
   tail->next = NULL;
 
   return dummy.next;
-}
-
-/**
- * @brief Returns the associated client from a given titlebar window.
- * Returns NULL if there is no client associated with the titlebar window.
- *
- * @param s The window manager's state
- * @param win The titlebar window to get the client from
- *
- * @return The client associated with the given titlbar window (NULL if no associated client)
- */
-client_t*
-clientfromtitlebar(state_t* s, xcb_window_t titlebar) {
-  if(!s->config.usedecoration) return NULL;
-  client_t* cl;
-  for (cl = s->clients; cl != NULL; cl = cl->next) {
-    // If the window is found in the clients, return the client
-    if(cl->titlebar == titlebar) {
-      return cl;
-    }
-  }
-  return NULL;
 }
 
 /**
@@ -3486,55 +3145,6 @@ int32_t
 compstrs(const void* a, const void* b) {
   return strcmp(*(const char **)a, *(const char **)b);
 }
-
-/**
- * @brief Creates an GLX Context and sets up OpenGL visual. 
- * */
-void 
-initglcontext(state_t* s) {
-  /* Create an OpenGL context */
-  GLint attribs[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, 
-     None };
-
-  int screen_num = DefaultScreen(s->dsp);
-  s->glvis = glXChooseVisual(s->dsp, screen_num, attribs);
-  if (!s->glvis) {
-    logmsg(s,  LogLevelError, "no appropriate OpenGL visual found.");
-    terminate(s, EXIT_FAILURE);
-  }
-
-  s->glcontext = glXCreateContext(s->dsp, s->glvis, NULL, GL_TRUE); 
-
-  if(!s->glcontext) {
-    logmsg(s,  LogLevelError, "failed to create OpenGL context");
-    terminate(s, EXIT_FAILURE);
-  }
-
-
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-}
-
-/**
- * @brief Set the OpenGL context and drawable to a given window
- * @param win The window to draw on 
- * */
-void
-setglcontext(state_t* s, xcb_window_t win) {
-  // Get the current drawable and context
-  GLXDrawable curwin = glXGetCurrentDrawable();
-  GLXContext curcontext = glXGetCurrentContext();
-
-  // Check if the current drawable and context match the desired ones
-  if (curwin != win || curcontext != s->glcontext) {
-    // Make the given window and context the current drawable
-    if (!glXMakeCurrent(s->dsp, win, s->glcontext)) {
-      logmsg(s,  LogLevelError, "failed to set OpenGL context to window %i.", win); 
-    }
-    logmsg(s,  LogLevelTrace, "set OpenGL context to window %i.", win); 
-  }
-}
-
 
 /**
  * @brief Logs a given message to stdout/stderr that differs based

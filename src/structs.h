@@ -42,8 +42,6 @@ void incgapsizelayout(state_t* s, passthrough_data_t data);
 void decgapsizelayout(state_t* s, passthrough_data_t data);
 void inclayoutsizefocus(state_t* s, passthrough_data_t data);
 void declayoutsizefocus(state_t* s, passthrough_data_t data);
-void togglefocustitlebar(state_t* s, passthrough_data_t data); 
-void toggletitlebars(state_t* s, passthrough_data_t data);
 void movefocusup(state_t* s, passthrough_data_t data);
 void movefocusdown(state_t* s, passthrough_data_t data);
 void movefocusleft(state_t* s, passthrough_data_t data);
@@ -335,9 +333,7 @@ struct client_t {
 
   int32_t scratchpad_index;
 
-  xcb_window_t win, frame, titlebar;
-
-  bool showtitlebar;
+  xcb_window_t win, frame;
 
   v2_t closebutton, layoutbutton;
 
@@ -350,7 +346,6 @@ struct client_t {
 
 
   bool urgent, ignoreunmap, ignoreexpose, decorated; 
-  bool titlebar_render_additional; 
 
   v2_t minsize;
   v2_t maxsize;
@@ -398,13 +393,6 @@ typedef struct {
   char** desktopnames;
 
   bool usedecoration;
-  bool showtitlebars_init;
-  uint32_t titlebarheight;
-
-  uint32_t titlebarcolor;
-  uint32_t fontcolor;
-
-  char* fontpath;
 
   double layoutmasterarea;
   double layoutmasterarea_min;
@@ -450,14 +438,8 @@ struct state_t {
   float lastexposetime, lastmotiontime; 
 
   Display* dsp; 
-  XVisualInfo* glvis;
-  GLXContext glcontext;
-  bool initgl;
 
   bool ignore_enter_layout;
-
-  bool showtitlebars;
-
 
   client_t* clients;
   client_t* focus;

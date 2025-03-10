@@ -219,7 +219,7 @@ void             killclient(state_t* s, client_t* cl);
  * @param s The window manager's state
  * @param cl The client to focus
  */
-void             focusclient(state_t* s, client_t* cl);
+void             focusclient(state_t* s, client_t* cl, bool upload_ewmh_desktops);
 
 /**
  * @brief Sets the X input focus to a given client and handles EWMH atoms & 
@@ -233,7 +233,6 @@ void             setxfocus(state_t* s, client_t* cl);
 /**
  * @brief Creates a frame window for the content of a client window and decoration to live in.
  * The frame window encapsulates the client's window and decoration like titlebar.
- * focus event.
  *
  * @param s The window manager's state
  * @param cl The client to create a frame window for 
@@ -435,6 +434,13 @@ void 		         swapclients(state_t* s, client_t* c1, client_t* c2);
 void             uploaddesktopnames(state_t* s, monitor_t* mon);
 
 /**
+ * @brief Uploads the active desktop names, current desktop and number of desktops 
+ * and sends them to EWMH 
+ * @param s The window manager's state
+ */
+void             updateewmhdesktops(state_t* s, monitor_t* mon);
+
+/**
  * @brief Creates a new virtual desktop and notifies EWMH about it.
  * @param s The window manager's state 
  * @param idx The index of the virtual desktop
@@ -463,48 +469,6 @@ void             grabkeybinds(state_t* s);
  * The default image is the left facing pointer.
  * */
 void             loaddefaultcursor(state_t* s);
-
-/**
- * @brief Sets up the titlebar window for a given client.
- * This involves:
- *  - initializing an OpenGL & leif context if there is none
- *  - creating an X window for the titlebar and reparenting it 
- *  - Setting OpenGL context to the created window 
- *  - Setting swap interval for the window 
- *  - Rendering the initial state of the titlebar
- *
- *  @param s The window manager's state 
- *  @param cl The client to setup a titlebar window for
- * */
-void             setuptitlebar(state_t* s, client_t* cl);
-
-/**
- * @brief Renders the content of the titlebar of a given client 
- * to the associated titlebar window. By default, this renders the 
- * name of the client, a close button and a additional 'put-in-layout'
- * button if the titlebar is hovered.
- *
- * @param s The window manager's state
- * @param cl The client to render the titlebar of
- * */
-void             rendertitlebar(state_t* s, client_t* cl);
-
-/**
- * @brief Updates the geometry of the titlebar of a given client 
- * to match the client's geometry.
- *
- * @param s The window manager's state
- * @param cl The client of which to update the titlebar geometry of 
- * */
-void             updatetitlebar(state_t* s, client_t* cl);
-
-/**
- * @brief Hides the titlebar window of a given client 
- *
- * @param s The window manager's state
- * @param cl The client of which to hide the titlebar of 
- * */
-void             hidetitlebar(state_t* s, client_t* cl);
 
 /**
  * @brief Takes in a size for a client window and adjusts it 
@@ -558,14 +522,6 @@ void            removefromlayout(state_t* s, client_t* cl);
 
 
 /**
- * @brief Shows the titlebar window of a given client 
- *
- * @param s The window manager's state
- * @param cl The client of which to show the titlebar of 
- * */
-void             showtitlebar(state_t* s, client_t* cl);
-
-/**
  * @brief Handles a map request event on the X server by 
  * adding the mapped window to the linked list of clients and 
  * setting up necessary stuff.
@@ -606,16 +562,6 @@ void             eventernotify(state_t* s, xcb_generic_event_t* ev);
 
 
 /**
- * @brief Handles a X leave-window event by unsetting 
- * the titlebar_render_additional on the associated titlebar which 
- * un-renders the additional UI of it. 
- *
- * @param s The window manager's state
- * @param ev The generic event 
- */
-void             evleavenotify(state_t* s, xcb_generic_event_t* ev);
-
-/**
  * @brief Handles a X key press event by checking if the pressed 
  * key (and modifiers) match any window manager keybind and then executing
  * that keybinds function.
@@ -633,15 +579,6 @@ void             evkeypress(state_t* s, xcb_generic_event_t* ev);
  * @param ev The generic event 
  */
 void             evbuttonpress(state_t* s, xcb_generic_event_t* ev);
-
-/**
- * @brief Handles a X button release event by fullscreening the associated client 
- * if the event happend on the client's titlebar and the mouse position is <= 0.
- *
- * @param s The window manager's state
- * @param ev The generic event 
- */
-void             evbuttonrelease(state_t* s, xcb_generic_event_t* ev);
 
 /**
  * @brief Handles a X motion notify event by moving the clients window if left mouse 
@@ -688,14 +625,6 @@ void             evpropertynotify(state_t* s, xcb_generic_event_t* ev);
  */
 void             evclientmessage(state_t* s, xcb_generic_event_t* ev);
 
-/**
- * @brief Handles a X expose event by redrawing the content of 
- * the associated titlebar with the event.
- *
- * @param s The window manager's state
- * @param ev The generic event 
- */
-void             evexpose(state_t* s, xcb_generic_event_t* ev);
 
 /**
  * @brief Adds a client window to the linked list of clients
@@ -743,17 +672,7 @@ client_t*        clientfromwin(state_t* s, xcb_window_t win);
 client_t*        visibleclients(state_t* s, monitor_t* mon, bool tiled);
 
 /**
- * @brief Returns the associated client from a given titlebar window.
- * Returns NULL if there is no client associated with the titlebar window.
- *
- * @param s The window manager's state
- * @param win The titlebar window to get the client from
- *
- * @return The client associated with the given titlbar window (NULL if no associated client)
- */
-client_t*        clientfromtitlebar(state_t* s, xcb_window_t titlebar);
-
-/**
+**
  * @brief Adds a monitor area to the linked list of monitors
  *
  * @param s The window manager's state 
@@ -904,20 +823,6 @@ bool             strinarr(char* array[], int count, const char* target);
  * @return See 'man strcmp' */
 int32_t          compstrs(const void* a, const void* b);
 
-/**
- * @brief Creates an GLX Context and sets up OpenGL visual. 
- *
- * @param s The window manager's state
- * */
-void             initglcontext(state_t* s);
-
-/**
- * @brief Set the OpenGL context and drawable to a given window
- *
- * @param s The window manager's state
- * @param win The window to draw on 
- * */
-void             setglcontext(state_t* s, xcb_window_t win);
 
 /**
  * @brief Logs a given message to stdout/stderr that differs based 

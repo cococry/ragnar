@@ -35,7 +35,7 @@ inline void cyclefocusdown(state_t* s, passthrough_data_t data) {
 
   client_t* new_focus = nextvisible(s, false);
 
-  focusclient(s, new_focus);
+  focusclient(s, new_focus, false);
   raiseclient(s, s->focus);
 }
 
@@ -65,13 +65,6 @@ inline void togglefullscreen(state_t* s, passthrough_data_t data) {
 
   if(!s->focus) return;
   bool fs = !(s->focus->fullscreen);
-  if(s->showtitlebars) {
-    if(fs) {
-      hidetitlebar(s, s->focus);
-    } else {
-      showtitlebar(s, s->focus);
-    }
-  }
   setfullscreen(s, s->focus, fs); 
 }
 
@@ -231,7 +224,7 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   if(!cursor_success)  return;
   for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
     if(pointinarea(cursor, cl->area)) {
-      focusclient(s, cl);
+      focusclient(s, cl, false);
       break;
     }
   }
@@ -664,41 +657,6 @@ inline void decgapsizelayout(state_t* s, passthrough_data_t data) {
     layout->gapsize -= s->config.winlayoutgap_step;
   }
   makelayout(s, s->monfocus);
-}
-
-
-/**
- * @brief Toggles the titlebar of a the focused client 
- *
- * @param s The window manager's state
- * @param data The data to use for the function (unused here)
- */
-inline void togglefocustitlebar(state_t* s, passthrough_data_t data) { 
-  (void)data;
-  if(s->focus->showtitlebar) {
-    hidetitlebar(s, s->focus);
-  } else {
-    showtitlebar(s, s->focus);
-  }
-}
-
-
-/**
- * @brief Toggles the titlebar of every client window 
- *
- * @param s The window manager's state
- * @param data The data to use for the function (unused here)
- */
-inline void toggletitlebars(state_t* s, passthrough_data_t data) { 
-  (void)data;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(s->showtitlebars) {
-      hidetitlebar(s, cl);
-    } else {
-      showtitlebar(s, cl);
-    }
-  }
-  s->showtitlebars = !s->showtitlebars;
 }
 
 
