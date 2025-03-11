@@ -24,19 +24,55 @@ inline void terminate_successfully(state_t* s, passthrough_data_t data) {
  * @brief Cycles the currently focused client one down 
  *
  * @param s The window manager's state
- * @param data The data to use for the function (unused here)
- */
+* @param data The data to use for the function (unused here)
+*/
 inline void cyclefocusdown(state_t* s, passthrough_data_t data) { 
   (void)data;
-  if (!s->clients || !s->focus)
+  if (!s->monfocus->clients || !s->focus)
     return;
 
-  s->ignore_enter_layout = true;
+  client_t* focus = NULL;
+  for (focus = s->focus->next; 
+      focus &&  focus->desktop != mondesktop(s, focus->mon)->idx;
+      focus = focus->next);
+  if (!focus)
+    for (focus = s->monfocus->clients; 
+        focus && focus->desktop != mondesktop(s, focus->mon)->idx; 
+        focus = focus->next);
 
-  client_t* new_focus = nextvisible(s, false);
+  if(!focus) return;
+  focusclient(s, focus, false);
+  raiseclient(s, focus);
+}
 
-  focusclient(s, new_focus, false);
-  raiseclient(s, s->focus);
+/**
+ * @brief Cycles the currently focused client one up 
+ *
+ * @param s The window manager's state
+* @param data The data to use for the function (unused here)
+*/
+inline void cyclefocusup(state_t* s, passthrough_data_t data) { 
+  (void)data;
+  if (!s->monfocus->clients || !s->focus)
+    return;
+
+  client_t* focus = NULL;
+  client_t* cl;
+  for (cl = s->monfocus->clients; cl != s->focus; cl = cl->next) {
+    if (cl->desktop == mondesktop(s, cl->mon)->idx) {
+      focus = cl;
+    }
+  }
+  if(!focus) {
+    for (; cl; cl = cl->next) {
+      if (cl->desktop == mondesktop(s, cl->mon)->idx) {
+        focus = cl;
+      }
+    }
+  }
+  if (!focus) return;
+  focusclient(s, focus, false);
+  raiseclient(s, focus);
 }
 
 /**
@@ -193,8 +229,7 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   uploaddesktopnames(s, s->monfocus);
 
 
-  for (client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(cl->mon != s->monfocus) continue;
+  for (client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->scratchpad_index != -1) continue;
     // Hide the clients on the current desktop
     if(cl->desktop == mondesktop(s, s->monfocus)->idx) {
@@ -206,7 +241,7 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   }
 
   // Unfocus all selected clients
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     unfocusclient(s, cl);
   }
 
@@ -222,7 +257,9 @@ inline void switchdesktop(state_t* s, passthrough_data_t data) {
   bool cursor_success;
   v2_t cursor = cursorpos(s, &cursor_success);
   if(!cursor_success)  return;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+
+  // Focusing the client on the other desktop that is hovered
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(pointinarea(cursor, cl->area)) {
       focusclient(s, cl, false);
       break;
@@ -302,8 +339,8 @@ inline void addfocustolayout(state_t* s, passthrough_data_t data) {
 inline void settiledmaster(state_t* s, passthrough_data_t data) { 
   (void)data;
 
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(clientonscreen(s, cl, s->monfocus) && !cl->is_scratchpad) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+    if(!cl->is_scratchpad) {
       cl->floating = false;
     }
   }
@@ -326,7 +363,7 @@ inline void settiledmaster(state_t* s, passthrough_data_t data) {
 inline void setverticalstripes(state_t* s, passthrough_data_t data) { 
   (void)data;
 
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(clientonscreen(s, cl, s->monfocus) && !cl->is_scratchpad) {
       cl->floating = false;
     }
@@ -350,7 +387,7 @@ inline void setverticalstripes(state_t* s, passthrough_data_t data) {
 inline void sethorizontalstripes(state_t* s, passthrough_data_t data) { 
   (void)data;
 
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(clientonscreen(s, cl, s->monfocus) && !cl->is_scratchpad) {
       cl->floating = false;
     }
@@ -374,7 +411,7 @@ inline void sethorizontalstripes(state_t* s, passthrough_data_t data) {
 inline void setfloatingmode(state_t* s, passthrough_data_t data) { 
   (void)data;
 
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(clientonscreen(s, cl, s->monfocus)) {
       cl->floating = true;
     }
@@ -408,12 +445,59 @@ inline void updatebarslayout(state_t* s, passthrough_data_t data) {
  */
 inline void cycledownlayout(state_t* s, passthrough_data_t data) { 
   (void)data;
- 
+  if (!s->monfocus->clients || !s->focus)
+    return;
+  
   s->ignore_enter_layout = true;
-  client_t* next = nextvisible(s, true);
 
-  swapclients(s, s->focus, next);
-  resetlayoutsizes(s, s->monfocus); 
+  client_t* focus = NULL;
+  for (focus = s->focus->next; 
+      focus &&  focus->desktop != mondesktop(s, focus->mon)->idx;
+      focus = focus->next);
+  if (!focus)
+    for (focus = s->monfocus->clients; 
+        focus && focus->desktop != mondesktop(s, focus->mon)->idx; 
+        focus = focus->next);
+
+  if(!focus) return;
+
+  swapclients(s, s->focus, focus);
+  resetlayoutsizes(s, s->monfocus);
+  makelayout(s, s->monfocus);
+}
+
+/**
+ * @brief Cycles the focused window up in the layout list by
+ * swapping it with the client before the it.
+ *
+ * @param s The window manager's state
+ * @param data The data to use for the function (unused here)
+ */
+inline void cycleuplayout(state_t* s, passthrough_data_t data) { 
+  (void)data;
+  if (!s->monfocus->clients || !s->focus)
+    return;
+
+  s->ignore_enter_layout = true;
+
+  client_t* focus = NULL;
+  client_t* cl;
+  for (cl = s->monfocus->clients; cl != s->focus; cl = cl->next) {
+    if (cl->desktop == mondesktop(s, cl->mon)->idx) {
+      focus = cl;
+    }
+  }
+  if(!focus) {
+    for (; cl; cl = cl->next) {
+      if (cl->desktop == mondesktop(s, cl->mon)->idx) {
+        focus = cl;
+      }
+    }
+  }
+  if (!focus) return;
+
+  swapclients(s, s->focus, focus);
+  resetlayoutsizes(s, s->monfocus);
   makelayout(s, s->monfocus);
 }
 
@@ -550,9 +634,8 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
       || (s->focus->next && s->focus->next->mon != s->focus->mon)) return;
 
   uint32_t i = 0;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
-      || cl->mon != s->monfocus) continue;
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx) continue;
     if(i == nmaster - 1 && cl == s->focus) {
       return;
     }
@@ -607,7 +690,7 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
       || (s->focus->next && s->focus->next->mon != s->focus->mon)) return;
   
   uint32_t i = 0;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
       || cl->mon != s->monfocus) continue;
     if(i == nmaster - 1 && cl == s->focus) {
@@ -776,15 +859,13 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   if(fs) {
     setfullscreen(s, s->focus, false);
   }
-  
+
   // Unset fullscreen for all clients on the 
   // previous monitor
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(clientonscreen(s, cl, prevmon)) {
-      if(cl->fullscreen) {
-        setfullscreen(s, cl, false);
-        cl->floating = floating;
-      }
+  for(client_t* cl = prevmon->clients; cl != NULL; cl = cl->next) {
+    if(cl->fullscreen) {
+      setfullscreen(s, cl, false);
+      cl->floating = floating;
     }
   }
 
@@ -860,12 +941,10 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
  
   // Unset fullscreen for all clients on the 
   // next monitor
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    if(clientonscreen(s, cl, nextmon)) {
-      if(cl->fullscreen) {
-        setfullscreen(s, cl, false);
-        cl->floating = floating;
-      }
+  for(client_t* cl = nextmon->clients; cl != NULL; cl = cl->next) {
+    if(cl->fullscreen) {
+      setfullscreen(s, cl, false);
+      cl->floating = floating;
     }
   }
 

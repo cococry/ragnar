@@ -110,13 +110,17 @@ cmdgetwins(state_t* s, const uint8_t* data, int32_t clientfd) {
 
 
   uint32_t numwins = 0;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    numwins++;
+  for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+      numwins++;
+    }
   }
   RgWindow wins[numwins];
   uint32_t i = 0;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    wins[i++] = cl->win;
+  for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+      wins[i++] = cl->win;
+    }
   }
 
   if(write(clientfd, &numwins, sizeof(numwins)) == -1) {
@@ -187,8 +191,8 @@ cmdfirstwin(state_t* s, const uint8_t* data, int32_t clientfd) {
          "ipc: RgCommandFirstWindow: received command.");
 
   RgWindow first = RG_INVALID_WINDOW;
-  if(s->clients) {
-    first = s->clients->win ? (RgWindow)s->clients->win : RG_INVALID_WINDOW;
+  if(s->monitors->clients) {
+    first = s->monitors->clients->win ? (RgWindow)s->monitors->clients->win : RG_INVALID_WINDOW;
   }
 
   if(write(clientfd, &first, sizeof(first)) == -1) {

@@ -116,7 +116,6 @@ setup(state_t* s) {
 
   fclose(fopen(s->config.logfile, "w"));
 
-  s->clients = NULL;
   s->lastexposetime = 0;
   s->lastmotiontime = 0;
 
@@ -253,8 +252,8 @@ loop(state_t* s) {
 void 
 terminate(state_t* s, int32_t exitcode) {
   // Release every client
-  {
-    client_t* cl = s->clients;
+  for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    client_t* cl = mon->clients;
     client_t* next;
     while(cl != NULL) {
       next = cl->next;
@@ -424,9 +423,9 @@ makeclient(state_t* s, xcb_window_t win) {
     xcb_grab_button(s->con, 0, win, evmask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, 
                     s->root, XCB_NONE, 3, s->config.winmod);
   }
-
+  monitor_t* clmon = cursormon(s);
   // Adding the mapped client to our linked list
-  client_t* cl = addclient(s, &s->clients, win);
+  client_t* cl = addclient(s, &clmon->clients, win);
 
   // Setting border 
   xcb_atom_t motif_hints = getatom(s, "_MOTIF_WM_HINTS");
@@ -456,15 +455,18 @@ makeclient(state_t* s, xcb_window_t win) {
   setwintype(s, cl);
 
   // Set client's monitor
-  cl->mon = clientmon(s, cl);
+  cl->mon = clmon; 
   cl->desktop = mondesktop(s, s->monfocus)->idx;
+  logmsg(s, LogLevelTrace,"Added client on desktop %i", cl->desktop);
 
   // Update the EWMH client list
   ewmh_updateclients(s);
 
-  bool success;
-  cl->area = winarea(s, cl->frame, &success);
-  if(!success) return NULL;
+  {
+    bool success;
+    cl->area = winarea(s, cl->frame, &success);
+    if(!success) return NULL;
+  }
 
   cl->area.size = applysizehints(s, cl, cl->area.size);
   if(!cl->floating) {
@@ -664,6 +666,30 @@ setborderwidth(state_t* s, client_t* cl, uint32_t width) {
   cl->borderwidth = width;
 }
 
+void monremoveclient(monitor_t *mon, client_t *cl) {
+  if (!mon || !cl || !mon->clients) return;
+  client_t *prev = NULL;
+  client_t *curr = mon->clients;
+  while (curr) {
+    if (curr == cl) {
+      if (prev) {
+        prev->next = curr->next;  
+      } else {
+        mon->clients = curr->next;  
+      }
+      return;
+    }
+    prev = curr;
+    curr = curr->next;
+  }
+}
+
+void monaddclient(monitor_t *mon, client_t *cl) {
+  if (!mon || !cl) return;
+  cl->next = mon->clients;
+  mon->clients = cl;
+}
+
 /**
  * @brief Moves the window of a given client and updates its area.
  *
@@ -690,6 +716,8 @@ moveclient(state_t* s, client_t* cl, v2_t pos) {
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(s, cl);
   if(cl->mon != s->monfocus) {
+    monremoveclient(s->monfocus, cl);
+    monaddclient(cl->mon, cl);
     updateewmhdesktops(s, cl->mon);
   }
   s->monfocus = cl->mon;
@@ -752,7 +780,11 @@ moveresizeclient(state_t* s, client_t* cl, area_t a) {
   cl->area = a;
   // Update focused monitor in case the window was moved onto another monitor
   cl->mon = clientmon(s, cl);
-  uploaddesktopnames(s, s->monfocus);
+  if(cl->mon != s->monfocus) {
+    monremoveclient(s->monfocus, cl);
+    monaddclient(cl->mon, cl);
+    updateewmhdesktops(s, cl->mon);
+  }
 
   s->monfocus = cl->mon; 
 }
@@ -1206,11 +1238,11 @@ nextvisible(state_t* s, bool skip_floating) {
   // If there is no next client, cycle back to the first client on the 
   // current monitor & desktop
   if(!next) {
-    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     bool checktiled = (skip_floating) ? !cl->floating : true;
-      if(checktiled && clientonscreen(s, cl, s->monfocus)) {
-	next = cl;
-	break;
+      if(checktiled) {
+        next = cl;
+        break;
       }
     }
   }
@@ -1343,7 +1375,7 @@ switchclientdesktop(state_t* s, client_t* cl, int32_t desktop) {
 uint32_t
 numinlayout(state_t* s, monitor_t* mon) {
   uint32_t nlayout = 0;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(clientonscreen(s, cl, mon) && !cl->floating) {
       nlayout++;
     }
@@ -1408,7 +1440,7 @@ makelayout(state_t* s, monitor_t* mon) {
  */
 void 
 resetlayoutsizes(state_t* s, monitor_t* mon) {
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->floating ||
       !clientonscreen(s, cl, mon)) continue;
 
@@ -1469,7 +1501,7 @@ tiledmaster(state_t* s, monitor_t* mon) {
   mon->layouts[deskidx].mastermaxed = false;
 
   uint32_t i = 0;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || 
       cl->desktop != mondesktop(s, cl->mon)->idx || 
       cl->mon != mon) continue;
@@ -1485,7 +1517,7 @@ tiledmaster(state_t* s, monitor_t* mon) {
   i = 0;
 
   float lastadd = 0.0f;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->floating ||
       cl->desktop != mondesktop(s, cl->mon)->idx || 
       cl->mon != mon) continue;
@@ -1544,7 +1576,7 @@ verticalstripes(state_t* s, monitor_t* mon) {
   int32_t gapsize     = mon->layouts[deskidx].gapsize;
 
   {
-    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
       if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
         || cl->mon != mon) continue;
       nwins++;
@@ -1582,7 +1614,7 @@ verticalstripes(state_t* s, monitor_t* mon) {
   
 
   float lastadd = 0.0f;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx || cl->mon != mon) continue;
 
     float winw = (float)w / nwins + cl->layoutsizeadd - lastadd;
@@ -1615,7 +1647,7 @@ horizontalstripes(state_t* s, monitor_t* mon) {
   int32_t gapsize     = mon->layouts[deskidx].gapsize;
 
   {
-    for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+    for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
       if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
         || cl->mon != mon) continue;
       nwins++;
@@ -1653,7 +1685,7 @@ horizontalstripes(state_t* s, monitor_t* mon) {
 
   float lastadd = 0.0f;
 
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx || cl->mon != mon) continue;
 
     float winh = (float)h / nwins + cl->layoutsizeadd - lastadd;
@@ -1686,7 +1718,7 @@ swapclients(state_t* s, client_t* c1, client_t* c2) {
 
   client_t *prev1 = NULL, 
 	   *prev2 = NULL, 
-	   *tmp = s->clients;
+	   *tmp = s->monfocus->clients;
 
   while (tmp && tmp != c1) {
     prev1 = tmp;
@@ -1695,7 +1727,7 @@ swapclients(state_t* s, client_t* c1, client_t* c2) {
 
   if (tmp == NULL) return;
 
-  tmp = s->clients;
+  tmp = s->monfocus->clients;
 
   while (tmp && tmp != c2) {
     prev2 = tmp;
@@ -1707,13 +1739,13 @@ swapclients(state_t* s, client_t* c1, client_t* c2) {
   if (prev1) {
     prev1->next = c2;
   } else { 
-    s->clients = c2;
+    s->monfocus->clients = c2;
   }
 
   if (prev2) {
     prev2->next = c1;
   } else { 
-    s->clients = c1;
+    s->monfocus->clients = c1;
   }
 
   tmp = c1->next;
@@ -1982,8 +2014,8 @@ void
 addtolayout(state_t* s, client_t* cl)  {
   cl->floating = false;
   // Add all fullscreened clients to the layout
-  for(client_t* it = s->clients; it != NULL; it = it->next) {
-    if(clientonscreen(s, it, s->monfocus) && it->fullscreen) {
+  for(client_t* it = s->monfocus->clients; it != NULL; it = it->next) {
+    if(it->fullscreen) {
       setfullscreen(s, it, false);
       it->floating = false; 
     }
@@ -2013,7 +2045,7 @@ enumartelayout(state_t* s, monitor_t* mon, uint32_t* nmaster, uint32_t* nslaves)
   } 
 
   uint32_t i = 0;
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
       || cl->mon != mon) continue;
     if(i >= *nmaster) {
@@ -2043,7 +2075,7 @@ isclientmaster(state_t* s, client_t* cl, monitor_t* mon) {
   uint32_t deskidx = mondesktop(s, mon)->idx;
   uint32_t nmaster = mon->layouts[deskidx].nmaster;
 
-  for(client_t* iter = s->clients; iter != NULL; iter = iter->next) {
+  for(client_t* iter = s->monfocus->clients; iter != NULL; iter = iter->next) {
     if(iter->floating ||
       iter->desktop != mondesktop(s, iter->mon)->idx || 
       iter->mon != mon) continue;
@@ -2114,7 +2146,7 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   client_t* cl = makeclient(s, map_ev->window);
 
   if(!cl->floating) {
-    for(client_t* it = s->clients; it != NULL; it = it->next) {
+    for(client_t* it = s->monfocus->clients; it != NULL; it = it->next) {
       if(clientonscreen(s, it, s->monfocus) && it->fullscreen) {
         setfullscreen(s, it, false);
         it->floating = false; 
@@ -2213,8 +2245,8 @@ evdestroynotify(state_t* s, xcb_generic_event_t* ev) {
  */
 void 
 eventernotify(state_t* s, xcb_generic_event_t* ev) {
-  xcb_enter_notify_event_t *enter_ev = (xcb_enter_notify_event_t*)ev;
   if(s->ignore_enter_layout) return;
+  xcb_enter_notify_event_t *enter_ev = (xcb_enter_notify_event_t*)ev;
 
   if((enter_ev->mode != XCB_NOTIFY_MODE_NORMAL || enter_ev->detail == XCB_NOTIFY_DETAIL_INFERIOR)
       && enter_ev->event != s->root) {
@@ -2237,12 +2269,14 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
     s->monfocus = mon;
     /* Reset border color to unactive for every client */
     client_t* cl;
-    for (cl = s->clients; cl != NULL; cl = cl->next) {
-      if(cl->fullscreen) {
-        continue;
+    for (monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+      for (cl = mon->clients; cl != NULL; cl = cl->next) {
+        if(cl->fullscreen) {
+          continue;
+        }
+        setbordercolor(s, cl, s->config.winbordercolor);
+        setborderwidth(s, cl, s->config.winborderwidth);
       }
-      setbordercolor(s, cl, s->config.winbordercolor);
-      setborderwidth(s, cl, s->config.winborderwidth);
     }
   }
 
@@ -2362,8 +2396,9 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   if((curtime - s->lastmotiontime) <= (1000.0 / s->config.motion_notify_debounce_fps)) {
     return;
   }
+  s->ignore_enter_layout = false;
   s->lastmotiontime = curtime;
-  if(motion_ev->event == s->root && !(motion_ev->state & s->config.modkey)) {
+  if(motion_ev->event == s->root) {
     // Update the focused monitor to the monitor under the cursor
     monitor_t* mon = cursormon(s);
     if(mon != s->monfocus) {
@@ -2684,24 +2719,26 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
  */
 void 
 releaseclient(state_t* s, xcb_window_t win) {
-  client_t** prev = &s->clients;
-  client_t* cl = s->clients;
-  /* Iterate throguh the clients to find the client thats 
+  for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    client_t** prev = &mon->clients;
+    client_t* cl = mon->clients;
+    /* Iterate throguh the clients to find the client thats 
    * associated with the window */
-  while(cl) {
-    if(cl->win == win) {
-      /* Setting the pointer to previous client to the next client 
+    while(cl) {
+      if(cl->win == win) {
+        /* Setting the pointer to previous client to the next client 
        * after the client we want to release, effectivly removing it
        * from our list of clients*/ 
-      *prev = cl->next;
-      // Freeing memory allocated for client
-      free(cl);
-      return;
+        *prev = cl->next;
+        // Freeing memory allocated for client
+        free(cl);
+        return;
+      }
+      // Advancing the client
+      prev = &cl->next;
+      cl = cl->next;
     }
-    // Advancing the client
-    prev = &cl->next;
-    cl = cl->next;
-  }
+  } 
 }
 
 /**
@@ -2716,10 +2753,13 @@ releaseclient(state_t* s, xcb_window_t win) {
 client_t*
 clientfromwin(state_t* s, xcb_window_t win) {
   client_t* cl;
-  for (cl = s->clients; cl != NULL; cl = cl->next) {
-    // If the window is found in the clients, return the client
-    if(cl->win == win) {
-      return cl;
+
+  for (monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    for (cl = mon->clients; cl != NULL; cl = cl->next) {
+      // If the window is found in the clients, return the client
+      if(cl->win == win) {
+        return cl;
+      }
     }
   }
   return NULL;
@@ -2742,7 +2782,7 @@ visibleclients(state_t* s, monitor_t* mon, bool tiled) {
   client_t* tail = &dummy;
   dummy.next = NULL;
 
-  client_t* current = s->clients;
+  client_t* current = s->monfocus->clients;
 
   while (current != NULL) {
     bool tiled_check = tiled ? current->floating : !tiled;
@@ -2775,6 +2815,7 @@ monitor_t* addmon(state_t* s, area_t a, uint32_t idx) {
   mon->idx      = idx;
   mon->desktopcount = 0;
   mon->activedesktops = malloc(sizeof(*mon->activedesktops) * s->config.maxdesktops);
+  mon->clients = NULL;
 
 
   // Initialize the layout properties of all virtual desktops on the monitor
@@ -3101,7 +3142,7 @@ ewmh_updateclients(state_t* s) {
   xcb_delete_property(s->con, s->root, s->ewmh_atoms[EWMHclientList]);
 
   client_t* cl;
-  for (cl = s->clients; cl != NULL; cl = cl->next) {
+  for (cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     xcb_change_property(s->con, XCB_PROP_MODE_APPEND, s->root, s->ewmh_atoms[EWMHclientList],
 	XCB_ATOM_WINDOW, 32, 1, &cl->win);
   }

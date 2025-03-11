@@ -127,6 +127,25 @@ void             setbordercolor(state_t* s, client_t* cl, uint32_t color);
  */
 void             setborderwidth(state_t* s, client_t* cl, uint32_t width);
 
+
+/**
+ * @brief Removes a given client from the linked list 
+ * of clients of a given monitor (not deallocating the client)
+ *
+ * @param mon The monitor to remove the client from 
+ * @param cl The client to remove 
+ */
+void              monremoveclient(monitor_t *mon, client_t *cl) ;
+
+/**
+ * @brief Adds a given client to the front of the linked list 
+ * of clients of a given monitor 
+ *
+ * @param mon The monitor to add the client to 
+ * @param cl The client to add 
+ */
+void            monaddclient(monitor_t *mon, client_t *cl);
+
 /**
  * @brief Moves the window of a given client and updates its area.
  *

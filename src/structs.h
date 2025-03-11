@@ -17,6 +17,7 @@ typedef struct passthrough_data_t passthrough_data_t;
 
 void terminate_successfully(state_t* s, passthrough_data_t data);
 void cyclefocusdown(state_t* s, passthrough_data_t data);
+void cyclefocusup(state_t* s, passthrough_data_t data);
 void killfocus(state_t* s, passthrough_data_t data);
 void togglefullscreen(state_t* s, passthrough_data_t data);
 void raisefocus(state_t* s, passthrough_data_t data);
@@ -34,6 +35,7 @@ void sethorizontalstripes(state_t* s, passthrough_data_t data);
 void setfloatingmode(state_t* s, passthrough_data_t data);
 void updatebarslayout(state_t* s, passthrough_data_t data);
 void cycledownlayout(state_t* s, passthrough_data_t data);
+void cycleuplayout(state_t* s, passthrough_data_t data);
 void addmasterlayout(state_t* s, passthrough_data_t data);
 void removemasterlayout(state_t* s, passthrough_data_t data);
 void incmasterarealayout(state_t* s, passthrough_data_t data);
@@ -371,6 +373,8 @@ struct monitor_t {
   named_desktop_t* activedesktops;
   uint32_t desktopcount;
   layout_props_t* layouts;
+
+  client_t* clients;
 };
 
 typedef struct {
@@ -441,7 +445,6 @@ struct state_t {
 
   bool ignore_enter_layout;
 
-  client_t* clients;
   client_t* focus;
 
   v2_t grabcursor;

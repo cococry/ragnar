@@ -179,6 +179,7 @@ const key_mapping_t keymappings[] = {
 const key_cb_mapping_t keycbmappings[] = {
     {"terminate_successfully", terminate_successfully},
     {"cyclefocusdown", cyclefocusdown},
+    {"cyclefocusup", cyclefocusup},
     {"killfocus", killfocus},
     {"togglefullscreen", togglefullscreen},
     {"raisefocus", raisefocus},
@@ -196,6 +197,7 @@ const key_cb_mapping_t keycbmappings[] = {
     {"setfloatingmode", setfloatingmode},
     {"updatebarslayout", updatebarslayout},
     {"cycledownlayout", cycledownlayout},
+    {"cycleuplayout", cycleuplayout},
     {"addmasterlayout", addmasterlayout},
     {"removemasterlayout", removemasterlayout},
     {"incmasterarealayout", incmasterarealayout},
@@ -683,9 +685,11 @@ reloadconfig(state_t* s, config_data_t* data) {
       if(curdesktop > mon->desktopcount) {
         switchdesktop(s, (passthrough_data_t){.i = mon->desktopcount - 1});
       }
-      for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-        if(cl->mon == mon && cl->desktop >= s->config.maxdesktops) {
-          switchclientdesktop(s, cl, s->config.maxdesktops - 1);
+      for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+        for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+          if(cl->mon == mon && cl->desktop >= s->config.maxdesktops) {
+            switchclientdesktop(s, cl, s->config.maxdesktops - 1);
+          }
         }
       }
     }
@@ -704,9 +708,11 @@ reloadconfig(state_t* s, config_data_t* data) {
 
   s->mapping_scratchpad_index = -1;
 
-  for(client_t* cl = s->clients; cl != NULL; cl = cl->next) {
-    setbordercolor(s, cl, s->config.winbordercolor);
-    setborderwidth(s, cl, s->config.winborderwidth);
+  for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+      setbordercolor(s, cl, s->config.winbordercolor);
+      setborderwidth(s, cl, s->config.winborderwidth);
+    }
   }
 
   for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
