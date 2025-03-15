@@ -25,6 +25,8 @@
 
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
+#include <X11/keysymdef.h>
+#include <X11/XF86keysym.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
@@ -166,11 +168,11 @@ setup(state_t* s) {
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
     XCB_EVENT_MASK_STRUCTURE_NOTIFY |
-    XCB_EVENT_MASK_BUTTON_PRESS | 
     XCB_EVENT_MASK_POINTER_MOTION | 
     XCB_EVENT_MASK_ENTER_WINDOW | 
-    XCB_EVENT_MASK_LEAVE_WINDOW | 
-    XCB_EVENT_MASK_PROPERTY_CHANGE
+    XCB_EVENT_MASK_PROPERTY_CHANGE |
+    XCB_EVENT_MASK_KEY_PRESS 
+
   };
   xcb_change_window_attributes_checked(s->con, s->root, XCB_CW_EVENT_MASK, evmask);
 
@@ -367,7 +369,15 @@ void managewins(state_t* s) {
       continue;
 
     if (wait_for_mapped(s, wins[i]) || getstate(s, wins[i]) == 3) {
-      makeclient(s, wins[i]);
+      client_t* cl = makeclient(s, wins[i]);
+      xcb_flush(s->con);
+
+      s->nwinstruts = 0;
+      getwinstruts(s, s->root);
+
+      if(!cl->floating) {
+        addtolayout(s, cl);
+      }
     }
 
     free(attr_reply);
@@ -411,7 +421,7 @@ client_t*
 makeclient(state_t* s, xcb_window_t win) {
   // Setup listened events for the mapped window
   {
-    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE|  XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_POINTER_MOTION_HINT};
+    uint32_t evmask[] = { XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE|  XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |  XCB_EVENT_MASK_KEY_PRESS }; 
     xcb_change_window_attributes_checked(s->con, win, XCB_CW_EVENT_MASK, evmask);
   }
 
@@ -494,10 +504,6 @@ makeclient(state_t* s, xcb_window_t win) {
   // If the cursor is on the mapped window when it spawned, focus it.
   if(pointinarea(cursor, cl->area)) {
     focusclient(s, cl, true);
-  }
-
-  if(!cl->floating) {
-    addtolayout(s, cl);
   }
 
   // Raise the newly created client over all other clients
@@ -2096,6 +2102,7 @@ isclientmaster(state_t* s, client_t* cl, monitor_t* mon) {
  * */
 void 
 removefromlayout(state_t* s, client_t* cl) {
+  if(cl->floating) return;
   cl->floating = true;
   resetlayoutsizes(s, s->monfocus); 
   makelayout(s, cl->mon);
@@ -2129,8 +2136,6 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   }
 
   if (wa_reply->override_redirect) {
-    // The window is not managed by the window manager
-    free(wa_reply);
     return;
   }
 
@@ -2144,6 +2149,11 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
 
   // Handle new client
   client_t* cl = makeclient(s, map_ev->window);
+  
+
+  if(!cl->floating) {
+    addtolayout(s, cl);
+  }
 
   if(!cl->floating) {
     for(client_t* it = s->monfocus->clients; it != NULL; it = it->next) {
@@ -2157,9 +2167,8 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   cl->scratchpad_index = s->mapping_scratchpad_index;
   cl->is_scratchpad = s->mapping_scratchpad_index != -1;
 
-  if(s->mapping_scratchpad_index == -1) {
-    makelayout(s, s->monfocus);
-  } else {
+  if(s->mapping_scratchpad_index != -1) {
+
     cl->floating = true;
 
     s->scratchpads[s->mapping_scratchpad_index] = (scratchpad_t) {
@@ -2170,8 +2179,10 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
     s->mapping_scratchpad_index = -1;
   }
 
+
   xcb_flush(s->con);
 }
+
 
 /**
  * @brief Handles a X unmap event by unmapping the window 
@@ -2297,6 +2308,15 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
   // Get associated keysym for the keycode of the event
   xcb_keysym_t keysym = getkeysym(s, e->detail);
 
+  if (keysym == XF86XK_AudioLowerVolume) {
+  logmsg(s,  LogLevelTrace, "lowered volume.\n"); 
+
+  }
+  else if (keysym == XF86XK_AudioRaiseVolume) {
+  logmsg(s,  LogLevelTrace, "uppered volume.\n"); 
+  }
+  else if (keysym == XF86XK_AudioMute) {
+  } else {
   /* Iterate throguh the keybinds and check if one of them was pressed. */
   for (uint32_t i = 0; i < s->config.numkeybinds; ++i) {
     // If it was pressed, call the callback of the keybind
@@ -2305,6 +2325,7 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
         s->config.keybinds[i].cb(s, s->config.keybinds[i].data);
       }
     }
+  }
   }
   xcb_flush(s->con);
 }
@@ -2393,7 +2414,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   // Throttle motiton notify events for performance and to avoid jiterring on certain 
   // high polling-rate mouses   
   uint32_t curtime = motion_ev->time;
-  if((curtime - s->lastmotiontime) <= (1000.0 / s->config.motion_notify_debounce_fps)) {
+  if((curtime - s->lastmotiontime) <= (1000.0 / 60)) {
     return;
   }
   s->ignore_enter_layout = false;
@@ -2416,23 +2437,6 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
   client_t* cl = clientfromwin(s, motion_ev->event);
 
-  if((!(motion_ev->state & s->config.movebtn) && 
-    !(motion_ev->state & s->config.resizebtn) && cl)) {
-    if(pointinarea(dragpos, cl->area)) {
-      monitor_t* mon = cl->mon; 
-      if(mon != s->monfocus) {
-        updateewmhdesktops(s, mon);
-      }
-      if(cl != s->focus) {
-        focusclient(s, cl, true);
-      }
-      s->monfocus = mon;
-
-    }
-    xcb_flush(s->con);
-    return;
-  }
-
   if(!(motion_ev->state & s->config.modkey)) return;
   if(!(motion_ev->state & s->config.resizebtn || motion_ev->state & s->config.movebtn)) return;
   if(!cl) return;
@@ -2445,6 +2449,11 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   // Move the window
   if(motion_ev->state & s->config.movebtn) {
     moveclient(s, cl, movedest);
+    if(!cl->floating) {
+      // Remove the client from the layout when the user moved it 
+      removefromlayout(s, cl);
+    }
+
   }
 
   // Resize the window
@@ -2458,12 +2467,6 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     resizeclient(s, cl, sizedest);
     cl->ignoreexpose = true;
   }
-
-  if(!cl->floating) {
-    // Remove the client from the layout when the user moved it 
-    removefromlayout(s, cl);
-  }
-
   xcb_flush(s->con);
 }
 

@@ -147,7 +147,14 @@ inline void cycledesktopdown(state_t* s, passthrough_data_t data) {
   if(newdesktop - 1 >= 0) {
     newdesktop--;
   } else {
-    newdesktop = s->config.maxdesktops - 1;
+    uint32_t ninit = 0;
+    for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
+      if(!s->monfocus->activedesktops[i].init) continue;
+      ninit++;
+    }
+    newdesktop = ninit - 1;
+
+
   }
   switchdesktop(s, (passthrough_data_t){.i = newdesktop});
 }
