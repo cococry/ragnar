@@ -2309,13 +2309,13 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
   xcb_keysym_t keysym = getkeysym(s, e->detail);
 
   if (keysym == XF86XK_AudioLowerVolume) {
-  logmsg(s,  LogLevelTrace, "lowered volume.\n"); 
-
+    runcmd(s, (passthrough_data_t){.cmd = "amixer sset Master 5%-"});
   }
   else if (keysym == XF86XK_AudioRaiseVolume) {
-  logmsg(s,  LogLevelTrace, "uppered volume.\n"); 
+    runcmd(s, (passthrough_data_t){.cmd = "amixer sset Master 5%+"});
   }
   else if (keysym == XF86XK_AudioMute) {
+    runcmd(s, (passthrough_data_t){.cmd = "amixer sset Master toggle"});
   } else {
   /* Iterate throguh the keybinds and check if one of them was pressed. */
   for (uint32_t i = 0; i < s->config.numkeybinds; ++i) {
