@@ -19,6 +19,7 @@ typedef enum {
   RgCommandGetCursor,
   RgCommandGetWindowArea,
   RgCommandReloadConfig,
+  RgCommandSwitchDesktop,
 } RgCommandType;
 
 typedef struct {
@@ -52,4 +53,6 @@ int32_t rg_cmd_get_cursor(Rgv2* cursor);
 int32_t rg_cmd_get_window_area(RgWindow win, RgArea* area);
 
 int32_t rg_cmd_reload_config(void);
+
+int32_t rg_cmd_switch_desktop(uint32_t desktop_id);
 

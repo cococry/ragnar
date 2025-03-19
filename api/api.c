@@ -453,3 +453,25 @@ rg_cmd_reload_config(void) {
   return 0;
 
 }
+
+int32_t 
+rg_cmd_switch_desktop(uint32_t desktop_id) {
+  socket_client_t cl;
+  establishconn(&cl);
+
+  uint32_t len = sizeof(uint32_t);
+  uint8_t data[len]; 
+  memcpy(data, &desktop_id, sizeof(desktop_id));
+  if(sendcmd(&cl, RgCommandSwitchDesktop, data, len) != 0) {
+    fprintf(stderr, "ragnar api: RgCommandSwitchDesktop: failed to send command.\n");
+    closeconn(&cl);
+    return 1;
+  }
+
+  if(s_logging) {
+    printf("ragnar api: RgCommandSwitchDesktop: successfully sent command.\n");
+  }
+  closeconn(&cl);
+  return 0;
+
+}

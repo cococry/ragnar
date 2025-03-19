@@ -204,75 +204,9 @@ inline void cyclefocusdesktopdown(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state
  * @param data The .i member is used as the desktop to switch to
  * */
-inline void switchdesktop(state_t* s, passthrough_data_t data) { 
-  if(!s->monfocus) return;
-  if(data.i == (int32_t)mondesktop(s, s->monfocus)->idx) return;
-
-  s->monfocus->activedesktops[data.i].init = true;
-
-
-  uint32_t desktopidx = 0;
-  uint32_t init_i = 0;
-  for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-    if(!s->monfocus->activedesktops[i].init) continue;
-    if(strcmp(s->monfocus->activedesktops[i].name, s->config.desktopnames[data.i]) == 0) {
-      desktopidx = init_i;
-      break;
-    }
-    init_i++;
-  }
-  // Notify EWMH for desktop change
-  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-      XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
-
-  uint32_t desktopcount = 0;
-  for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-    if(s->monfocus->activedesktops[i].init) {
-      desktopcount++;
-    }
-  }
-  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
-                      XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
-  uploaddesktopnames(s, s->monfocus);
-
-
-  for (client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-    if(cl->scratchpad_index != -1) continue;
-    // Hide the clients on the current desktop
-    if(cl->desktop == mondesktop(s, s->monfocus)->idx) {
-      hideclient(s, cl);
-      // Show the clients on the desktop we want to switch to
-    } else if((int32_t)cl->desktop == data.i) {
-      showclient(s, cl);
-    }
-  }
-
-  // Unfocus all selected clients
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-    unfocusclient(s, cl);
-  }
-
-  mondesktop(s, s->monfocus)->idx = data.i;
-  makelayout(s, s->monfocus);
-
-  logmsg(s, LogLevelTrace, "Switched virtual desktop on monitor %i to %i",
-      s->monfocus->idx, data.i);
-
-  s->ignore_enter_layout = false;
-
-  // Retrieving cursor position
-  bool cursor_success;
-  v2_t cursor = cursorpos(s, &cursor_success);
-  if(!cursor_success)  return;
-
-  // Focusing the client on the other desktop that is hovered
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-    if(pointinarea(cursor, cl->area)) {
-      focusclient(s, cl, false);
-      break;
-    }
-  }
-}
+inline void switchdesktop(state_t* s, passthrough_data_t data) {
+  switchmonitordesktop(s, data.i);
+ }
 
 
 /**
@@ -766,7 +700,7 @@ inline void movefocusup(state_t* s, passthrough_data_t data) {
     MIN(MAX(pos.y - s->config.keywinmove_step, s->monfocus->area.pos.y), 
         s->monfocus->area.pos.y + s->monfocus->area.size.y
         - s->focus->area.size.y)};
-  moveclient(s, s->focus, dest);
+  moveclient(s, s->focus, dest, true);
   s->ignore_enter_layout = true;
 }
 
@@ -786,7 +720,7 @@ inline void movefocusdown(state_t* s, passthrough_data_t data) {
     MIN(MAX(pos.y + s->config.keywinmove_step, s->monfocus->area.pos.y), 
         s->monfocus->area.pos.y + s->monfocus->area.size.y 
         - s->focus->area.size.y)};
-  moveclient(s, s->focus, dest);
+  moveclient(s, s->focus, dest, true);
   s->ignore_enter_layout = true;
 }
 
@@ -805,7 +739,7 @@ inline void movefocusleft(state_t* s, passthrough_data_t data) {
   v2_t dest = (v2_t){MIN(MAX(pos.x - s->config.keywinmove_step, s->monfocus->area.pos.x), 
       s->monfocus->area.pos.x + s->monfocus->area.size.x 
       - s->focus->area.size.x), pos.y};
-  moveclient(s, s->focus, dest);
+  moveclient(s, s->focus, dest, true);
   s->ignore_enter_layout = true;
 }
 
@@ -824,7 +758,7 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
   v2_t dest = (v2_t){MIN(MAX(pos.x + s->config.keywinmove_step, s->monfocus->area.pos.x), 
       s->monfocus->area.pos.x + s->monfocus->area.size.x 
       - s->focus->area.size.x), pos.y};
-  moveclient(s, s->focus, dest);
+  moveclient(s, s->focus, dest, true);
   s->ignore_enter_layout = true;
 }
 
@@ -841,20 +775,20 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
 inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   (void)data;
   if(!s->focus) return;
-  
   s->ignore_enter_layout = true;
 
   monitor_t* prevmon = NULL;
-  {
-    monitor_t* temp = s->monitors;
-
-    while (temp && temp->next != s->focus->mon) {
-      temp = temp->next;
+  if(s->focus->mon == s->monitors) {
+    for(monitor_t* mon = s->monitors; mon; mon = mon->next) {
+      prevmon = mon;
     }
-
-    if (temp && temp->next == s->focus->mon) {
-      prevmon = temp;
+  } else {
+  for(monitor_t* mon = s->monitors; mon && mon->next; mon = mon->next) {
+    if(mon->next == s->focus->mon) {
+      prevmon = mon;
+      break;
     }
+  }
   }
 
   if(!prevmon) return;
@@ -893,7 +827,14 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
     makelayout(s, s->focus->mon);
     s->focus->floating = floating;
 
-    moveclient(s, s->focus, dest);
+    moveclient(s, s->focus, dest, false);
+
+    monremoveclient(s->focus->mon, s->focus);
+    monaddclient(prevmon, s->focus);
+    s->focus->mon = prevmon;
+    updateewmhdesktops(s, s->focus->mon);
+    s->monfocus = s->focus->mon;
+    s->focus->desktop = mondesktop(s, s->focus->mon)->idx;
   }
 
   // Resizing
@@ -913,10 +854,6 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   if(fs) {
     setfullscreen(s, s->focus, true);
   }
-
-
-  s->monfocus = cursormon(s);
-  s->focus->mon = prevmon;
 }
 
 /**
@@ -934,7 +871,9 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
   s->ignore_enter_layout = true;
 
   monitor_t* nextmon = s->focus->mon->next;
-
+  if(!nextmon) {
+    nextmon = s->monitors; 
+  }
   if(!nextmon) return;
 
   area_t afocusmon = s->focus->mon->area;
@@ -971,8 +910,14 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
     removefromlayout(s, s->focus);
     makelayout(s, s->focus->mon);
     s->focus->floating = floating;
+    moveclient(s, s->focus, dest, false);
 
-    moveclient(s, s->focus, dest);
+    monremoveclient(s->focus->mon, s->focus);
+    monaddclient(nextmon, s->focus);
+    s->focus->mon = nextmon;
+    updateewmhdesktops(s, s->focus->mon);
+    s->monfocus = s->focus->mon;
+    s->focus->desktop = mondesktop(s, s->focus->mon)->idx;
   }
   // Resizing
   {
@@ -991,9 +936,6 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
   if(fs) {
     setfullscreen(s, s->focus, true);
   }
-
-  s->monfocus = cursormon(s);
-  s->focus->mon = nextmon;
 }
 
 inline void togglescratchpad(state_t* s, passthrough_data_t data) {

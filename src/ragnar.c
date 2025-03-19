@@ -488,7 +488,7 @@ makeclient(state_t* s, xcb_window_t win) {
     // Spawn the window in the center of the focused monitor
     moveclient(s, cl, (v2_t){
       s->monfocus->area.pos.x + (s->monfocus->area.size.x - cl->area.size.x) / 2.0f, 
-      s->monfocus->area.pos.y + (s->monfocus->area.size.y - cl->area.size.y) / 2.0f});
+      s->monfocus->area.pos.y + (s->monfocus->area.size.y - cl->area.size.y) / 2.0f}, true);
   }
 
   // Map the window
@@ -704,7 +704,7 @@ void monaddclient(monitor_t *mon, client_t *cl) {
  * @param pos The position to move the client to 
  */
 void
-moveclient(state_t* s, client_t* cl, v2_t pos) {
+moveclient(state_t* s, client_t* cl, v2_t pos, bool manage_mons) {
   if(!cl) {
     return;
   }
@@ -720,14 +720,16 @@ moveclient(state_t* s, client_t* cl, v2_t pos) {
   configclient(s, cl);
 
   // Update focused monitor in case the window was moved onto another monitor
-  cl->mon = clientmon(s, cl);
-  if(cl->mon != s->monfocus) {
-    monremoveclient(s->monfocus, cl);
-    monaddclient(cl->mon, cl);
-    updateewmhdesktops(s, cl->mon);
+  if(manage_mons){ 
+    cl->mon = clientmon(s, cl);
+    if(cl->mon != s->monfocus) {
+      monremoveclient(s->monfocus, cl);
+      monaddclient(cl->mon, cl);
+      updateewmhdesktops(s, cl->mon);
+    }
+    s->monfocus = cl->mon;
+    cl->desktop = mondesktop(s, cl->mon)->idx;
   }
-  s->monfocus = cl->mon;
-  cl->desktop = mondesktop(s, cl->mon)->idx;
 }
 
 /**
@@ -1372,6 +1374,84 @@ switchclientdesktop(state_t* s, client_t* cl, int32_t desktop) {
 }
 
 /**
+ * @brief Switches the currently selected desktop index to the given 
+ * index and notifies EWMH that there was a desktop change
+ *
+ * @param s The window manager's state
+ * @param desktop Used as the desktop to switch to
+ * */
+void 
+switchmonitordesktop(state_t* s, int32_t desktop) {
+ if(!s->monfocus) return;
+  if(desktop == (int32_t)mondesktop(s, s->monfocus)->idx) return;
+
+  s->monfocus->activedesktops[desktop].init = true;
+
+  uint32_t desktopidx = 0;
+  uint32_t init_i = 0;
+  for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
+    if(!s->monfocus->activedesktops[i].init) continue;
+    if(strcmp(s->monfocus->activedesktops[i].name, s->config.desktopnames[desktop]) == 0) {
+      desktopidx = init_i;
+      break;
+    }
+    init_i++;
+  }
+  // Notify EWMH for desktop change
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
+      XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
+
+  uint32_t desktopcount = 0;
+  for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
+    if(s->monfocus->activedesktops[i].init) {
+      desktopcount++;
+    }
+  }
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
+                      XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
+  uploaddesktopnames(s, s->monfocus);
+
+
+  for (client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+    if(cl->scratchpad_index != -1) continue;
+    // Hide the clients on the current desktop
+    if(cl->desktop == mondesktop(s, s->monfocus)->idx) {
+      hideclient(s, cl);
+      // Show the clients on the desktop we want to switch to
+    } else if((int32_t)cl->desktop == desktop) {
+      showclient(s, cl);
+    }
+  }
+
+  // Unfocus all selected clients
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+    unfocusclient(s, cl);
+  }
+
+  mondesktop(s, s->monfocus)->idx = desktop;
+  makelayout(s, s->monfocus);
+
+  logmsg(s, LogLevelTrace, "Switched virtual desktop on monitor %i to %i",
+      s->monfocus->idx, desktop);
+
+  s->ignore_enter_layout = false;
+
+  // Retrieving cursor position
+  bool cursor_success;
+  v2_t cursor = cursorpos(s, &cursor_success);
+  if(!cursor_success)  return;
+
+  // Focusing the client on the other desktop that is hovered
+  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+    if(pointinarea(cursor, cl->area)) {
+      focusclient(s, cl, false);
+      break;
+    }
+  }
+
+}
+
+/**
  * Returns how many client are currently in the layout on a 
  * given monitor.
  *
@@ -1551,7 +1631,7 @@ tiledmaster(state_t* s, monitor_t* mon) {
 
     moveclient(s, cl, (v2_t){
       (ismaster ? x : (int32_t)(x + wmaster)) + gapsize,
-      (ismaster ? ymaster : y) + gapsize});
+      (ismaster ? ymaster : y) + gapsize}, true);
     resizeclient(s, cl, (v2_t){
       ((singleclient ? w : width) 
       - cl->borderwidth * 2) - gapsize * 2,
@@ -1628,7 +1708,7 @@ verticalstripes(state_t* s, monitor_t* mon) {
 
     moveclient(s, cl, (v2_t){
       x + gapsize,
-      y + gapsize});
+      y + gapsize}, true);
     resizeclient(s, cl, (v2_t){
       winw - cl->borderwidth * 2 - gapsize * 2,
       h - cl->borderwidth * 2 - gapsize * 2});
@@ -1699,7 +1779,7 @@ horizontalstripes(state_t* s, monitor_t* mon) {
 
     moveclient(s, cl, (v2_t){
       x + gapsize,
-      y + gapsize});
+      y + gapsize}, true);
     resizeclient(s, cl, (v2_t){
       w - cl->borderwidth * 2 - gapsize * 2,
       winh - cl->borderwidth * 2 - gapsize * 2});
@@ -2308,15 +2388,6 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
   // Get associated keysym for the keycode of the event
   xcb_keysym_t keysym = getkeysym(s, e->detail);
 
-  if (keysym == XF86XK_AudioLowerVolume) {
-    runcmd(s, (passthrough_data_t){.cmd = "amixer sset Master 5%-"});
-  }
-  else if (keysym == XF86XK_AudioRaiseVolume) {
-    runcmd(s, (passthrough_data_t){.cmd = "amixer sset Master 5%+"});
-  }
-  else if (keysym == XF86XK_AudioMute) {
-    runcmd(s, (passthrough_data_t){.cmd = "amixer sset Master toggle"});
-  } else {
   /* Iterate throguh the keybinds and check if one of them was pressed. */
   for (uint32_t i = 0; i < s->config.numkeybinds; ++i) {
     // If it was pressed, call the callback of the keybind
@@ -2325,7 +2396,6 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
         s->config.keybinds[i].cb(s, s->config.keybinds[i].data);
       }
     }
-  }
   }
   xcb_flush(s->con);
 }
@@ -2420,6 +2490,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   s->ignore_enter_layout = false;
   s->lastmotiontime = curtime;
   if(motion_ev->event == s->root) {
+    s->ignore_enter_layout = false;
     // Update the focused monitor to the monitor under the cursor
     monitor_t* mon = cursormon(s);
     if(mon != s->monfocus) {
@@ -2448,7 +2519,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
 
   // Move the window
   if(motion_ev->state & s->config.movebtn) {
-    moveclient(s, cl, movedest);
+    moveclient(s, cl, movedest, true);
     if(!cl->floating) {
       // Remove the client from the layout when the user moved it 
       removefromlayout(s, cl);

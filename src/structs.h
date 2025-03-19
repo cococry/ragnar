@@ -125,6 +125,7 @@ typedef struct state_t state_t;
 
 typedef void (*keycallback_t)(state_t* s, passthrough_data_t data);
 
+
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;

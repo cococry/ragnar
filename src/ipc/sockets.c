@@ -42,6 +42,7 @@ static void cmdgetmonfocus(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetcursor(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdgetwinarea(state_t* s, const uint8_t* data, int32_t clientfd);
 static void cmdreloadconfig(state_t* s, const uint8_t* data, int32_t clientfd);
+static void cmdswitchdesktop(state_t* s, const uint8_t* data, int32_t clientfd);
 
 static void handlecmd(state_t* s, uint8_t cmdid, const uint8_t* data, 
                       size_t len, int32_t clientfd);
@@ -58,6 +59,7 @@ static cmd_data_t cmdhandlers[] = {
   { .handler = cmdgetcursor,    .len = 0,                     .type = RgCommandGetCursor },
   { .handler = cmdgetwinarea,   .len = sizeof(RgWindow),      .type = RgCommandGetWindowArea },
   { .handler = cmdreloadconfig, .len = 0,                     .type = RgCommandReloadConfig},
+  { .handler = cmdswitchdesktop, .len = sizeof(uint32_t),     .type = RgCommandSwitchDesktop},
 };
 
 client_t*
@@ -274,6 +276,17 @@ cmdreloadconfig(state_t* s, const uint8_t* data, int32_t clientfd) {
 
   reloadconfig(s, &s->config);
 }
+
+void 
+cmdswitchdesktop(state_t* s, const uint8_t* data, int32_t clientfd) {
+  (void)clientfd;
+  uint32_t desktop;
+  memcpy(&desktop, data, sizeof(uint32_t));
+  logmsg(s, LogLevelTrace, 
+         "ipc: RgCommandSwitchDesktop: received command.");
+
+  switchmonitordesktop(s, desktop);
+} 
 
 void 
 handlecmd(state_t* s, uint8_t cmdid, const uint8_t* data, size_t len, 

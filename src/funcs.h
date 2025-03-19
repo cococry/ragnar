@@ -135,7 +135,7 @@ void             setborderwidth(state_t* s, client_t* cl, uint32_t width);
  * @param mon The monitor to remove the client from 
  * @param cl The client to remove 
  */
-void              monremoveclient(monitor_t *mon, client_t *cl) ;
+void              monremoveclient(monitor_t *mon, client_t *cl);
 
 /**
  * @brief Adds a given client to the front of the linked list 
@@ -153,7 +153,7 @@ void            monaddclient(monitor_t *mon, client_t *cl);
  * @param cl The client to move 
  * @param pos The position to move the client to 
  */
-void             moveclient(state_t* s, client_t* cl, v2_t pos);
+void             moveclient(state_t* s, client_t* cl, v2_t pos, bool manage_mons);
 
 /**
  * @brief Resizes the window of a given client and updates its area.
@@ -373,6 +373,15 @@ void             setfullscreen(state_t* s, client_t* cl, bool fullscreen);
  * @param desktop The desktop to set the client of 
  */
 void             switchclientdesktop(state_t* s, client_t* cl, int32_t desktop);
+
+/**
+ * @brief Switches the currently selected desktop index to the given 
+ * index and notifies EWMH that there was a desktop change
+ *
+ * @param s The window manager's state
+ * @param desktop Used as the desktop to switch to
+ * */
+void             switchmonitordesktop(state_t* s, int32_t desktop);
 
 /**
  * @brief Returns how many client are currently in the layout on a 

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <time.h>
 #include <xcb/xcb.h>
+#include <X11/XF86keysym.h>
 #include <xcb/xproto.h>
 
 typedef struct {
@@ -174,7 +175,56 @@ const key_mapping_t keymappings[] = {
     {"KeySuper_L", KeySuper_L},
     {"KeySuper_R", KeySuper_R},
     {"KeyHyper_L", KeyHyper_L},
-    {"KeyHyper_R", KeyHyper_R}
+    {"KeyHyper_R", KeyHyper_R},
+    {"KeyLowerAudio", KeyHyper_R},
+
+  
+    {"KeyAudioLowerVolume", XF86XK_AudioLowerVolume},
+    {"KeyAudioRaiseVolume", XF86XK_AudioRaiseVolume},
+    {"KeyAudioMute", XF86XK_AudioMute},
+    {"KeyAudioPlay", XF86XK_AudioPlay},
+    {"KeyAudioStop", XF86XK_AudioStop},
+    {"KeyAudioPrev", XF86XK_AudioPrev},
+    {"KeyAudioNext", XF86XK_AudioNext},
+    {"KeyAudioRecord", XF86XK_AudioRecord},
+    {"KeyAudioRewind", XF86XK_AudioRewind},
+    {"KeyAudioForward", XF86XK_AudioForward},
+    {"KeyAudioPause", XF86XK_AudioPause},
+
+    {"KeyLaunchMail", XF86XK_Mail},
+    {"KeyLaunchMedia", XF86XK_AudioMedia},
+    {"KeyLaunchHome", XF86XK_HomePage},
+    {"KeyLaunchFavorites", XF86XK_Favorites},
+    {"KeyLaunchSearch", XF86XK_Search},
+
+    {"KeyBrightnessUp", XF86XK_MonBrightnessUp},
+    {"KeyBrightnessDown", XF86XK_MonBrightnessDown},
+    {"KeyScreenSaver", XF86XK_ScreenSaver},
+    {"KeySleep", XF86XK_Sleep},
+    {"KeyPowerOff", XF86XK_PowerOff},
+    {"KeyWakeUp", XF86XK_WakeUp},
+    
+    {"KeyCalculator", XF86XK_Calculator},
+    {"KeyFileManager", XF86XK_Explorer},
+    {"KeyTerminal", XF86XK_Terminal},
+    {"KeyWWW", XF86XK_WWW},
+    {"KeyMail", XF86XK_Mail},
+    
+    {"KeyBattery", XF86XK_Battery},
+    {"KeyBluetooth", XF86XK_Bluetooth},
+    {"KeyWLAN", XF86XK_WLAN},
+    {"KeyTouchpadToggle", XF86XK_TouchpadToggle},
+    {"KeyTouchpadOn", XF86XK_TouchpadOn},
+    {"KeyTouchpadOff", XF86XK_TouchpadOff},
+
+    {"KeyEject", XF86XK_Eject},
+    {"KeyRotateWindows", XF86XK_RotateWindows},
+    {"KeyClose", XF86XK_Close},
+
+    {"KeyAudioMicMute", XF86XK_AudioMicMute},
+    {"KeyKbdBrightnessUp", XF86XK_KbdBrightnessUp},
+    {"KeyKbdBrightnessDown", XF86XK_KbdBrightnessDown},
+    {"KeyKbdLightOnOff", XF86XK_KbdLightOnOff}
 };
 const key_cb_mapping_t keycbmappings[] = {
     {"terminate_successfully", terminate_successfully},
