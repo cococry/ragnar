@@ -1,6 +1,4 @@
-boron &
 setxkbmap -option caps:escape &
 xrandr --output HDMI-A-1 --mode 2560x1440 --rate 165
-setxkbmap us &
 nitrogen --restore &
 rgconfwatch &
