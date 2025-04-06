@@ -511,6 +511,19 @@ void             loaddefaultcursor(state_t* s);
  * */
 v2_t            applysizehints(state_t* s, client_t* cl, v2_t size);
 
+
+/**
+ * @brief Returns the layering order in EWMH that is 
+ * set for a given client (checks for macros like 
+ * _NET_WM_STATE_ABOVE, _NET_WM_STATE_BELOW)
+ *
+ * @param s the state of the window manager  
+ * @param cl the client for checking the layering order 
+ *
+ * @return The layering order enum for the given client 
+ */ 
+layering_order_t clientlayering(state_t* s, client_t* cl);
+
 /**
  * @brief Adds a given client to the current tiling layout
  *
@@ -877,3 +890,4 @@ void 		         logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list 
  *
  * @return The output of the given command */ 
 char* 		       cmdoutput(const char* cmd);
+

@@ -811,6 +811,22 @@ raiseclient(state_t* s, client_t* cl) {
   uint32_t config[] = { XCB_STACK_MODE_ABOVE };
   // Change the configuration of the window to be above 
   xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_STACK_MODE, config);
+  for(client_t* ci = s->monfocus->clients; ci != NULL; ci = ci->next) {
+    if(ci->desktop != mondesktop(s, s->monfocus)->idx) break;
+    switch(clientlayering(s, ci)) {
+      case LayeringOrderAbove: 
+        xcb_configure_window(s->con, ci->frame, 
+                             XCB_CONFIG_WINDOW_STACK_MODE, config);
+        break;
+      case LayeringOrderBelow: {
+        uint32_t config_below[] = { XCB_STACK_MODE_BELOW };
+        xcb_configure_window(s->con, ci->frame, 
+                           XCB_CONFIG_WINDOW_STACK_MODE, config_below);
+        break;
+      } 
+      default: break;
+    }
+  }
 }
 
 
@@ -1935,6 +1951,8 @@ setupatoms(state_t* s) {
   s->ewmh_atoms[EWMHname]              = getatom(s, "_NET_WM_NAME");
   s->ewmh_atoms[EWMHstate]             = getatom(s, "_NET_WM_STATE");
   s->ewmh_atoms[EWMHstateHidden]       = getatom(s, "_NET_WM_STATE_HIDDEN");
+  s->ewmh_atoms[EWMHstateAbove]        = getatom(s, "_NET_WM_STATE_ABOVE");
+  s->ewmh_atoms[EWMHstateBelow]        = getatom(s, "_NET_WM_STATE_BELOW");
   s->ewmh_atoms[EWMHcheck]             = getatom(s, "_NET_SUPPORTING_WM_CHECK");
   s->ewmh_atoms[EWMHfullscreen]        = getatom(s, "_NET_WM_STATE_FULLSCREEN");
   s->ewmh_atoms[EWMHwindowType]        = getatom(s, "_NET_WM_WINDOW_TYPE");
@@ -2089,6 +2107,49 @@ applysizehints(state_t* s, client_t* cl, v2_t size) {
   return size;
 }
 
+
+/**
+ * @brief Returns the layering order in EWMH that is 
+ * set for a given client (checks for macros like 
+ * _NET_WM_STATE_ABOVE, _NET_WM_STATE_BELOW)
+ *
+ * @param s the state of the window manager  
+ * @param cl the client for checking the layering order 
+ *
+ * @return The layering order enum for the given client 
+ */ 
+layering_order_t
+clientlayering(state_t* s, client_t* cl) {
+  xcb_get_property_cookie_t cookie = xcb_get_property(
+    s->con,
+    0,
+    cl->win,
+    s->ewmh_atoms[EWMHstate],
+    XCB_ATOM_ATOM,
+    0,
+    1024
+  );
+
+  xcb_get_property_reply_t* reply = xcb_get_property_reply(s->con, 
+                                                           cookie, NULL);
+  if (!reply) return false;
+
+  uint32_t len = xcb_get_property_value_length(reply) / sizeof(xcb_atom_t);
+  xcb_atom_t* atoms = (xcb_atom_t*)xcb_get_property_value(reply);
+
+  layering_order_t order = LayeringOrderNormal;
+  for (uint32_t i = 0; i < len; ++i) {
+    if (atoms[i] == s->ewmh_atoms[EWMHstateAbove]) {
+      order = LayeringOrderAbove;
+      break;
+    } else if(atoms[i] == s->ewmh_atoms[EWMHstateBelow]) {
+      order = LayeringOrderBelow;
+      break;
+    }
+  }
+  free(reply);
+  return order;
+}
 
 /**
  * @brief Adds a given client to the current tiling layout

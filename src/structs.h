@@ -83,13 +83,21 @@ typedef enum {
   LayoutTiledMaster,
   LayoutVerticalStripes,
   LayoutHorizontalStripes
-} layout_type_t; 
+} layout_type_t;
+
+typedef enum {
+  LayeringOrderNormal = 0,
+  LayeringOrderBelow,
+  LayeringOrderAbove,
+} layering_order_t;
 
 typedef enum {
   EWMHsupported = 0, 
   EWMHname, 
   EWMHstate, 
-  EWMHstateHidden, 
+  EWMHstateHidden,
+  EWMHstateAbove,
+  EWMHstateBelow,
   EWMHcheck,
   EWMHfullscreen, 
   EWMHactiveWindow, 
