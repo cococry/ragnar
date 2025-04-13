@@ -356,7 +356,7 @@ struct client_t {
   uint32_t desktop;
 
 
-  bool urgent, ignoreunmap, ignoreexpose, decorated; 
+  bool urgent, ignoreunmap, ignoreexpose, decorated, neverfocus; 
 
   v2_t minsize;
   v2_t maxsize;

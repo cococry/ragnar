@@ -666,6 +666,9 @@ void             evpropertynotify(state_t* s, xcb_generic_event_t* ev);
  */
 void             evclientmessage(state_t* s, xcb_generic_event_t* ev);
 
+void             evfocusin(state_t* s, xcb_generic_event_t* ev);
+
+
 
 /**
  * @brief Adds a client window to the linked list of clients
@@ -747,6 +750,9 @@ monitor_t*       monbyarea(state_t* s, area_t a);
  * Returns the first monitor if the given client is not contained within
  */
 monitor_t*       clientmon(state_t* s, client_t* cl);
+
+
+void             updateclienthints(state_t* s, client_t* cl);
 
 /**
  * @brief Returns the currently selected virtual desktop on 
@@ -831,6 +837,7 @@ void             getwinstruts(state_t* s, xcb_window_t win);
  * any atom.
  * */
 xcb_atom_t       getatom(state_t* s, const char* atomstr);
+
 
 /**
  * 

@@ -56,6 +56,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_CONFIGURE_NOTIFY]    = evconfignotify,
   [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
   [XCB_CLIENT_MESSAGE]      = evclientmessage,
+  [XCB_FOCUS_IN]            = evfocusin,
 };
 
 /* --- Static functions to handle another running X window manager */
@@ -464,6 +465,9 @@ makeclient(state_t* s, xcb_window_t win) {
   // Set window type of client (e.g dialog)
   setwintype(s, cl);
 
+  // Update hints like urgency and neverfocus
+  updateclienthints(s, cl);
+
   // Set client's monitor
   cl->mon = clmon; 
   cl->desktop = mondesktop(s, s->monfocus)->idx;
@@ -709,7 +713,7 @@ moveclient(state_t* s, client_t* cl, v2_t pos, bool manage_mons) {
     return;
   }
   int32_t posval[2] = {
-    (uint32_t)pos.x, (uint32_t)pos.y
+    (int32_t)pos.x, (int32_t)pos.y
   };
 
   // Move the window by configuring it's x and y position property
@@ -1006,6 +1010,7 @@ focusclient(state_t* s, client_t* cl, bool upload_ewmh_desktops) {
  */
 void
 setxfocus(state_t* s, client_t* cl) {
+  if(cl->neverfocus) return;
   // Set input focus to client
   xcb_set_input_focus(s->con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
 
@@ -1090,6 +1095,7 @@ unfocusclient(state_t* s, client_t* cl) {
   xcb_delete_property(s->con, s->root, s->ewmh_atoms[EWMHactiveWindow]);
 
   cl->ignoreexpose = false;
+  s->focus = NULL;
 }
 
 void 
@@ -1143,7 +1149,14 @@ void
 hideclient(state_t* s, client_t* cl) {
   cl->ignoreunmap = true;
   cl->hidden = true;
-  xcb_unmap_window(s->con, cl->frame);
+  int32_t posval[2] = {
+    -cl->area.size.x, 0, 
+  };
+  int32_t sizeval[2] = {
+    0, 0
+  };
+  xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, posval);
+  xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
 }
 
 /*
@@ -1155,7 +1168,8 @@ hideclient(state_t* s, client_t* cl) {
 void
 showclient(state_t* s, client_t* cl) {
   cl->hidden = false;
-  xcb_map_window(s->con, cl->frame);
+  moveclient(s, cl, cl->area.pos, false);
+  resizeclient(s, cl, cl->area.size);
 }
 
 /**
@@ -2801,6 +2815,14 @@ evclientmessage(state_t* s, xcb_generic_event_t* ev) {
   xcb_flush(s->con);
 }
 
+void 
+evfocusin(state_t* s, xcb_generic_event_t* ev) {
+  xcb_focus_in_event_t* focus_in_ev = (xcb_focus_in_event_t*)ev; 
+  if(s->focus && s->focus->win != focus_in_ev->event) {
+    setxfocus(s, s->focus); 
+  }
+}
+
 /**
  * @brief Adds a client window to the linked list of clients->
  *
@@ -2829,6 +2851,8 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
   cl->floating = getcurlayout(s, s->monfocus) == LayoutFloating;
   cl->name = getclientname(s, cl);
   cl->layoutsizeadd = 0;
+  cl->urgent = false;
+  cl->neverfocus = false;
 
   // Create frame window for the client
   frameclient(s, cl);
@@ -3026,6 +3050,30 @@ clientmon(state_t* s, client_t* cl) {
     }
   }
   return ret;
+}
+
+void 
+updateclienthints(state_t* s, client_t* cl) {
+  xcb_icccm_wm_hints_t hints;
+  xcb_get_property_cookie_t cookie;
+
+  cookie = xcb_icccm_get_wm_hints(s->con, cl->win);
+  if (!xcb_icccm_get_wm_hints_reply(s->con, cookie, &hints, NULL))
+    return;
+
+  if (cl == s->focus && (hints.flags & XCB_ICCCM_WM_HINT_X_URGENCY)) {
+    // Clear the urgency flag
+    hints.flags &= ~XCB_ICCCM_WM_HINT_X_URGENCY;
+    xcb_icccm_set_wm_hints(s->con, cl->win, &hints);
+    xcb_flush(s->con);
+  } else {
+    cl->urgent = (hints.flags & XCB_ICCCM_WM_HINT_X_URGENCY) ? 1 : 0;
+  }
+
+  if (hints.flags & XCB_ICCCM_WM_HINT_INPUT)
+    cl->neverfocus = !hints.input;
+  else
+    cl->neverfocus = false;
 }
 
 
