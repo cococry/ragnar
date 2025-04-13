@@ -1150,7 +1150,7 @@ hideclient(state_t* s, client_t* cl) {
   cl->ignoreunmap = true;
   cl->hidden = true;
   int32_t posval[2] = {
-    -cl->area.size.x, 0, 
+    -cl->area.size.x, cl->area.pos.x, 
   };
   int32_t sizeval[2] = {
     0, 0
