@@ -498,6 +498,8 @@ void             grabkeybinds(state_t* s);
  * */
 void             loaddefaultcursor(state_t* s);
 
+bool             iswindowpopup(state_t* s, xcb_window_t win); 
+
 /**
  * @brief Takes in a size for a client window and adjusts it 
  * if it does not meet the requirements of the client's hints.
@@ -553,6 +555,7 @@ void            enumartelayout(state_t* s, monitor_t* mon, uint32_t* nmaster, ui
  * */
 bool            isclientmaster(state_t* s, client_t* cl, monitor_t* mon);
 
+
 /**
  * @brief Removes a given client from the current tiling layout
  *
@@ -571,6 +574,8 @@ void            removefromlayout(state_t* s, client_t* cl);
  * @param ev The generic event 
  */
 void             evmaprequest(state_t* s, xcb_generic_event_t* ev);
+
+void             evmapnotify(state_t* s, xcb_generic_event_t* ev);
 
 /**
  * @brief Handles a X unmap event by unmapping the window 
@@ -700,6 +705,8 @@ void             releaseclient(state_t* s, xcb_window_t win);
  * @return The client associated with the given window (NULL if no associated client)
  */
 client_t*        clientfromwin(state_t* s, xcb_window_t win);
+
+client_t*        clientfromframe(state_t* s, xcb_window_t frame);
 
 
 /**

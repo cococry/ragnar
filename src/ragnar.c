@@ -1,3 +1,4 @@
+#include <X11/X.h>
 #include <stdint.h>
 
 #include <stdio.h>
@@ -42,11 +43,11 @@
 
 #include "funcs.h"
 #include "keycallbacks.h"
-
 /* */
 static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_MAP_REQUEST]         = evmaprequest,
   [XCB_UNMAP_NOTIFY]        = evunmapnotify,
+  [XCB_MAP_NOTIFY]          = evmapnotify,
   [XCB_DESTROY_NOTIFY]      = evdestroynotify,
   [XCB_ENTER_NOTIFY]        = eventernotify,
   [XCB_KEY_PRESS]           = evkeypress,
@@ -113,6 +114,7 @@ setup(state_t* s) {
   signal(SIGTERM, sigchld_handler);
   signal(SIGQUIT, sigchld_handler);
 
+  vector_init(&s->popups); 
 
   initconfig(s);
   readconfig(s, &s->config);
@@ -164,18 +166,25 @@ setup(state_t* s) {
   s->root = screen->root;
   s->screen = screen;
 
-  /* Setting event mask for root window */
-  uint32_t evmask[] = {
+  uint32_t evmask =
     XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
     XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
     XCB_EVENT_MASK_STRUCTURE_NOTIFY |
     XCB_EVENT_MASK_POINTER_MOTION | 
     XCB_EVENT_MASK_ENTER_WINDOW | 
     XCB_EVENT_MASK_PROPERTY_CHANGE |
-    XCB_EVENT_MASK_KEY_PRESS 
+    XCB_EVENT_MASK_KEY_PRESS;
 
-  };
-  xcb_change_window_attributes_checked(s->con, s->root, XCB_CW_EVENT_MASK, evmask);
+  xcb_void_cookie_t cookie = xcb_change_window_attributes_checked(
+    s->con, s->root, XCB_CW_EVENT_MASK, &evmask);
+
+  xcb_generic_error_t* err = xcb_request_check(s->con, cookie);
+  if (err) {
+    fprintf(stderr, "ragnar: xcb_change_window_attributes failed (likely another WM is running)\n");
+    free(err);
+    terminate(s, 1);
+  }
+
 
   // Load the default root cursor image
   loaddefaultcursor(s);
@@ -352,6 +361,8 @@ void managewins(state_t* s) {
     attr_cookie = xcb_get_window_attributes(s->con, wins[i]);
     attr_reply = xcb_get_window_attributes_reply(s->con, attr_cookie, NULL);
     if (!attr_reply || attr_reply->override_redirect) {
+      uint32_t config[] = { XCB_STACK_MODE_ABOVE };
+      xcb_configure_window(s->con, wins[i], XCB_CONFIG_WINDOW_STACK_MODE, config);
       if(attr_reply)
         free(attr_reply);
       continue;
@@ -825,12 +836,21 @@ raiseclient(state_t* s, client_t* cl) {
       case LayeringOrderBelow: {
         uint32_t config_below[] = { XCB_STACK_MODE_BELOW };
         xcb_configure_window(s->con, ci->frame, 
-                           XCB_CONFIG_WINDOW_STACK_MODE, config_below);
+                             XCB_CONFIG_WINDOW_STACK_MODE, config_below);
         break;
       } 
       default: break;
     }
   }
+
+  for(uint32_t i = 0; i < s->popups.size; i++) {
+    uint32_t popup_config[] = { !cl->fullscreen ? XCB_STACK_MODE_ABOVE  : XCB_STACK_MODE_BELOW };
+    xcb_configure_window(s->con, s->popups.items[i], 
+                         XCB_CONFIG_WINDOW_STACK_MODE, popup_config);
+  }
+
+
+  xcb_flush(s->con);
 }
 
 
@@ -1150,7 +1170,7 @@ hideclient(state_t* s, client_t* cl) {
   cl->ignoreunmap = true;
   cl->hidden = true;
   int32_t posval[2] = {
-    -cl->area.size.x - cl->borderwidth - 5, cl->area.pos.y, 
+    cl->area.pos.x, -(cl->area.size.y + cl->borderwidth + 10) 
   };
   int32_t sizeval[2] = {
     0, 0
@@ -1337,7 +1357,10 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
 
   cl->fullscreen = fullscreen;
   if(cl->fullscreen) {
-    xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 1, &s->ewmh_atoms[EWMHfullscreen]);
+    xcb_change_property(
+      s->con, XCB_PROP_MODE_REPLACE, cl->win, 
+      s->ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 
+      32, 1, &s->ewmh_atoms[EWMHfullscreen]);
     // Store previous position of client
     cl->area_prev = cl->area;
     // Store previous floating state of client
@@ -1350,7 +1373,10 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
     // Unset border of client if it's fullscreen
     cl->borderwidth = 0;
   } else {
-    xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->ewmh_atoms[EWMHstate], XCB_ATOM_ATOM, 32, 0, 0); 
+    xcb_change_property(
+      s->con, XCB_PROP_MODE_REPLACE, 
+      cl->win, s->ewmh_atoms[EWMHstate], 
+      XCB_ATOM_ATOM, 32, 0, 0); 
     // Set the client's area to the area before the last fullscreen occured 
     cl->area = cl->area_prev;
     cl->floating = cl->floating_prev;
@@ -1367,6 +1393,7 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
 
   // Raise fullscreened clients
   raiseclient(s, cl);
+
 
   // If the client is 'sudo fullscreen', fullscreen it on the WM
   if(cl->area.size.x >= cl->mon->area.size.x && cl->area.size.y >= cl->mon->area.size.y && !cl->fullscreen) {
@@ -1971,6 +1998,7 @@ setupatoms(state_t* s) {
   s->ewmh_atoms[EWMHfullscreen]        = getatom(s, "_NET_WM_STATE_FULLSCREEN");
   s->ewmh_atoms[EWMHwindowType]        = getatom(s, "_NET_WM_WINDOW_TYPE");
   s->ewmh_atoms[EWMHwindowTypeDialog]  = getatom(s, "_NET_WM_WINDOW_TYPE_DIALOG");
+  s->ewmh_atoms[EWMHwindowTypePopup]  = getatom(s, "_NET_WM_WINDOW_TYPE_POPUP_MENU");
   s->ewmh_atoms[EWMHclientList]        = getatom(s, "_NET_CLIENT_LIST");
   s->ewmh_atoms[EWMHcurrentDesktop]    = getatom(s, "_NET_CURRENT_DESKTOP");
   s->ewmh_atoms[EWMHnumberOfDesktops]  = getatom(s, "_NET_NUMBER_OF_DESKTOPS");
@@ -2077,6 +2105,36 @@ loaddefaultcursor(state_t* s) {
   xcb_cursor_context_free(context);
 
   logmsg(s,  LogLevelTrace, "loaded cursor image '%s'.", s->config.cursorimage);
+}
+
+bool             
+iswindowpopup(state_t* s, xcb_window_t win) {
+  xcb_atom_t typeatom = s->ewmh_atoms[EWMHwindowType]; 
+  xcb_atom_t popupatom = s->ewmh_atoms[EWMHwindowTypePopup]; 
+
+  if (typeatom == XCB_ATOM_NONE || popupatom == XCB_ATOM_NONE)
+    return false;
+
+  xcb_get_property_cookie_t prop_cookie = xcb_get_property(
+    s->con, 0, win, typeatom, XCB_ATOM_ATOM, 0, 32);
+  xcb_get_property_reply_t* prop_reply = xcb_get_property_reply(s->con, prop_cookie, NULL);
+  if (!prop_reply)
+    return false;
+
+  bool ispopup = false;
+  if (xcb_get_property_value_length(prop_reply) > 0) {
+    xcb_atom_t* atoms = (xcb_atom_t*) xcb_get_property_value(prop_reply);
+    int len = xcb_get_property_value_length(prop_reply) / sizeof(xcb_atom_t);
+    for (int i = 0; i < len; ++i) {
+      if (atoms[i] == popupatom) {
+        ispopup = true;
+        break;
+      }
+    }
+  }
+
+  free(prop_reply);
+  return ispopup;
 }
 
 /**
@@ -2280,6 +2338,7 @@ void
 evmaprequest(state_t* s, xcb_generic_event_t* ev) {
   xcb_map_request_event_t* map_ev = (xcb_map_request_event_t*)ev;
 
+  logmsg(s, LogLevelTrace, "Got map request: %i", map_ev->window);
   // Retrieve attributes of the mapped window
   xcb_get_window_attributes_cookie_t wa_cookie = xcb_get_window_attributes(s->con, map_ev->window);
   xcb_get_window_attributes_reply_t *wa_reply = xcb_get_window_attributes_reply(s->con, wa_cookie, NULL);
@@ -2334,9 +2393,85 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
     s->mapping_scratchpad_index = -1;
   }
 
-
   xcb_flush(s->con);
 }
+void 
+evmapnotify(state_t* s, xcb_generic_event_t* ev) {
+  xcb_map_notify_event_t* notify_ev = (xcb_map_notify_event_t*)ev;
+  xcb_get_window_attributes_cookie_t wa_cookie = xcb_get_window_attributes(s->con, notify_ev->window);
+  xcb_get_window_attributes_reply_t *wa_reply = xcb_get_window_attributes_reply(s->con, wa_cookie, NULL);
+  if (!wa_reply) {
+    return;
+  }
+
+  if(iswindowpopup(s, notify_ev->window)) {
+    vector_append(&s->popups, notify_ev->window);
+    uint32_t popup_config[] = { XCB_STACK_MODE_ABOVE };
+    xcb_configure_window(s->con, notify_ev->window, 
+                         XCB_CONFIG_WINDOW_STACK_MODE, popup_config);
+    xcb_flush(s->con);
+  }
+
+}
+
+void focus_top_client_under_cursor(state_t* s, xcb_connection_t *conn, xcb_window_t root) {
+    // Get pointer position
+    xcb_query_pointer_cookie_t pointer_cookie = xcb_query_pointer(conn, root);
+    xcb_query_pointer_reply_t *pointer_reply = xcb_query_pointer_reply(conn, pointer_cookie, NULL);
+    if (!pointer_reply)
+    return;
+
+  int pointer_x = pointer_reply->root_x;
+  int pointer_y = pointer_reply->root_y;
+  free(pointer_reply);
+
+  // Get window stacking order (topmost last)
+  xcb_query_tree_cookie_t tree_cookie = xcb_query_tree(conn, root);
+  xcb_query_tree_reply_t *tree_reply = xcb_query_tree_reply(conn, tree_cookie, NULL);
+  if (!tree_reply)
+    return;
+
+  int len = xcb_query_tree_children_length(tree_reply);
+  xcb_window_t *children = xcb_query_tree_children(tree_reply);
+
+  // Check each window from top to bottom
+  for (int i = len - 1; i >= 0; i--) {
+    xcb_window_t win = children[i];
+
+    // Get window geometry
+    xcb_get_geometry_cookie_t geo_cookie = xcb_get_geometry(conn, win);
+    xcb_get_geometry_reply_t *geo = xcb_get_geometry_reply(conn, geo_cookie, NULL);
+    if (!geo)
+      continue;
+
+    int x = geo->x;
+    int y = geo->y;
+    int w = geo->width;
+    int h = geo->height;
+    free(geo);
+
+    // Check if pointer is inside this window
+  
+    if (pointer_x >= x && pointer_x < x + w &&
+      pointer_y >= y && pointer_y < y + h) {
+      logmsg(s, LogLevelTrace, "Win %i\n", win);
+      logmsg(s, LogLevelTrace, "===============");
+      for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+        logmsg(s, LogLevelTrace, "Client %i\n", cl->win);
+        logmsg(s, LogLevelTrace, "Client Frame %i\n", cl->frame);
+      }
+      logmsg(s, LogLevelTrace, "===============");
+      client_t* c = clientfromframe(s, win);
+      if (c) {
+        focusclient(s, c, false);
+        break;
+      }
+    }
+  }
+
+  free(tree_reply);
+}
+
 
 
 /**
@@ -2350,13 +2485,25 @@ void
 evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
   // Retrieve the event
   xcb_unmap_notify_event_t* unmap_ev = (xcb_unmap_notify_event_t*)ev;
+  if(iswindowpopup(s, unmap_ev->window)) {
+    logmsg(s, LogLevelTrace, "remoed popup window. ", unmap_ev->window); 
+    int32_t idx = -1;
+    for(uint32_t i = 0; i < s->popups.size; i++) {
+      if(s->popups.items[i] == unmap_ev->window) {
+        idx = i;
+        break;
+      }
+    }
+    if(idx == -1) return;
+    vector_remove_by_idx(&s->popups, idx);
+    focus_top_client_under_cursor(s, s->con, s->root);
+  }
 
   client_t* cl = clientfromwin(s, unmap_ev->window);
   if(cl && cl->ignoreunmap) {
     cl->ignoreunmap = false;
     return;
   }
-
 
   if(cl) {
     if(cl->is_scratchpad) {
@@ -2922,6 +3069,22 @@ clientfromwin(state_t* s, xcb_window_t win) {
     }
   }
   return NULL;
+}
+
+client_t*
+clientfromframe(state_t* s, xcb_window_t frame) {
+  client_t* cl;
+
+  for (monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    for (cl = mon->clients; cl != NULL; cl = cl->next) {
+      // If the window frame is found in the clients, return the client
+      if(cl->frame == frame) {
+        return cl;
+      }
+    }
+  }
+  return NULL;
+
 }
 
 /**

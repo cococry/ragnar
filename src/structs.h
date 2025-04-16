@@ -65,6 +65,44 @@ void reloadconfigfile(state_t* s, passthrough_data_t data);
 #define MWM_HINTS_DECORATIONS   2
 #define MWM_DECOR_ALL           1
 
+#define VEC_INIT_CAP 4
+
+#define vector_init(vec)                                                          \
+do {                                                                              \
+  (vec)->items = malloc(sizeof(*(vec)) * VEC_INIT_CAP);                           \
+  (vec)->size = 0;                                                                \
+  (vec)->cap = 0;                                                                 \
+} while (0)
+
+#define vector_free(vec)                                                          \
+do {                                                                              \
+  if((vec)->items) {                                                              \
+    free((vec)->items);                                                           \
+    (vec)->items = NULL;                                                          \
+  }                                                                               \
+  (vec)->size = 0;                                                                \
+  (vec)->cap = 0;                                                                 \
+} while (0)
+
+#define vector_remove_by_idx(vec, idx)                                            \
+do {                                                                              \
+  for (uint32_t _i = (idx); _i < (vec)->size - 1; _i++) {                         \
+  (vec)->items[_i] = (vec)->items[_i + 1];                                        \
+  }                                                                               \
+  (vec)->size--;                                                                  \
+} while (0)                                                                       
+
+#define vector_append(vec, item)                                                  \
+do {                                                                              \
+  if ((vec)->size >= (vec)->cap) {                                                \
+    (vec)->cap = (vec)->cap == 0 ? VEC_INIT_CAP : (vec)->cap*2;                   \
+    (vec)->items = realloc((vec)->items, (vec)->cap*sizeof(*(vec)->items));       \
+  }                                                                               \
+  (vec)->items[(vec)->size++] = (item);                                           \
+} while (0)
+
+
+
 typedef enum {
   Shift     = XCB_MOD_MASK_SHIFT,
   Control   = XCB_MOD_MASK_CONTROL,
@@ -103,6 +141,7 @@ typedef enum {
   EWMHactiveWindow, 
   EWMHwindowType,
   EWMHwindowTypeDialog, 
+  EWMHwindowTypePopup, 
   EWMHclientList,
   EWMHcurrentDesktop,
   EWMHnumberOfDesktops,
@@ -442,6 +481,11 @@ typedef struct {
   bool hidden, needs_restart;
 } scratchpad_t;
 
+typedef struct {
+  xcb_window_t* items;
+  uint32_t size, cap;
+} popup_list_t;
+
 struct state_t {
   xcb_connection_t* con;
   xcb_ewmh_connection_t ewmh;
@@ -455,6 +499,7 @@ struct state_t {
   bool ignore_enter_layout;
 
   client_t* focus;
+  popup_list_t popups;
 
   v2_t grabcursor;
   area_t grabwin;
