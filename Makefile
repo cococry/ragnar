@@ -20,7 +20,7 @@ all: $(RAGNAR_API)
 $(RAGNAR_API):
 	$(MAKE) -C api
 
-SOURCE_DIR := ./cfg/ 
+
 DEST_DIR := $(HOME)/.config/ragnarwm
 CONFIG_FILE := $(DEST_DIR)/ragnar.cfg
 
@@ -29,9 +29,9 @@ config:
 	@if [ ! -f "$(CONFIG_FILE)" ]; then \
 		echo "Config file does not exist. Copying default config..."; \
 		mkdir -p "$(DEST_DIR)"; \
-		cp -r "./cfg/ragnar.cfg" "$(DEST_DIR)"; \
+		cp -r "./cfg/ragnar.cfg" "$(CONFIG_FILE)"; \
 	else \
-		echo "Config file already exists. Skipping copy."; \
+		echo "Config file already exists. Skipping copy $(CONFIG_FILE)."; \
 	fi
 
 .PHONY: install
