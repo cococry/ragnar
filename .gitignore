@@ -3,3 +3,6 @@ ragnarstart
 *.patch
 .cache/
 bin/
+
+api/lib/api.o
+api/lib/libragnar.a
