@@ -559,7 +559,7 @@ cfgevalkeybinds(state_t* s, uint32_t* numkeybinds, const char* label) {
     }
 
     if(!cb) {
-      logmsg(s, LogLevelError, "config: Invalid key action '%s'.", do_str);
+      logmsg(s, LogLevelError, "config: Invalid function action '%s (specify a valid function to execute 'runcmd')'.", do_str);
       continue;
     }
     const char* cmd = NULL;
@@ -597,11 +597,14 @@ initconfig(state_t* s) {
 
   asprintf(&cfg_path, "%s/.config/ragnarwm/ragnar.cfg", home);
 
+  printf("ragnar: attempting to read config at %s or %s\n", cfg_path, cfg_path_global);
   if (
     !config_read_file(&cfghndl, cfg_path)
     && !config_read_file(&cfghndl, cfg_path_global)
   ) {
     logmsg(s, LogLevelError, "%s:%d - %s\n", config_error_file(&cfghndl),
+            config_error_line(&cfghndl), config_error_text(&cfghndl));
+    printf("ragnar: %s:%d - %s\n", config_error_file(&cfghndl),
             config_error_line(&cfghndl), config_error_text(&cfghndl));
 
     destroyconfig();
@@ -675,6 +678,8 @@ readconfig(state_t* s, config_data_t* data) {
 
   if(!success) {
     terminate(s, EXIT_FAILURE);
+  } else {
+    printf("ragnar: successfully read config file.\n");
   }
 }
 
