@@ -52,6 +52,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_ENTER_NOTIFY]        = eventernotify,
   [XCB_KEY_PRESS]           = evkeypress,
   [XCB_BUTTON_PRESS]        = evbuttonpress,
+  [XCB_BUTTON_RELEASE]        = evbuttonrelease,
   [XCB_MOTION_NOTIFY]       = evmotionnotify,
   [XCB_CONFIGURE_REQUEST]   = evconfigrequest,
   [XCB_CONFIGURE_NOTIFY]    = evconfignotify,
@@ -173,6 +174,7 @@ setup(state_t* s) {
     XCB_EVENT_MASK_POINTER_MOTION | 
     XCB_EVENT_MASK_ENTER_WINDOW | 
     XCB_EVENT_MASK_PROPERTY_CHANGE |
+    XCB_EVENT_MASK_BUTTON_RELEASE |
     XCB_EVENT_MASK_KEY_PRESS;
 
   xcb_void_cookie_t cookie = xcb_change_window_attributes_checked(
@@ -227,6 +229,7 @@ setup(state_t* s) {
   xcb_flush(s->con);
   s->nwinstruts = 0;
   getwinstruts(s, s->root);
+
   xcb_flush(s->con);
 }
 
@@ -427,8 +430,62 @@ void managewins(state_t* s) {
   free(tree_reply);
 }
 
+void updateedgewindows(state_t* s, client_t* cl) {
+  if (!cl->edges) return;
 
+  int w = cl->area.size.x;
+  int h = cl->area.size.y;
+  int b = EDGE_WIDTH;
+  struct {
+    int x, y, w, h;
+  } regions[9] = {
+    {0, 0, 0, 0}, // EdgeNone (not used)
+    {       0,        0, b, h        }, // EdgeLeft
+    { w - b,        0, b, h        }, // EdgeRight
+    {       0,        0, w, b        }, // EdgeTop
+    {       0, h - b, w, b        }, // EdgeBottom
+    {       0,        0, b, b        }, // EdgeTopleft
+    { w - b,        0, b, b        }, // EdgeTopright
+    {       0, h - b, b, b        }, // EdgeBottomleft
+    { w - b, h - b, b, b        }, // EdgeBottomright
+  };
 
+  for (int i = 1; i <= 8; i++) {
+    xcb_configure_window(
+      s->con, cl->edges[i].win,
+      XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
+      (uint32_t[]){ regions[i].x, regions[i].y, regions[i].w, regions[i].h }
+    );
+    xcb_map_window(s->con, cl->edges[i].win);
+  }
+}
+
+void 
+createwindowedges(state_t* s, client_t* cl) {
+  xcb_window_t parent = cl->win;
+  uint32_t mask = XCB_CW_EVENT_MASK;
+  uint32_t val = XCB_EVENT_MASK_ENTER_WINDOW |
+    XCB_EVENT_MASK_POINTER_MOTION |
+    XCB_EVENT_MASK_BUTTON_PRESS |
+    XCB_EVENT_MASK_BUTTON_RELEASE;
+
+  for (int i = 1; i <= 8; i++) {
+    cl->edges[i].win = xcb_generate_id(s->con);
+    cl->edges[i].edge = (window_edge_t)i;
+
+    xcb_create_window(
+      s->con,
+      XCB_COPY_FROM_PARENT,
+      cl->edges[i].win,
+      parent,
+      0, 0, 1, 1, // position & size updated later
+      0,
+      XCB_WINDOW_CLASS_INPUT_ONLY,
+      XCB_COPY_FROM_PARENT,
+      mask, &val
+    );
+  }
+}
 client_t*
 makeclient(state_t* s, xcb_window_t win) {
   // Setup listened events for the mapped window
@@ -524,6 +581,9 @@ makeclient(state_t* s, xcb_window_t win) {
   // Raise the newly created client over all other clients
   raiseclient(s, cl);
 
+  // Setup edges for window
+  createwindowedges(s, cl);
+  updateedgewindows(s, cl);
   return cl;
 }
 
@@ -745,6 +805,7 @@ moveclient(state_t* s, client_t* cl, v2_t pos, bool manage_mons) {
     s->monfocus = cl->mon;
     cl->desktop = mondesktop(s, cl->mon)->idx;
   }
+  updateedgewindows(s, cl);
 }
 
 /**
@@ -767,6 +828,7 @@ resizeclient(state_t* s, client_t* cl, v2_t size) {
   xcb_configure_window(s->con, cl->win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval_content);
   xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
   cl->area.size = size;
+  updateedgewindows(s, cl);
 }
 
 /**
@@ -808,6 +870,7 @@ moveresizeclient(state_t* s, client_t* cl, area_t a) {
     monaddclient(cl->mon, cl);
     updateewmhdesktops(s, cl->mon);
   }
+  updateedgewindows(s, cl);
 
   s->monfocus = cl->mon; 
 }
@@ -1080,6 +1143,7 @@ frameclient(state_t* s, client_t* cl) {
 
   // Send configure notify eventevent  to the client 
   configclient(s, cl);
+  updateedgewindows(s, cl);
 }
 
 /**
@@ -2632,7 +2696,16 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
 void
 evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
   xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
-
+  client_t* cl = clientfromedgewindow(s, button_ev->event);
+  if (cl) {
+    s->grabedge = getedgefromwindow(cl, button_ev->event);
+    s->grabwin = cl->area;
+    s->grabcursor = (v2_t){ button_ev->root_x, button_ev->root_y };
+    focusclient(s, cl, true);
+    raiseclient(s, cl);
+    xcb_allow_events(s->con, XCB_ALLOW_ASYNC_POINTER, button_ev->time);
+    return;
+  }
   // Get the window attributes
   xcb_get_window_attributes_cookie_t attr_cookie = xcb_get_window_attributes(s->con, button_ev->event);
   xcb_get_window_attributes_reply_t* attr_reply = xcb_get_window_attributes_reply(s->con, attr_cookie, NULL);
@@ -2648,7 +2721,7 @@ evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
     return;
   }
 
-  client_t* cl = clientfromwin(s, button_ev->event);
+  cl = clientfromwin(s, button_ev->event);
   if (!cl) return;
   // Focusing client 
   if (cl != s->focus) {
@@ -2676,6 +2749,25 @@ evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
   xcb_flush(s->con);
 }
 
+void
+evbuttonrelease(state_t* s, xcb_generic_event_t* ev) {
+  xcb_button_release_event_t* button_ev = (xcb_button_release_event_t*)ev;
+
+  // Clear any active edge-based resize
+  if (s->grabedge != EdgeNone) {
+    s->grabedge = EdgeNone;
+  }
+
+  // You may also want to clear grabwin/grabcursor if no button is held
+  s->grabwin = (area_t){0};
+  s->grabcursor = (v2_t){0};
+
+  // Replay the pointer event if needed (for non-WM-related clicks)
+  xcb_allow_events(s->con, XCB_ALLOW_REPLAY_POINTER, button_ev->time);
+  xcb_flush(s->con);
+  makelayout(s, s->monfocus);
+}
+
 // Function definition
 void print_to_file(const char *filename, const char *format, ...) {
   FILE *file = fopen(filename, "a"); // Open file for appending
@@ -2699,67 +2791,134 @@ void print_to_file(const char *filename, const char *format, ...) {
  * @param s The window manager's state
  * @param ev The generic event 
  */
+
 void
 evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
 
-  // Throttle motiton notify events for performance and to avoid jiterring on certain 
-  // high polling-rate mouses   
+  // Throttle high-rate motion events (e.g., 60Hz)
   uint32_t curtime = motion_ev->time;
-  if((curtime - s->lastmotiontime) <= (1000.0 / 60)) {
+  if ((curtime - s->lastmotiontime) <= (1000.0 / 60)) {
     return;
   }
-  s->ignore_enter_layout = false;
   s->lastmotiontime = curtime;
-  if(motion_ev->event == s->root) {
-    s->ignore_enter_layout = false;
-    // Update the focused monitor to the monitor under the cursor
+  s->ignore_enter_layout = false;
+
+  if (motion_ev->event == s->root) {
     monitor_t* mon = cursormon(s);
-    if(mon != s->monfocus) {
+    if (mon != s->monfocus) {
       updateewmhdesktops(s, mon);
     }
     s->monfocus = mon;
   }
 
-  // Position of the cursor in the drag event
   v2_t dragpos    = (v2_t){.x = (float)motion_ev->root_x, .y = (float)motion_ev->root_y};
-  // Drag difference from the current drag event to the initial grab 
   v2_t dragdelta  = (v2_t){.x = dragpos.x - s->grabcursor.x, .y = dragpos.y - s->grabcursor.y};
-  // New position of the window
-  v2_t movedest   = (v2_t){.x = (float)(s->grabwin.pos.x + dragdelta.x), .y = (float)(s->grabwin.pos.y + dragdelta.y)};
+  v2_t movedest   = (v2_t){.x = s->grabwin.pos.x + dragdelta.x, .y = s->grabwin.pos.y + dragdelta.y};
 
-  client_t* cl = clientfromwin(s, motion_ev->event);
+  client_t* cl = clientfromedgewindow(s, motion_ev->event);
+  if(cl) {
+    window_edge_t edge = getedgefromwindow(cl, motion_ev->event);
+    setcursorforresize(s, motion_ev->event, edge);
+  }
+  cl = clientfromwin(s, motion_ev->event);
+  if (!cl && s->grabedge != EdgeNone) {
+    // Edge window might have triggered this
+    cl = clientfromedgewindow(s, motion_ev->event);
+  }
 
-  if(!(motion_ev->state & s->config.modkey)) return;
-  if(!(motion_ev->state & s->config.resizebtn || motion_ev->state & s->config.movebtn)) return;
-  if(!cl) return;
+  if (!cl) return;
 
-  if(cl->fullscreen) {
+  if (cl->fullscreen) {
     setfullscreen(s, cl, false);
     s->grabwin = cl->area;
   }
 
-  // Move the window
-  if(motion_ev->state & s->config.movebtn) {
-    moveclient(s, cl, movedest, true);
-    if(!cl->floating) {
-      // Remove the client from the layout when the user moved it 
-      removefromlayout(s, cl);
+  // === Handle Edge-Based Resize ===
+  if (s->grabedge != EdgeNone) {
+    v2_t newpos = s->grabwin.pos;
+    v2_t newsize = s->grabwin.size;
+
+    switch (s->grabedge) {
+      case EdgeLeft:
+      case EdgeTopleft:
+      case EdgeBottomleft: {
+        if(cl->floating || (!cl->floating && !isclientmaster(s, cl, cl->mon))) {
+          if(!cl->floating) {
+            if(s->grabedge == EdgeLeft) {
+            }
+          } else {
+            newpos.x += dragdelta.x;
+            newsize.x -= dragdelta.x;
+          }
+        }
+        break;
+      }
+      case EdgeRight:
+      case EdgeTopright:
+      case EdgeBottomright: {
+        if(cl->floating || (!cl->floating && isclientmaster(s, cl, cl->mon))) {
+          if(!cl->floating) {
+            if(s->grabedge == EdgeRight) {
+              //cl->mon->layouts[cl->desktop].masterarea += (dragdelta.x / cl->mon->area.size.x);
+            }
+          } else {
+            newsize.x = s->grabwin.size.x + dragdelta.x;
+          }
+        }
+        break;
+      }
+      default: break;
     }
 
+    switch (s->grabedge) {
+      case EdgeTop:
+      case EdgeTopleft:
+      case EdgeTopright:
+        newpos.y += dragdelta.y;
+        newsize.y -= dragdelta.y;
+        break;
+      case EdgeBottom:
+      case EdgeBottomleft:
+      case EdgeBottomright:
+        newsize.y = s->grabwin.size.y + dragdelta.y;
+        break;
+      default: break;
+    }
+
+    // Clamp size and apply hints
+    newsize.x = MAX(newsize.x, 1);
+    newsize.y = MAX(newsize.y, 1);
+    newsize = applysizehints(s, cl, newsize);
+
+    moveclient(s, cl, newpos, true);
+    resizeclient(s, cl, newsize);
+    cl->ignoreexpose = true;
   }
 
-  // Resize the window
-  else if(motion_ev->state & s->config.resizebtn) {
-    // Resize delta (clamped)
-    v2_t resizedelta  = (v2_t){.x = MAX(dragdelta.x, -s->grabwin.size.x), .y = MAX(dragdelta.y, -s->grabwin.size.y)};
-    // New window size
-    v2_t sizedest = (v2_t){.x = s->grabwin.size.x + resizedelta.x, .y = s->grabwin.size.y + resizedelta.y};
+  // === Handle Move ===
+  else if ((motion_ev->state & s->config.modkey) && (motion_ev->state & s->config.movebtn)) {
+    moveclient(s, cl, movedest, true);
+    if (!cl->floating) {
+      removefromlayout(s, cl);
+    }
+  }
 
+  // === Handle Resize with Mod+Button ===
+  else if ((motion_ev->state & s->config.modkey) && (motion_ev->state & s->config.resizebtn)) {
+    v2_t resizedelta = (v2_t){
+      .x = MAX(dragdelta.x, -s->grabwin.size.x),
+      .y = MAX(dragdelta.y, -s->grabwin.size.y)
+    };
+    v2_t sizedest = (v2_t){
+      .x = s->grabwin.size.x + resizedelta.x,
+      .y = s->grabwin.size.y + resizedelta.y
+    };
     sizedest = applysizehints(s, cl, sizedest);
     resizeclient(s, cl, sizedest);
     cl->ignoreexpose = true;
   }
+
   xcb_flush(s->con);
 }
 
@@ -2984,6 +3143,8 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
   // Allocate client structure
   client_t* cl = (client_t*)malloc(sizeof(*cl));
   cl->win = win;
+  cl->edges = NULL;
+
 
   /* Get the window area */
   bool success;
@@ -3009,11 +3170,46 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
   // Update the head of the list to the new client
   *clients = cl;
 
+  edgegrab_t* edges = calloc(9, sizeof(edgegrab_t));
+  cl->edges = edges;  // Add this pointer to your client_t struct
 
   logmsg(s,  LogLevelTrace, "Added client ('%s') to the linked list of clients.", 
          cl->name ? cl->name : "No name");
 
   return cl;
+}
+
+void setcursorforresize(state_t* s, xcb_window_t win, window_edge_t edge) {
+  const char* cursor_name = "left_ptr"; // default
+
+  switch (edge) {
+    case EdgeLeft:         cursor_name = "left_side"; break;
+    case EdgeRight:        cursor_name = "right_side"; break;
+    case EdgeTop:          cursor_name = "top_side"; break;
+    case EdgeBottom:       cursor_name = "bottom_side"; break;
+    case EdgeTopleft:      cursor_name = "top_left_corner"; break;
+    case EdgeTopright:     cursor_name = "top_right_corner"; break;
+    case EdgeBottomleft:   cursor_name = "bottom_left_corner"; break;
+    case EdgeBottomright:  cursor_name = "bottom_right_corner"; break;
+    default:               cursor_name = "left_ptr"; break;
+  }
+
+  xcb_cursor_context_t* ctx;
+  if (xcb_cursor_context_new(s->con, s->screen, &ctx) < 0) return;
+
+  xcb_cursor_t cursor = xcb_cursor_load_cursor(ctx, cursor_name);
+  xcb_change_window_attributes(s->con, win, XCB_CW_CURSOR, &cursor);
+
+  xcb_cursor_context_free(ctx);
+  xcb_flush(s->con);
+}
+
+window_edge_t getedgefromwindow(client_t* cl, xcb_window_t win) {
+  for (int i = 1; i <= 8; i++) {
+    if (cl->edges[i].win == win)
+      return cl->edges[i].edge;
+  }
+  return EdgeNone;
 }
 
 /**
@@ -3084,8 +3280,22 @@ clientfromframe(state_t* s, xcb_window_t frame) {
     }
   }
   return NULL;
-
 }
+
+client_t* clientfromedgewindow(state_t* s, xcb_window_t win) {
+  client_t* cl;
+  for (monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
+    for (cl = mon->clients; cl != NULL; cl = cl->next) {
+      for (int i = 1; i <= 8; i++) {
+        if (cl->edges && cl->edges[i].win == win) {
+          return cl;
+        }
+    }
+  }
+  }
+  return NULL;
+}
+
 
 /**
  * @brief Returns a filtered linked list of all clients 

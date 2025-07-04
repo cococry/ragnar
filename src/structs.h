@@ -12,6 +12,8 @@
 #include <GL/glx.h>
 #include <xcb/xproto.h>
 
+#define EDGE_WIDTH 10
+
 typedef struct state_t state_t;
 typedef struct passthrough_data_t passthrough_data_t;
 
@@ -374,6 +376,23 @@ typedef struct {
 
 typedef struct client_t client_t;
 
+typedef enum {
+  EdgeNone = 0,
+  EdgeLeft,
+  EdgeRight,
+  EdgeTop,
+  EdgeBottom,
+  EdgeTopleft,
+  EdgeTopright,
+  EdgeBottomleft,
+  EdgeBottomright
+} window_edge_t;
+
+typedef struct {
+  xcb_window_t win;
+  window_edge_t edge;
+} edgegrab_t;
+
 struct client_t {
   area_t area, area_prev;
   bool fullscreen, floating, floating_prev,
@@ -394,6 +413,7 @@ struct client_t {
   monitor_t* mon;
   uint32_t desktop;
 
+  edgegrab_t* edges;
 
   bool urgent, ignoreunmap, ignoreexpose, decorated, neverfocus; 
 
@@ -486,7 +506,9 @@ typedef struct {
   uint32_t size, cap;
 } popup_list_t;
 
+
 struct state_t {
+  window_edge_t grabedge;
   xcb_connection_t* con;
   xcb_ewmh_connection_t ewmh;
   xcb_window_t root;

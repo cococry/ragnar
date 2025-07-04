@@ -44,6 +44,10 @@ void             terminate(state_t* s, int32_t exitcode);
  */
 void             managewins(state_t* s);
 
+void             updateedgewindows(state_t* s, client_t* cl);
+
+void             createwindowedges(state_t* s, client_t* cl);
+
 /**
  * @brief Creates a client from a given X windwo 
  *
@@ -626,6 +630,8 @@ void             evkeypress(state_t* s, xcb_generic_event_t* ev);
  */
 void             evbuttonpress(state_t* s, xcb_generic_event_t* ev);
 
+void             evbuttonrelease(state_t* s, xcb_generic_event_t* ev);
+
 /**
  * @brief Handles a X motion notify event by moving the clients window if left mouse 
  * button is held and resizing the clients window if right mouse is held. 
@@ -686,6 +692,10 @@ void             evfocusin(state_t* s, xcb_generic_event_t* ev);
  */
 client_t*        addclient(state_t* s, client_t** clients, xcb_window_t win);
 
+void             setcursorforresize(state_t* s, xcb_window_t win, window_edge_t edge);
+
+window_edge_t    getedgefromwindow(client_t* cl, xcb_window_t win);
+
 /**
  * @brief Removes a given client from the list of clients
  * by window.
@@ -707,6 +717,8 @@ void             releaseclient(state_t* s, xcb_window_t win);
 client_t*        clientfromwin(state_t* s, xcb_window_t win);
 
 client_t*        clientfromframe(state_t* s, xcb_window_t frame);
+
+client_t* clientfromedgewindow(state_t* s, xcb_window_t win);
 
 
 /**
