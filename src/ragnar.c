@@ -1233,14 +1233,7 @@ void
 hideclient(state_t* s, client_t* cl) {
   cl->ignoreunmap = true;
   cl->hidden = true;
-  int32_t posval[2] = {
-    cl->area.pos.x, -(cl->area.size.y + cl->borderwidth + 10) 
-  };
-  int32_t sizeval[2] = {
-    0, 0
-  };
-  xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, posval);
-  xcb_configure_window(s->con, cl->frame, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, sizeval);
+  xcb_unmap_window(s->con, cl->frame);
 }
 
 /*
@@ -1252,8 +1245,7 @@ hideclient(state_t* s, client_t* cl) {
 void
 showclient(state_t* s, client_t* cl) {
   cl->hidden = false;
-  moveclient(s, cl, cl->area.pos, false);
-  resizeclient(s, cl, cl->area.size);
+  xcb_map_window(s->con, cl->frame);
 }
 
 /**
@@ -2768,7 +2760,6 @@ evbuttonrelease(state_t* s, xcb_generic_event_t* ev) {
   makelayout(s, s->monfocus);
 }
 
-// Function definition
 void print_to_file(const char *filename, const char *format, ...) {
   FILE *file = fopen(filename, "a"); // Open file for appending
   if (file == NULL) {
@@ -2917,6 +2908,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
     sizedest = applysizehints(s, cl, sizedest);
     resizeclient(s, cl, sizedest);
     cl->ignoreexpose = true;
+    cl->floating = true;
   }
 
   xcb_flush(s->con);
