@@ -12,7 +12,7 @@
 #include <GL/glx.h>
 #include <xcb/xproto.h>
 
-#define EDGE_WIDTH 10
+#define EDGE_WIDTH 5
 
 typedef struct state_t state_t;
 typedef struct passthrough_data_t passthrough_data_t;
@@ -415,7 +415,7 @@ struct client_t {
 
   edgegrab_t* edges;
 
-  bool urgent, ignoreunmap, ignoreexpose, decorated, neverfocus; 
+  bool urgent, ignoreunmap, ignoreexpose, decorated, neverfocus, showedgewindows; 
 
   v2_t minsize;
   v2_t maxsize;

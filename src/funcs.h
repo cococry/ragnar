@@ -46,6 +46,8 @@ void             managewins(state_t* s);
 
 void             updateedgewindows(state_t* s, client_t* cl);
 
+void             toggleedgewindows(state_t* s, client_t* cl, bool toggle);
+
 void             createwindowedges(state_t* s, client_t* cl);
 
 /**

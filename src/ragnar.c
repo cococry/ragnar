@@ -461,6 +461,17 @@ void updateedgewindows(state_t* s, client_t* cl) {
 }
 
 void 
+toggleedgewindows(state_t* s, client_t* cl, bool toggle) {
+  cl->showedgewindows = toggle;
+  for (int i = 1; i <= 8; i++) {
+    if (toggle)
+      xcb_map_window(s->con, cl->edges[i].win);
+    else
+      xcb_unmap_window(s->con, cl->edges[i].win);
+  }
+  xcb_flush(s->con);
+}
+void 
 createwindowedges(state_t* s, client_t* cl) {
   xcb_window_t parent = cl->win;
   uint32_t mask = XCB_CW_EVENT_MASK;
@@ -1428,6 +1439,7 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
 
     // Unset border of client if it's fullscreen
     cl->borderwidth = 0;
+    toggleedgewindows(s, cl, false);
   } else {
     xcb_change_property(
       s->con, XCB_PROP_MODE_REPLACE, 
@@ -1437,6 +1449,7 @@ setfullscreen(state_t* s, client_t* cl, bool fullscreen) {
     cl->area = cl->area_prev;
     cl->floating = cl->floating_prev;
     cl->borderwidth = s->config.winborderwidth;
+    toggleedgewindows(s, cl, true);
   }
   // Update client's border width
   setborderwidth(s, cl, cl->borderwidth);
@@ -2689,7 +2702,7 @@ void
 evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
   xcb_button_press_event_t* button_ev = (xcb_button_press_event_t*)ev;
   client_t* cl = clientfromedgewindow(s, button_ev->event);
-  if (cl) {
+  if (cl && cl->showedgewindows) {
     s->grabedge = getedgefromwindow(cl, button_ev->event);
     s->grabwin = cl->area;
     s->grabcursor = (v2_t){ button_ev->root_x, button_ev->root_y };
@@ -2744,17 +2757,12 @@ evbuttonpress(state_t* s, xcb_generic_event_t* ev) {
 void
 evbuttonrelease(state_t* s, xcb_generic_event_t* ev) {
   xcb_button_release_event_t* button_ev = (xcb_button_release_event_t*)ev;
-
-  // Clear any active edge-based resize
   if (s->grabedge != EdgeNone) {
     s->grabedge = EdgeNone;
   }
-
-  // You may also want to clear grabwin/grabcursor if no button is held
   s->grabwin = (area_t){0};
   s->grabcursor = (v2_t){0};
 
-  // Replay the pointer event if needed (for non-WM-related clicks)
   xcb_allow_events(s->con, XCB_ALLOW_REPLAY_POINTER, button_ev->time);
   xcb_flush(s->con);
   makelayout(s, s->monfocus);
@@ -2807,8 +2815,9 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   v2_t dragdelta  = (v2_t){.x = dragpos.x - s->grabcursor.x, .y = dragpos.y - s->grabcursor.y};
   v2_t movedest   = (v2_t){.x = s->grabwin.pos.x + dragdelta.x, .y = s->grabwin.pos.y + dragdelta.y};
 
+  
   client_t* cl = clientfromedgewindow(s, motion_ev->event);
-  if(cl) {
+  if(cl && !cl->fullscreen && cl->showedgewindows) {
     window_edge_t edge = getedgefromwindow(cl, motion_ev->event);
     setcursorforresize(s, motion_ev->event, edge);
   }
