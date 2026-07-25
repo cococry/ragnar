@@ -76,7 +76,7 @@ Ragnar uses `libconfig` to load an external configuration file:
 # by default, system-wide:
 /etc/ragnarwm/ragnar.cfg
 # or mkdir -p and cp the default per user.
-# ~/.config/ragnarwm/ragnar.cfg
+~/.config/ragnarwm/ragnar.cfg
 ```
 
 The configuration is loaded on startup and can be reloaded while the window manager is running, typically through a keybinding.
