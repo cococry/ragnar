@@ -25,9 +25,11 @@ makedepends=('git' 'make' 'gcc')
 optdepends=(
   'alacritty: default terminal keybind'
   'polybar: optional status/desktops bars'
+  'ttf-dejavu: fonts for both the above'
 )
 provides=('ragnarwm')
 options=('!debug')
+backup=('etc/ragnarwm/ragnar.cfg')
 source=("${_pkgname}::git+${url}.git")
 sha256sums=('SKIP')
 
@@ -38,15 +40,13 @@ pkgver() {
 
 build() {
   cd $_pkgname || exit 1
-  # mirrors what happens with install.sh
-  cd api && make || exit 1
-  cd .. || exit 1 && make
+  make
 }
 
 package() {
   cd $_pkgname || exit 1
-  install -Dm755 bin/ragnar "$pkgdir/usr/bin/ragnar"
-  install -Dm644 ragnar.desktop "$pkgdir/usr/share/xsessions/ragnar.desktop"
-  install -Dm644 cfg/ragnar.cfg "$pkgdir/etc/ragnarwm/ragnar.cfg"
-  # we only install sytemwide default cfg, user cfg has to be done manually
+  # single source of truth: same install target ./install.sh drives.
+  # only the systemwide default cfg is installed, user cfg is a manual cp.
+  # this is usually convention for most WM configs, template in /etc
+  make DESTDIR="$pkgdir" PREFIX=/usr install
 }
