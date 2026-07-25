@@ -5,11 +5,8 @@
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
+#include <X11/Xlib.h>
 #include <X11/keysym.h>
-#include <xcb/xcb_ewmh.h>
-
-#include <GL/gl.h>
-#include <GL/glx.h>
 #include <xcb/xproto.h>
 
 #define EDGE_WIDTH 5
@@ -511,7 +508,6 @@ typedef struct {
 struct state_t {
   window_edge_t grabedge;
   xcb_connection_t* con;
-  xcb_ewmh_connection_t ewmh;
   xcb_window_t root;
   xcb_screen_t* screen; 
 

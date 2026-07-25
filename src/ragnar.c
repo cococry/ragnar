@@ -14,15 +14,9 @@
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 #include <xcb/xcb_cursor.h>
-#include <xcb/xcb_ewmh.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xcb_icccm.h>
-#include <xcb/xcb_util.h>
-#include <xcb/xcb_keysyms.h>
-#include <xcb/xcb_icccm.h>
-#include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
-#include <xcb/composite.h>
 #include <xcb/xfixes.h>
 
 #include <X11/cursorfont.h>
@@ -34,9 +28,6 @@
 #include <X11/Xproto.h>
 #include <X11/Xutil.h>
 #include <X11/Xlib-xcb.h>
-
-#include <GL/gl.h>
-#include <GL/glx.h>
 
 #include "config.h"
 #include "ipc/sockets.h"

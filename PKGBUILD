@@ -10,16 +10,17 @@ arch=('x86_64')
 url="https://github.com/h8d13/ragnar"
 license=('GPL')
 groups=()
+# mirrors the NEEDED entries of bin/ragnar, nothing more:
+# libxcb covers xcb + randr + xfixes, libx11 covers X11 + X11-xcb.
 depends=(
-  'xcb-util'
-  'xcb-proto'
+  'libxcb'
+  'libx11'
   'xcb-util-keysyms'
   'xcb-util-cursor'
   'xcb-util-wm'
   'libconfig'
   'xorg-server'
   'xorg-xinit'
-  'mesa'
 )
 makedepends=('git' 'make' 'gcc')
 optdepends=(

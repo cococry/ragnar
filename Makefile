@@ -1,8 +1,12 @@
 CC = cc
-CFLAGS ?= -O3 -ffast-math
-ALL_CFLAGS = $(CFLAGS) -Wall -Wextra -pedantic -isystem api/include
+# ?= so an exported CFLAGS (makepkg, distro build) replaces this wholesale.
+# geometry here is ratios and pixel rects cast back to ints, so -ffast-math
+# bought nothing and -ffinite-math-only would let divisions by a zero-sized
+# monitor fold away instead of showing up.
+CFLAGS ?= -O2
+ALL_CFLAGS = $(CFLAGS) $(CPPFLAGS) -Wall -Wextra -pedantic -isystem api/include
 
-LDLIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-composite -lxcb-ewmh -lxcb-xfixes -lX11 -lX11-xcb -lGL -lm -lconfig -lxcb-util
+LDLIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-xfixes -lX11 -lX11-xcb -lconfig
 
 SRC = ./src/*.c ./src/ipc/*.c
 BIN = ragnar
@@ -14,7 +18,7 @@ SYSCONFDIR = /etc
 .PHONY: all
 all:
 	mkdir -p ./bin
-	$(CC) -o bin/$(BIN) $(ALL_CFLAGS) $(SRC) $(LDLIBS)
+	$(CC) -o bin/$(BIN) $(ALL_CFLAGS) $(LDFLAGS) $(SRC) $(LDLIBS)
 
 # client-side IPC library. the WM links none of it, only the headers under
 # api/include are needed to build. opt-in, for writing external clients.

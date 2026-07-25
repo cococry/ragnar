@@ -32,14 +32,13 @@ Installing Ragnar involves two steps.
 Install the following dependencies:
 
 ```console
-xcb-util \
-xcb-proto \
+libxcb \
+libx11 \
 xcb-util-keysyms \
 xcb-util-cursor \
 xcb-util-wm \
 xorg-server \
 xorg-xinit \
-mesa \
 libconfig
 ```
 
@@ -74,9 +73,10 @@ The IPC system communicates through a socket using binary data. This allows exte
 Ragnar uses `libconfig` to load an external configuration file:
 
 ```console
-~/.config/ragnarwm/ragnar.cfg
-# or system-wide
+# by default, system-wide:
 /etc/ragnarwm/ragnar.cfg
+# or mkdir -p and cp the default per user.
+# ~/.config/ragnarwm/ragnar.cfg
 ```
 
 The configuration is loaded on startup and can be reloaded while the window manager is running, typically through a keybinding.
