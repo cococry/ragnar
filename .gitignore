@@ -7,3 +7,5 @@ pkg/
 ragnar/
 **.tar.zst
 .gdb.log
+compile_commands.json
+compile_flags.txt
