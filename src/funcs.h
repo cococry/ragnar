@@ -338,16 +338,6 @@ void             setwintype(state_t* s, client_t* cl);
  */
 void             seturgent(state_t* s, client_t* cl, bool urgent);
 
-
-/**
- * @brief Returns the next on-screen client after the 
- * given client.
- *
- * @param s The window manager's state
- * @param skip_floating Whether or not to skip floating clients
- */
-client_t*	      nextvisible(state_t* s, bool skip_floating);
-
 /**
  * @brief Gets the value of a given property on a 
  * window of a given client.
@@ -481,6 +471,7 @@ void             updateewmhdesktops(state_t* s, monitor_t* mon);
  * @param mon The monitor that the virtual desktop is on
  */
 void             createdesktop(state_t* s, uint32_t idx, monitor_t* mon);
+void             prunedesktops(state_t* s, monitor_t* mon);
 
 /**
  * @brief Initializes all important atoms for EWMH &
@@ -504,7 +495,10 @@ void             grabkeybinds(state_t* s);
  * */
 void             loaddefaultcursor(state_t* s);
 
-bool             iswindowpopup(state_t* s, xcb_window_t win); 
+void             setcursorhidden(state_t* s, bool hidden);
+bool             haswindowtype(state_t* s, xcb_window_t win, xcb_atom_t type);
+bool             iswindowpopup(state_t* s, xcb_window_t win);
+bool             iswindowdock(state_t* s, xcb_window_t win);
 
 /**
  * @brief Takes in a size for a client window and adjusts it 

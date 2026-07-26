@@ -1,5 +1,11 @@
-ragnar.o
-ragnarstart
+*.o
+*.a
 *.patch
 .cache/
 bin/
+pkg/
+ragnar/
+**.tar.zst
+.gdb.log
+compile_commands.json
+compile_flags.txt

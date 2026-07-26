@@ -32,14 +32,13 @@ Installing Ragnar involves two steps.
 Install the following dependencies:
 
 ```console
-xcb-util
-xcb-proto
-xcb-util-keysyms
-xcb-util-cursor
-xcb-util-wm
-xorg-server
-xorg-xinit
-mesa
+libxcb \
+libx11 \
+xcb-util-keysyms \
+xcb-util-cursor \
+xcb-util-wm \
+xorg-server \
+xorg-xinit \
 libconfig
 ```
 
@@ -74,10 +73,22 @@ The IPC system communicates through a socket using binary data. This allows exte
 Ragnar uses `libconfig` to load an external configuration file:
 
 ```console
-~/.config/ragnarwm.cfg
+# by default, system-wide:
+/etc/ragnarwm/ragnar.cfg
+# or mkdir -p and cp the default per user.
+~/.config/ragnarwm/ragnar.cfg
 ```
 
 The configuration is loaded on startup and can be reloaded while the window manager is running, typically through a keybinding.
+
+You can add to `.xinitrc`:
+
+`exec path/to/ragnar` Then simply; `startx`
+
+> By default it uses `alacritty` (Super+Return) and `dmenu` (Super+S), if you haven't edited these yet.
+> Both of these need fonts file; for instance `ttf-dejavu`
+
+You can also for example add: `polybar &` before the `exec ragnar` line.
 
 ---
 

@@ -14,15 +14,10 @@
 #include <xcb/xcb.h>
 #include <xcb/xproto.h>
 #include <xcb/xcb_cursor.h>
-#include <xcb/xcb_ewmh.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xcb_icccm.h>
-#include <xcb/xcb_util.h>
-#include <xcb/xcb_keysyms.h>
-#include <xcb/xcb_icccm.h>
-#include <xcb/xcb_cursor.h>
 #include <xcb/randr.h>
-#include <xcb/composite.h>
+#include <xcb/xfixes.h>
 
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
@@ -33,9 +28,6 @@
 #include <X11/Xproto.h>
 #include <X11/Xutil.h>
 #include <X11/Xlib-xcb.h>
-
-#include <GL/gl.h>
-#include <GL/glx.h>
 
 #include "config.h"
 #include "ipc/sockets.h"
@@ -148,9 +140,6 @@ setup(state_t* s) {
     XSetErrorHandler(xerror);
     XSync(s->dsp, False);
   }
-  // Run the startup script
-  runcmd(NULL, (passthrough_data_t){.cmd = "ragnarstart"});
-
   // Setting up xcb connection 
   s->con = XGetXCBConnection(s->dsp);
   // Checking for errors
@@ -247,7 +236,7 @@ loop(state_t* s) {
     // Poll for events without blocking
     while ((ev = xcb_wait_for_event(s->con))) {
       uint8_t evcode = ev->response_type & ~0x80;
-      /* If the event we receive is listened for by our 
+      /* If the event we receive is listened for by our
        * event listeners, call the callback for the event. */
       if (evcode < ARRLEN(evhandlers) && evhandlers[evcode]) {
         evhandlers[evcode](s, ev);
@@ -287,10 +276,10 @@ terminate(state_t* s, int32_t exitcode) {
     }
   }
 
+  // s->con is owned by s->dsp (XGetXCBConnection); XCloseDisplay tears the
+  // xcb connection down with it, a second xcb_disconnect double-frees
   if (s->dsp != NULL)
       XCloseDisplay(s->dsp);
-  // Give up the X connection
-  xcb_disconnect(s->con);
 
   logmsg(s,  LogLevelTrace, "terminated with exit code %i.", exitcode);
 
@@ -383,6 +372,12 @@ void managewins(state_t* s) {
     if (transient_for)
       continue;
 
+    // docks stay unmanaged; struts are gathered after the scan
+    if (iswindowdock(s, wins[i])) {
+      free(attr_reply);
+      continue;
+    }
+
     if (wait_for_mapped(s, wins[i]) || getstate(s, wins[i]) == 3) {
       client_t* cl = makeclient(s, wins[i]);
       xcb_flush(s->con);
@@ -432,6 +427,13 @@ void managewins(state_t* s) {
 
 void updateedgewindows(state_t* s, client_t* cl) {
   if (!cl->edges) return;
+
+  // pointer resize handles are floating-window UX; tiled windows
+  // resize through layout keybinds
+  bool show = cl->floating && !cl->fullscreen;
+  if (cl->showedgewindows != show)
+    toggleedgewindows(s, cl, show);
+  if (!show) return;
 
   int w = cl->area.size.x;
   int h = cl->area.size.y;
@@ -548,7 +550,7 @@ makeclient(state_t* s, xcb_window_t win) {
   updateclienthints(s, cl);
 
   // Set client's monitor
-  cl->mon = clmon; 
+  cl->mon = clmon;
   cl->desktop = mondesktop(s, s->monfocus)->idx;
   logmsg(s, LogLevelTrace,"Added client on desktop %i", cl->desktop);
 
@@ -1342,40 +1344,7 @@ seturgent(state_t* s, client_t* cl, bool urgent) {
 }
 
 /**
- * @brief Returns the next on-screen client after the 
- * focused client.
- *
- * @param s The window manager's state
- * @param skip_floating Whether or not to skip floating clients
- */
-client_t* 
-nextvisible(state_t* s, bool skip_floating) {
-  client_t* next = NULL;
-  // Find the next client on the current monitor & desktop 
-  for(client_t* cl = s->focus->next; cl != NULL; cl = cl->next) {
-    bool checktiled = (skip_floating) ? !cl->floating : true;
-    if(checktiled && clientonscreen(s, cl, s->monfocus)) {
-      next = cl;
-      break;
-    }
-  }
-
-  // If there is no next client, cycle back to the first client on the 
-  // current monitor & desktop
-  if(!next) {
-    for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-    bool checktiled = (skip_floating) ? !cl->floating : true;
-      if(checktiled) {
-        next = cl;
-        break;
-      }
-    }
-  }
-  return next;
- }
-
-/**
- * @brief Gets the value of a given property on a 
+ * @brief Gets the value of a given property on a
  * window of a given client.
  *
  * @param s The window manager's state
@@ -1497,6 +1466,28 @@ switchclientdesktop(state_t* s, client_t* cl, int32_t desktop) {
   }
   hideclient(s, cl);
   makelayout(s, s->monfocus);
+
+  // Sending a client somewhere makes that desktop active; only view
+  // switches set this otherwise, leaving the EWMH count stale
+  s->monfocus->activedesktops[desktop].init = true;
+
+  // Publish desktop count/names right away (the target desktop may
+  // have just been created); bars otherwise lag until a view switch
+  updateewmhdesktops(s, s->monfocus);
+
+  // Sent-away client took focus with it; hand it to the first client
+  // (master slot) still on the visible desktop
+  if(!s->focus) {
+    for(client_t* it = s->monfocus->clients; it != NULL; it = it->next) {
+      if(it->desktop == mondesktop(s, s->monfocus)->idx) {
+        focusclient(s, it, false);
+        break;
+      }
+    }
+  }
+
+  // IPC/EWMH moves can drain a background desktop
+  prunedesktops(s, s->monfocus);
 }
 
 /**
@@ -1523,9 +1514,9 @@ switchmonitordesktop(state_t* s, int32_t desktop) {
     }
     init_i++;
   }
-  // Notify EWMH for desktop change
-  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-      XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
+  // Names and count go out before current: pagers resolve the
+  // current index against names, stale ones render the wrong label
+  uploaddesktopnames(s, s->monfocus);
 
   uint32_t desktopcount = 0;
   for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
@@ -1535,7 +1526,10 @@ switchmonitordesktop(state_t* s, int32_t desktop) {
   }
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
                       XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
-  uploaddesktopnames(s, s->monfocus);
+
+  // Notify EWMH for desktop change
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
+      XCB_ATOM_CARDINAL, 32, 1, &desktopidx);
 
 
   for (client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
@@ -1560,21 +1554,21 @@ switchmonitordesktop(state_t* s, int32_t desktop) {
   logmsg(s, LogLevelTrace, "Switched virtual desktop on monitor %i to %i",
       s->monfocus->idx, desktop);
 
-  s->ignore_enter_layout = false;
+  // Swallow the enter events generated by hiding/showing clients;
+  // the pointer only decides focus again once it actually moves
+  // (reset in evmotionnotify)
+  s->ignore_enter_layout = true;
 
-  // Retrieving cursor position
-  bool cursor_success;
-  v2_t cursor = cursorpos(s, &cursor_success);
-  if(!cursor_success)  return;
-
-  // Focusing the client on the other desktop that is hovered
+  // Focus the first client on the switched-to desktop
   for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-    if(pointinarea(cursor, cl->area)) {
+    if(cl->desktop == mondesktop(s, s->monfocus)->idx) {
       focusclient(s, cl, false);
       break;
     }
   }
 
+  // Leaving an emptied desktop unpublishes it
+  prunedesktops(s, s->monfocus);
 }
 
 /**
@@ -1587,7 +1581,7 @@ switchmonitordesktop(state_t* s, int32_t desktop) {
 uint32_t
 numinlayout(state_t* s, monitor_t* mon) {
   uint32_t nlayout = 0;
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
     if(clientonscreen(s, cl, mon) && !cl->floating) {
       nlayout++;
     }
@@ -1617,7 +1611,7 @@ makelayout(state_t* s, monitor_t* mon) {
   if(curlayout == LayoutFloating) return;
 
   /* Make sure that there is always at least one slave window */
-  uint32_t nlayout = numinlayout(s, s->monfocus);
+  uint32_t nlayout = numinlayout(s, mon);
   uint32_t deskidx = mondesktop(s, mon)->idx;
   while(nlayout - mon->layouts[deskidx].nmaster == 0 && nlayout != 1) {
     mon->layouts[deskidx].nmaster--;
@@ -1652,7 +1646,7 @@ makelayout(state_t* s, monitor_t* mon) {
  */
 void 
 resetlayoutsizes(state_t* s, monitor_t* mon) {
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
     if(cl->floating ||
       !clientonscreen(s, cl, mon)) continue;
 
@@ -1713,9 +1707,9 @@ tiledmaster(state_t* s, monitor_t* mon) {
   mon->layouts[deskidx].mastermaxed = false;
 
   uint32_t i = 0;
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-    if(cl->floating || 
-      cl->desktop != mondesktop(s, cl->mon)->idx || 
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+    if(cl->floating ||
+      cl->desktop != mondesktop(s, cl->mon)->idx ||
       cl->mon != mon) continue;
     if(i >= nmaster) break;
 
@@ -1729,9 +1723,9 @@ tiledmaster(state_t* s, monitor_t* mon) {
   i = 0;
 
   float lastadd = 0.0f;
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
     if(cl->floating ||
-      cl->desktop != mondesktop(s, cl->mon)->idx || 
+      cl->desktop != mondesktop(s, cl->mon)->idx ||
       cl->mon != mon) continue;
 
     bool ismaster = (i < nmaster);
@@ -1788,7 +1782,7 @@ verticalstripes(state_t* s, monitor_t* mon) {
   int32_t gapsize     = mon->layouts[deskidx].gapsize;
 
   {
-    for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+    for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
       if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
         || cl->mon != mon) continue;
       nwins++;
@@ -1802,8 +1796,8 @@ verticalstripes(state_t* s, monitor_t* mon) {
 
   // Apply strut information to the layout
   for(uint32_t i = 0; i < s->nwinstruts; i++) {
-    bool onmonitor = 
-      s->winstruts[i].startx >= mon->area.pos.x  
+    bool onmonitor =
+      s->winstruts[i].startx >= mon->area.pos.x
       && s->winstruts[i].endx <= mon->area.pos.x + mon->area.size.x;
 
     if(!onmonitor) continue;
@@ -1823,10 +1817,10 @@ verticalstripes(state_t* s, monitor_t* mon) {
       h -= s->winstruts[i].bottom;
     }
   }
-  
+
 
   float lastadd = 0.0f;
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx || cl->mon != mon) continue;
 
     float winw = (float)w / nwins + cl->layoutsizeadd - lastadd;
@@ -1859,7 +1853,7 @@ horizontalstripes(state_t* s, monitor_t* mon) {
   int32_t gapsize     = mon->layouts[deskidx].gapsize;
 
   {
-    for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+    for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
       if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
         || cl->mon != mon) continue;
       nwins++;
@@ -1897,7 +1891,7 @@ horizontalstripes(state_t* s, monitor_t* mon) {
 
   float lastadd = 0.0f;
 
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx || cl->mon != mon) continue;
 
     float winh = (float)h / nwins + cl->layoutsizeadd - lastadd;
@@ -1993,12 +1987,13 @@ uploaddesktopnames(state_t* s, monitor_t* mon) {
   xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(s->con)).data;
   xcb_window_t root_window = screen->root;
 
-  // Set the _NET_DESKTOP_NAMES property
+  // Set the _NET_DESKTOP_NAMES property; EWMH mandates UTF8_STRING,
+  // pagers reject a STRING-typed value and fall back to numbering
   xcb_change_property(s->con,
                       XCB_PROP_MODE_REPLACE,
                       root_window,
                       s->ewmh_atoms[EWMHdesktopNames],
-                      XCB_ATOM_STRING,
+                      getatom(s, "UTF8_STRING"),
                       8,
                       total_length,
                       data);
@@ -2008,6 +2003,9 @@ uploaddesktopnames(state_t* s, monitor_t* mon) {
 void 
 updateewmhdesktops(state_t* s, monitor_t* mon) {
   s->monfocus = mon;
+  // Names and count go out before current: pagers resolve the
+  // current index against names, stale ones render the wrong label
+  uploaddesktopnames(s, s->monfocus);
   uint32_t desktopcount = 0;
   for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
     if(s->monfocus->activedesktops[i].init) {
@@ -2016,17 +2014,59 @@ updateewmhdesktops(state_t* s, monitor_t* mon) {
   }
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHnumberOfDesktops],
                       XCB_ATOM_CARDINAL, 32, 1, &desktopcount);
-  uploaddesktopnames(s, s->monfocus);
   desktop_t* desk = mondesktop(s, s->monfocus);
   if(desk) {
+    // _NET_DESKTOP_NAMES only lists published desktops, so the
+    // current desktop must be its position in that list; the raw
+    // idx drifts as soon as pruning leaves a gap
+    uint32_t ewmhidx = 0;
+    for(uint32_t i = 0; i < desk->idx && i < s->monfocus->desktopcount; i++) {
+      if(s->monfocus->activedesktops[i].init) {
+        ewmhidx++;
+      }
+    }
     xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcurrentDesktop],
-                        XCB_ATOM_CARDINAL, 32, 1, &desk->idx);
+                        XCB_ATOM_CARDINAL, 32, 1, &ewmhidx);
+  }
+}
+
+/**
+ * @brief Unpublishes active desktops that hold no client anymore and
+ * notifies EWMH if any were removed. The currently viewed desktop and
+ * the default desktop stay published even when empty.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor whose desktops are pruned
+ */
+void
+prunedesktops(state_t* s, monitor_t* mon) {
+  desktop_t* curdesk = mondesktop(s, mon);
+  bool changed = false;
+  for(uint32_t i = 0; i < mon->desktopcount; i++) {
+    if(!mon->activedesktops[i].init) continue;
+    if(i == s->config.desktopinit) continue;
+    if(curdesk && i == curdesk->idx) continue;
+
+    bool occupied = false;
+    for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+      if(cl->desktop == i) {
+        occupied = true;
+        break;
+      }
+    }
+    if(!occupied) {
+      mon->activedesktops[i].init = false;
+      changed = true;
+    }
+  }
+  if(changed) {
+    updateewmhdesktops(s, mon);
   }
 }
 
 /**
  * @brief Creates a new virtual desktop and notifies EWMH about it.
- * @param s The window manager's state 
+ * @param s The window manager's state
  * @param idx The index of the virtual desktop
  * @param mon The monitor that the virtual desktop is on
  */
@@ -2068,6 +2108,7 @@ setupatoms(state_t* s) {
   s->ewmh_atoms[EWMHwindowType]        = getatom(s, "_NET_WM_WINDOW_TYPE");
   s->ewmh_atoms[EWMHwindowTypeDialog]  = getatom(s, "_NET_WM_WINDOW_TYPE_DIALOG");
   s->ewmh_atoms[EWMHwindowTypePopup]  = getatom(s, "_NET_WM_WINDOW_TYPE_POPUP_MENU");
+  s->ewmh_atoms[EWMHwindowTypeDock]    = getatom(s, "_NET_WM_WINDOW_TYPE_DOCK");
   s->ewmh_atoms[EWMHclientList]        = getatom(s, "_NET_CLIENT_LIST");
   s->ewmh_atoms[EWMHcurrentDesktop]    = getatom(s, "_NET_CURRENT_DESKTOP");
   s->ewmh_atoms[EWMHnumberOfDesktops]  = getatom(s, "_NET_NUMBER_OF_DESKTOPS");
@@ -2174,14 +2215,41 @@ loaddefaultcursor(state_t* s) {
   xcb_cursor_context_free(context);
 
   logmsg(s,  LogLevelTrace, "loaded cursor image '%s'.", s->config.cursorimage);
+
+  // XFixes lets us hide the cursor until the pointer actually moves;
+  // the version handshake is required before any other xfixes request
+  xcb_xfixes_query_version_reply_t* xfixes_reply = xcb_xfixes_query_version_reply(
+      s->con, xcb_xfixes_query_version(s->con, XCB_XFIXES_MAJOR_VERSION,
+                                       XCB_XFIXES_MINOR_VERSION), NULL);
+  s->xfixes_ok = xfixes_reply != NULL;
+  free(xfixes_reply);
+  if(!s->xfixes_ok) {
+    logmsg(s, LogLevelError, "XFixes unavailable, cursor auto-hide disabled.");
+  }
+  setcursorhidden(s, true);
 }
 
-bool             
-iswindowpopup(state_t* s, xcb_window_t win) {
-  xcb_atom_t typeatom = s->ewmh_atoms[EWMHwindowType]; 
-  xcb_atom_t popupatom = s->ewmh_atoms[EWMHwindowTypePopup]; 
+/**
+ * @brief Hides or shows the cursor (no-op without XFixes). The cursor
+ * is hidden on keybind use and shown again on real pointer motion.
+ * */
+void
+setcursorhidden(state_t* s, bool hidden) {
+  if(!s->xfixes_ok || s->cursorhidden == hidden) return;
+  if(hidden) {
+    xcb_xfixes_hide_cursor(s->con, s->root);
+  } else {
+    xcb_xfixes_show_cursor(s->con, s->root);
+  }
+  s->cursorhidden = hidden;
+  xcb_flush(s->con);
+}
 
-  if (typeatom == XCB_ATOM_NONE || popupatom == XCB_ATOM_NONE)
+bool
+haswindowtype(state_t* s, xcb_window_t win, xcb_atom_t type) {
+  xcb_atom_t typeatom = s->ewmh_atoms[EWMHwindowType];
+
+  if (typeatom == XCB_ATOM_NONE || type == XCB_ATOM_NONE)
     return false;
 
   xcb_get_property_cookie_t prop_cookie = xcb_get_property(
@@ -2190,20 +2258,30 @@ iswindowpopup(state_t* s, xcb_window_t win) {
   if (!prop_reply)
     return false;
 
-  bool ispopup = false;
+  bool hastype = false;
   if (xcb_get_property_value_length(prop_reply) > 0) {
     xcb_atom_t* atoms = (xcb_atom_t*) xcb_get_property_value(prop_reply);
     int len = xcb_get_property_value_length(prop_reply) / sizeof(xcb_atom_t);
     for (int i = 0; i < len; ++i) {
-      if (atoms[i] == popupatom) {
-        ispopup = true;
+      if (atoms[i] == type) {
+        hastype = true;
         break;
       }
     }
   }
 
   free(prop_reply);
-  return ispopup;
+  return hastype;
+}
+
+bool
+iswindowpopup(state_t* s, xcb_window_t win) {
+  return haswindowtype(s, win, s->ewmh_atoms[EWMHwindowTypePopup]);
+}
+
+bool
+iswindowdock(state_t* s, xcb_window_t win) {
+  return haswindowtype(s, win, s->ewmh_atoms[EWMHwindowTypeDock]);
 }
 
 /**
@@ -2333,7 +2411,7 @@ enumartelayout(state_t* s, monitor_t* mon, uint32_t* nmaster, uint32_t* nslaves)
   } 
 
   uint32_t i = 0;
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
     if(cl->floating || cl->desktop != mondesktop(s, cl->mon)->idx
       || cl->mon != mon) continue;
     if(i >= *nmaster) {
@@ -2363,7 +2441,7 @@ isclientmaster(state_t* s, client_t* cl, monitor_t* mon) {
   uint32_t deskidx = mondesktop(s, mon)->idx;
   uint32_t nmaster = mon->layouts[deskidx].nmaster;
 
-  for(client_t* iter = s->monfocus->clients; iter != NULL; iter = iter->next) {
+  for(client_t* iter = mon->clients; iter != NULL; iter = iter->next) {
     if(iter->floating ||
       iter->desktop != mondesktop(s, iter->mon)->idx || 
       iter->mon != mon) continue;
@@ -2418,15 +2496,25 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
     return;
   }
 
-  if (wa_reply->override_redirect) {
+  bool override_redirect = wa_reply->override_redirect;
+  free(wa_reply);
+  if (override_redirect) {
     return;
   }
 
-  // Free the reply after checking
-  free(wa_reply);
-
   // Don't handle already managed clients
   if (clientfromwin(s, map_ev->window) != NULL) {
+    return;
+  }
+
+  // Docks (status bars etc.) stay unmanaged: map them as-is and
+  // reserve the space their struts request
+  if (iswindowdock(s, map_ev->window)) {
+    xcb_map_window(s->con, map_ev->window);
+    s->nwinstruts = 0;
+    getwinstruts(s, s->root);
+    makelayout(s, s->monfocus);
+    xcb_flush(s->con);
     return;
   }
 
@@ -2461,6 +2549,13 @@ evmaprequest(state_t* s, xcb_generic_event_t* ev) {
     };
     s->mapping_scratchpad_index = -1;
   }
+
+  // Newly spawned windows take focus (and the active border) right
+  // away instead of waiting for the pointer to wander into them.
+  // The relayout shifts windows under the stationary pointer; swallow
+  // the resulting enter events so they can't steal the focus back.
+  s->ignore_enter_layout = true;
+  focusclient(s, cl, true);
 
   xcb_flush(s->con);
 }
@@ -2554,6 +2649,13 @@ void
 evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
   // Retrieve the event
   xcb_unmap_notify_event_t* unmap_ev = (xcb_unmap_notify_event_t*)ev;
+  // A dock going away frees the space its struts reserved
+  if(iswindowdock(s, unmap_ev->window)) {
+    s->nwinstruts = 0;
+    getwinstruts(s, s->root);
+    makelayout(s, s->monfocus);
+    return;
+  }
   if(iswindowpopup(s, unmap_ev->window)) {
     logmsg(s, LogLevelTrace, "remoed popup window. ", unmap_ev->window); 
     int32_t idx = -1;
@@ -2573,6 +2675,8 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
     cl->ignoreunmap = false;
     return;
   }
+  // cl is freed by releaseclient below; monitors outlive it
+  monitor_t* clmon = cl ? cl->mon : NULL;
 
   if(cl) {
     if(cl->is_scratchpad) {
@@ -2592,6 +2696,11 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
 
   // Re-establish the window layout
   makelayout(s, s->monfocus);
+
+  // Client may have been the last one on a background desktop
+  if(clmon) {
+    prunedesktops(s, clmon);
+  }
 
   xcb_flush(s->con);
 }
@@ -2614,8 +2723,10 @@ evdestroynotify(state_t* s, xcb_generic_event_t* ev) {
   if(cl->is_scratchpad) {
     removescratchpad(s, cl->scratchpad_index);
   }
+  monitor_t* clmon = cl->mon;
   unframeclient(s, cl);
   releaseclient(s, destroy_ev->window);
+  prunedesktops(s, clmon);
 }
 
 /**
@@ -2684,6 +2795,7 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
     // If it was pressed, call the callback of the keybind
     if ((keysym == s->config.keybinds[i].key) && (e->state == s->config.keybinds[i].modmask)) {
       if(s->config.keybinds[i].cb) {
+        setcursorhidden(s, true);
         s->config.keybinds[i].cb(s, s->config.keybinds[i].data);
       }
     }
@@ -2802,6 +2914,7 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   }
   s->lastmotiontime = curtime;
   s->ignore_enter_layout = false;
+  setcursorhidden(s, false);
 
   if (motion_ev->event == s->root) {
     monitor_t* mon = cursormon(s);
@@ -3100,6 +3213,25 @@ evpropertynotify(state_t* s, xcb_generic_event_t* ev) {
 void
 evclientmessage(state_t* s, xcb_generic_event_t* ev) {
   xcb_client_message_event_t* msg_ev = (xcb_client_message_event_t*)ev;
+
+  // Pagers request desktop switches with an index into the published
+  // (compressed) desktop list; map it back to the raw desktop index
+  if(msg_ev->type == s->ewmh_atoms[EWMHcurrentDesktop]) {
+    if(!s->monfocus) return;
+    uint32_t target = msg_ev->data.data32[0];
+    uint32_t pos = 0;
+    for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
+      if(!s->monfocus->activedesktops[i].init) continue;
+      if(pos == target) {
+        switchmonitordesktop(s, i);
+        xcb_flush(s->con);
+        break;
+      }
+      pos++;
+    }
+    return;
+  }
+
   client_t* cl = clientfromwin(s, msg_ev->window);
 
   if(!cl) {
@@ -3229,12 +3361,26 @@ releaseclient(state_t* s, xcb_window_t win) {
    * associated with the window */
     while(cl) {
       if(cl->win == win) {
-        /* Setting the pointer to previous client to the next client 
+        /* Setting the pointer to previous client to the next client
        * after the client we want to release, effectivly removing it
-       * from our list of clients*/ 
+       * from our list of clients*/
         *prev = cl->next;
+        bool wasfocus = (cl == s->focus);
+        if(wasfocus) {
+          s->focus = NULL;
+        }
         // Freeing memory allocated for client
         free(cl);
+        // Released client held focus; hand it to the first client
+        // (master slot) still on the visible desktop
+        if(wasfocus && s->monfocus) {
+          for(client_t* it = s->monfocus->clients; it != NULL; it = it->next) {
+            if(it->desktop == mondesktop(s, s->monfocus)->idx) {
+              focusclient(s, it, false);
+              break;
+            }
+          }
+        }
         return;
       }
       // Advancing the client

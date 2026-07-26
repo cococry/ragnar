@@ -261,7 +261,7 @@ inline void runcmd(state_t* s, passthrough_data_t data) {
 inline void addfocustolayout(state_t* s, passthrough_data_t data) { 
   (void)data;
 
-  if(s->focus->is_scratchpad) return;
+  if(!s->focus || s->focus->is_scratchpad) return;
 
   s->focus->floating = false;
 
@@ -355,6 +355,9 @@ inline void setfloatingmode(state_t* s, passthrough_data_t data) {
   for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
     if(clientonscreen(s, cl, s->monfocus)) {
       cl->floating = true;
+      // floating layout skips makelayout, so no geometry op will
+      // refresh the edge handles; do it here
+      updateedgewindows(s, cl);
     }
   }
   uint32_t deskidx = mondesktop(s, s->monfocus)->idx;
@@ -691,9 +694,9 @@ inline void decgapsizelayout(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusup(state_t* s, passthrough_data_t data) { 
+inline void movefocusup(state_t* s, passthrough_data_t data) {
   (void)data;
-  if(!s->focus->floating) return;
+  if(!s->focus || !s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
   v2_t dest = (v2_t){pos.x,
@@ -711,9 +714,9 @@ inline void movefocusup(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusdown(state_t* s, passthrough_data_t data) { 
+inline void movefocusdown(state_t* s, passthrough_data_t data) {
   (void)data;
-  if(!s->focus->floating) return;
+  if(!s->focus || !s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
   v2_t dest = (v2_t){pos.x,
@@ -731,9 +734,9 @@ inline void movefocusdown(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusleft(state_t* s, passthrough_data_t data) { 
+inline void movefocusleft(state_t* s, passthrough_data_t data) {
   (void)data;
-  if(!s->focus->floating) return;
+  if(!s->focus || !s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
   v2_t dest = (v2_t){MIN(MAX(pos.x - s->config.keywinmove_step, s->monfocus->area.pos.x), 
@@ -750,13 +753,13 @@ inline void movefocusleft(state_t* s, passthrough_data_t data) {
  * @param s The window manager's state
  * @param data The data to use for the function (unused here)
  */
-inline void movefocusright(state_t* s, passthrough_data_t data) { 
+inline void movefocusright(state_t* s, passthrough_data_t data) {
   (void)data;
-  if(!s->focus->floating) return;
+  if(!s->focus || !s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
-  v2_t dest = (v2_t){MIN(MAX(pos.x + s->config.keywinmove_step, s->monfocus->area.pos.x), 
-      s->monfocus->area.pos.x + s->monfocus->area.size.x 
+  v2_t dest = (v2_t){MIN(MAX(pos.x + s->config.keywinmove_step, s->monfocus->area.pos.x),
+      s->monfocus->area.pos.x + s->monfocus->area.size.x
       - s->focus->area.size.x), pos.y};
   moveclient(s, s->focus, dest, true);
   s->ignore_enter_layout = true;
@@ -792,6 +795,14 @@ inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   }
 
   if(!prevmon) return;
+
+  // single monitor: wrap-around lands on the same monitor; move the
+  // client one slot towards the master instead (symmetric to the
+  // in-layout move, unlike the head-insert the monitor switch does)
+  if(prevmon == s->focus->mon) {
+    cycleuplayout(s, data);
+    return;
+  }
 
   area_t afocusmon = s->focus->mon->area;
 
@@ -872,9 +883,17 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
 
   monitor_t* nextmon = s->focus->mon->next;
   if(!nextmon) {
-    nextmon = s->monitors; 
+    nextmon = s->monitors;
   }
   if(!nextmon) return;
+
+  // single monitor: wrap-around lands on the same monitor; move the
+  // client one slot away from the master instead (symmetric to the
+  // in-layout move, unlike the head-insert the monitor switch does)
+  if(nextmon == s->focus->mon) {
+    cycledownlayout(s, data);
+    return;
+  }
 
   area_t afocusmon = s->focus->mon->area;
 

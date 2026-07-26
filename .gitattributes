@@ -1,0 +1,8 @@
+# keep CRLF out of the tree
+* text=auto eol=lf
+
+# build plumbing, not part of the language breakdown.
+# a pattern without a slash matches the basename at any depth, so this
+# covers ./Makefile and ./api/Makefile both.
+Makefile  linguist-detectable=false
+flake.nix linguist-detectable=false

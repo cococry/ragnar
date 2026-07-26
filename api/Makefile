@@ -1,9 +1,9 @@
 CC=gcc
-CFLAGS=
-all: lib/ragnar.a
-lib/ragnar.a: lib/api.o
+CFLAGS ?=
+all: lib/libragnar.a
+lib/libragnar.a: lib/api.o
 	ar cr lib/libragnar.a lib/*.o
-lib/api.o: lib
+lib/api.o: api.c include/ragnar/api.h | lib
 	${CC} -c api.c -o lib/api.o ${CFLAGS}
 
 lib:

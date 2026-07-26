@@ -314,7 +314,7 @@ replaceplaceholder(const char* str, const char* placeholder, const char* value) 
 
   // Replace each occurrence of placeholder with the value
   while (count--) {
-    ins = strstr(str, placeholder);
+    ins = (char*)strstr(str, placeholder);
     len_front = ins - str;
     tmp = strncpy(tmp, str, len_front) + len_front;
     tmp = strcpy(tmp, value) + strlen(value);
@@ -335,16 +335,21 @@ kbmodsfromstr(state_t* s, const char* modifiers) {
     return bitmask;
   }
 
-  modifiers = replaceplaceholder(modifiers, "%mod_key", modstr);
+  char* expanded = replaceplaceholder(modifiers, "%mod_key", modstr);
+  if (!expanded)
+    return bitmask;
 
-  while (*modifiers) {
-    while (isspace(*modifiers)) modifiers++;
+  const char* p = expanded;
+  while (*p) {
+    while (isspace(*p)) p++;
 
     char *end = buffer;
-    while (*modifiers && !strchr(delim, *modifiers)) {
-      *end++ = *modifiers++;
+    while (*p && !strchr(delim, *p)) {
+      if (end < buffer + sizeof(buffer) - 1)
+        *end++ = *p;
+      p++;
     }
-    *end = '\0'; 
+    *end = '\0';
 
     if (strcmp(buffer, "Shift") == 0) {
       bitmask |= Shift;
@@ -356,9 +361,10 @@ kbmodsfromstr(state_t* s, const char* modifiers) {
       bitmask |= Super;
     }
 
-    while (isspace(*modifiers) || *modifiers == '|') modifiers++;
+    while (isspace(*p) || *p == '|') p++;
   }
 
+  free(expanded);
   return bitmask;
 }
 
@@ -592,14 +598,18 @@ initconfig(state_t* s) {
     logmsg(s, LogLevelError, "cannot read config file because HOME is not defined.");
   }
 
-  char *cfg_path;
+  char *cfg_path = NULL;
   char const cfg_path_global[] = "/etc/ragnarwm/ragnar.cfg";
 
-  asprintf(&cfg_path, "%s/.config/ragnarwm/ragnar.cfg", home);
+  // on failure asprintf leaves cfg_path undefined, reset to NULL
+  if (home && asprintf(&cfg_path, "%s/.config/ragnarwm/ragnar.cfg", home) < 0) {
+    cfg_path = NULL;
+  }
 
-  printf("ragnar: attempting to read config at %s or %s\n", cfg_path, cfg_path_global);
+  printf("ragnar: attempting to read config at %s or %s\n",
+         cfg_path ? cfg_path : "(no HOME)", cfg_path_global);
   if (
-    !config_read_file(&cfghndl, cfg_path)
+    !(cfg_path && config_read_file(&cfghndl, cfg_path))
     && !config_read_file(&cfghndl, cfg_path_global)
   ) {
     logmsg(s, LogLevelError, "%s:%d - %s\n", config_error_file(&cfghndl),
@@ -610,7 +620,7 @@ initconfig(state_t* s) {
     destroyconfig();
     terminate(s, EXIT_FAILURE);
   }
-
+  free(cfg_path);
 }
 
 void 
