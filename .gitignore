@@ -4,7 +4,7 @@
 .cache/
 bin/
 pkg/
-ragnar/
+/ragnar/
 **.tar.zst
 .gdb.log
 compile_commands.json
