@@ -130,6 +130,6 @@ Handles loading and parsing the Ragnar configuration file through `libconfig`.
 
 Implements socket handling for IPC clients.
 
-### `scheduling.c`
+### `realtime.c`
 
 Infrastructure for faster response time of keybinds.

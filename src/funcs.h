@@ -846,17 +846,7 @@ monitor_t*       cursormon(state_t* s);
 uint32_t         updatemons(state_t* s);
 
 /**
- * @brief Returns the keysym of a given key code. 
- * Returns 0 if there is no keysym for the given keycode.
- *
- * @param s The window manager's state
- * @param keycode The keycode to get the keysym from 
- *
- * @return The keysym of the given keycode (0 if no keysym associated) 
- */
-
-/**
- * @brief Returns the keycode of a given keysym. 
+ * @brief Returns the keycode of a given keysym.
  * Returns NULL if there is no keycode for the given keysym.
  *
  * @param s The window manager's state
