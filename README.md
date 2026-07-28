@@ -88,7 +88,7 @@ You can add to `.xinitrc`:
 > By default it uses `alacritty` (Super+Return) and `dmenu` (Super+S), if you haven't edited these yet.
 > Both of these need fonts file; for instance `ttf-dejavu`
 
-You can also for example add: `polybar &` before the `exec ragnar` line.
+You can also for example add: `picom -b; polybar &` before the `exec ragnar` line.
 
 Other optional deps can be seen in: [`PKGBUILD`](./PKGBUILD), might differ per distro.
 
