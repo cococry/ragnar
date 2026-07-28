@@ -90,6 +90,8 @@ You can add to `.xinitrc`:
 
 You can also for example add: `polybar &` before the `exec ragnar` line.
 
+Other optional deps can be seen in: [`PKGBUILD`](./PKGBUILD), might differ per distro.
+
 ---
 
 ## Code Structure
