@@ -2907,9 +2907,11 @@ void
 evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   xcb_motion_notify_event_t* motion_ev = (xcb_motion_notify_event_t*)ev;
 
-  // Throttle high-rate motion events (e.g., 60Hz)
+  // Throttle high-rate motion events to the configured rate.
+  // 0 disables the throttle rather than dividing by zero.
   uint32_t curtime = motion_ev->time;
-  if ((curtime - s->lastmotiontime) <= (1000.0 / 60)) {
+  uint32_t fps = s->config.motion_notify_debounce_fps;
+  if (fps && (curtime - s->lastmotiontime) <= (1000 / fps)) {
     return;
   }
   s->lastmotiontime = curtime;

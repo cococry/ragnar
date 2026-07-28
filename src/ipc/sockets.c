@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -348,9 +349,17 @@ ipcserverthread(void* arg) {
     // Accept a new client connection
     clientfd = accept(serverfd, NULL, NULL);
     if (clientfd < 0) {
-      logmsg(s, LogLevelTrace, "ipc: Failed to accept IPC client connection.");
+      // a client that went away mid-handshake, or a restartable
+      // interruption, says nothing about the listener: retry.
+      if (errno == EINTR || errno == ECONNABORTED) {
+        continue;
+      }
+      // anything else is the listener itself. closing it and looping
+      // would spin on EBADF forever, so give the thread up instead.
+      logmsg(s, LogLevelError, "ipc: accept failed, IPC is down: %s",
+             strerror(errno));
       close(serverfd);
-      continue;
+      return NULL;
     }
 
     // Read the command ID 
