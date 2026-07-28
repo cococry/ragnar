@@ -3995,6 +3995,9 @@ main(void) {
   state_t* wm_state = calloc(1, sizeof(state_t));
   // Setup the window manager
   setup(wm_state);
+  // Raise the event loop's priority. After setup() so the IPC thread
+  // it spawns keeps normal scheduling.
+  setrrscheduling(wm_state);
   // Manage all windows on the display
   // Enter the event loop
   loop(wm_state);

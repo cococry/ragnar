@@ -1,0 +1,19 @@
+# pacman does not carry file capabilities through the package, so the cap
+# is applied here instead of in package(). optional: without it the event
+# loop logs a warning and runs at normal priority.
+_setcap() {
+        if ! command -v setcap >/dev/null; then
+                echo "no setcap (libcap), ragnar will run at normal priority"
+                return
+        fi
+        setcap cap_sys_nice=ep /usr/bin/ragnar ||
+                echo "setcap failed, ragnar will run at normal priority"
+}
+
+post_install() {
+        _setcap
+}
+
+post_upgrade() {
+        _setcap
+}

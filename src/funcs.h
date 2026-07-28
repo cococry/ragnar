@@ -20,9 +20,19 @@
 void             setup(state_t* s);
 
 /**
- * @brief Event loop of the window manager 
+ * @brief Raises the window manager's event loop to real-time
+ * round-robin scheduling.
  *
- * This function polls for X server events and 
+ * Buys wake-up latency for input handling, not client framerate.
+ * Children are put back on SCHED_OTHER by the kernel across fork.
+ * Not fatal when it fails.
+ */
+void             setrrscheduling(state_t* s);
+
+/**
+ * @brief Event loop of the window manager
+ *
+ * This function polls for X server events and
  * handles them accoringly by calling the associated event handler.
  */
 void             loop(state_t* s);

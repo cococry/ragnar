@@ -31,6 +31,9 @@ optdepends=(
 provides=('ragnarwm')
 options=('!debug')
 backup=('etc/ragnarwm/ragnar.cfg')
+# capabilities do not survive the package, so cap_sys_nice is applied by a
+# scriptlet. see src/realtime.c for what it buys.
+install="${pkgname}.install"
 source=("${_pkgname}::git+${url}.git")
 sha256sums=('SKIP')
 

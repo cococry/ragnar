@@ -62,6 +62,28 @@ Client windows are stored in a doubly linked list. For tiling, Ragnar does not u
 
 Layouts can still be adjusted at runtime by changing the size of master and slave areas through keybindings.
 
+### Scheduling
+
+The event loop asks the kernel for `SCHED_RR` on startup. Ragnar spends
+almost all of its time blocked in `xcb_wait_for_event`, so what this buys is
+wake-up latency under load: keybinds and interactive moves stay responsive
+while something else saturates the CPU. It does **not** affect the framerate
+of clients, since under X11 the process in the path of every frame is the X
+server, not the window manager.
+
+The priority is not inherited. `SCHED_RESET_ON_FORK` puts every child back on
+`SCHED_OTHER`, so programs started from `runcmd` keybinds run normally.
+
+This needs `cap_sys_nice` on the binary, which `install.sh` and the package
+scriptlet apply:
+
+```console
+sudo setcap cap_sys_nice=ep /usr/bin/ragnar
+```
+
+Without it ragnar logs a warning and runs at normal priority. A nonzero
+`RLIMIT_RTPRIO` (`ulimit -r`) works in place of the capability.
+
 ### IPC
 
 Ragnar includes an abstracted **IPC API** for plugin development and external control.
