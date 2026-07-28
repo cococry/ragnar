@@ -7,7 +7,9 @@ pkgver='2'
 pkgrel=1
 pkgdesc="Minimal, flexible & user-friendly X tiling window manager"
 arch=('x86_64')
-url="https://github.com/h8d13/ragnar"
+url="https://github.com/cococry/ragnar"
+#url="https://github.com/h8d13/ragnar"
+_branch="main"
 license=('GPL')
 groups=()
 # mirrors the NEEDED entries of bin/ragnar, nothing more:
@@ -37,7 +39,7 @@ backup=('etc/ragnarwm/ragnar.cfg')
 # capabilities do not survive the package, so cap_sys_nice is applied by a
 # scriptlet. see src/realtime.c for what it buys.
 install="${pkgname}.install"
-source=("${_pkgname}::git+${url}.git")
+source=("${_pkgname}::git+${url}.git#branch=${_branch}")
 sha256sums=('SKIP')
 
 pkgver() {
