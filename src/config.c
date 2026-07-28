@@ -674,7 +674,6 @@ readconfig(state_t* s, config_data_t* data) {
   data->initlayout = cfgevallayouttype(s, "initial_layout");
 
   success = cfgreadint(s, (int32_t*)&data->motion_notify_debounce_fps, "motion_notify_debounce_fps");
-  success = cfgreadbool(s, &data->glvsync, "gl_vsync");
 
   success = cfgreadstr(s, (const char**)&data->cursorimage, "cursor_image");
 

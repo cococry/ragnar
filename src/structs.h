@@ -488,8 +488,6 @@ typedef struct {
 
   uint32_t motion_notify_debounce_fps;
 
-  bool glvsync;
-
   char* logfile;
   bool logmessages;
   bool shouldlogtofile;
