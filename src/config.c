@@ -678,6 +678,13 @@ readconfig(state_t* s, config_data_t* data) {
 
   success = cfgreadstr(s, (const char**)&data->cursorimage, "cursor_image");
 
+  // optional, the session's layout is used when unset
+  data->kblayout = NULL;
+  const char* kblayout = NULL;
+  if(config_lookup_string(&cfghndl, "keyboard_layout", &kblayout)) {
+    data->kblayout = strdup(kblayout);
+  }
+
   const char* home = getenv("HOME");
   const char* relpath = "/.ragnarwm.log";
   char* logpath = malloc(strlen(home) + strlen(relpath) + 2);

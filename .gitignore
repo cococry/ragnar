@@ -9,3 +9,4 @@ ragnar/
 .gdb.log
 compile_commands.json
 compile_flags.txt
+.*.md

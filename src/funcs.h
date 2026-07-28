@@ -508,6 +508,14 @@ uint16_t         getnumlockmask(state_t* s);
 void             grabkeybinds(state_t* s);
 
 /**
+ * @brief Applies the keyboard layout set in the config (if any) by
+ * running setxkbmap.
+ *
+ * @param s The window manager's state
+ * */
+void             applykblayout(state_t* s);
+
+/**
  * @brief Loads and sets the default cursor image of the window manager.
  * The default image is the left facing pointer.
  * */
@@ -692,6 +700,15 @@ void             evpropertynotify(state_t* s, xcb_generic_event_t* ev);
 void             evclientmessage(state_t* s, xcb_generic_event_t* ev);
 
 void             evfocusin(state_t* s, xcb_generic_event_t* ev);
+
+/**
+ * @brief Handles a X mapping notify event by re-grabbing all keybinds
+ * so they resolve against the new keymap (e.g after setxkbmap).
+ *
+ * @param s The window manager's state
+ * @param ev The generic event
+ */
+void             evmappingnotify(state_t* s, xcb_generic_event_t* ev);
 
 
 

@@ -51,6 +51,7 @@ static event_handler_t evhandlers[_XCB_EV_LAST] = {
   [XCB_PROPERTY_NOTIFY]     = evpropertynotify,
   [XCB_CLIENT_MESSAGE]      = evclientmessage,
   [XCB_FOCUS_IN]            = evfocusin,
+  [XCB_MAPPING_NOTIFY]      = evmappingnotify,
 };
 
 /* --- Static functions to handle another running X window manager */
@@ -179,6 +180,9 @@ setup(state_t* s) {
 
   // Load the default root cursor image
   loaddefaultcursor(s);
+
+  // Apply the configured keyboard layout before resolving keybinds
+  applykblayout(s);
 
   // Grab the window manager's keybinds
   grabkeybinds(s);
@@ -2213,6 +2217,24 @@ getnumlockmask(state_t* s) {
 }
 
 /**
+ * @brief Applies the keyboard layout set in the config (if any) by
+ * running setxkbmap.
+ *
+ * @param s The window manager's state
+ * */
+void
+applykblayout(state_t* s) {
+  if(!s->config.kblayout || !s->config.kblayout[0]) return;
+
+  char* cmd = NULL;
+  if(asprintf(&cmd, "setxkbmap %s", s->config.kblayout) < 0) return;
+
+  logmsg(s, LogLevelTrace, "applying keyboard layout '%s'.", s->config.kblayout);
+  runcmd(s, (passthrough_data_t){ .cmd = cmd });
+  free(cmd);
+}
+
+/**
  * @brief Grabs all the keybinds specified in the config for the window
  * manager. The function also ungrabs all previously grabbed keys
  *
@@ -2878,11 +2900,25 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
 }
 
 /**
- * @brief Handles a X button press event by focusing the client 
+ * @brief Handles a X mapping notify event by re-grabbing all keybinds
+ * so they resolve against the new keymap (e.g after setxkbmap).
+ *
+ * @param s The window manager's state
+ * @param ev The generic event
+ */
+void
+evmappingnotify(state_t* s, xcb_generic_event_t* ev) {
+  xcb_mapping_notify_event_t* e = (xcb_mapping_notify_event_t*)ev;
+  if(e->request == XCB_MAPPING_POINTER) return;
+  grabkeybinds(s);
+}
+
+/**
+ * @brief Handles a X button press event by focusing the client
  * associated with the pressed window and setting cursor and window grab positions->
  *
  * @param s The window manager's state
- * @param ev The generic event 
+ * @param ev The generic event
  */
 void
 evbuttonpress(state_t* s, xcb_generic_event_t* ev) {

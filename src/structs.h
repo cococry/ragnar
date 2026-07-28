@@ -495,6 +495,9 @@ typedef struct {
   bool shouldlogtofile;
 
   char* cursorimage;
+
+  // optional startup keyboard layout, setxkbmap syntax ("be nodeadkeys")
+  char* kblayout;
 } config_data_t;
 
 typedef struct {
