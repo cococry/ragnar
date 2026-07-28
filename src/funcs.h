@@ -541,6 +541,16 @@ void             setcursorhidden(state_t* s, bool hidden);
  * @param s The window manager's state
  * */
 void             ignoreenterlayout(state_t* s);
+
+/**
+ * @brief Returns the topmost client (in X stacking order) on the
+ * currently viewed desktop whose frame contains the pointer.
+ *
+ * @param s The window manager's state
+ *
+ * @return The topmost client under the pointer (NULL if there is none)
+ */
+client_t*        topclientundercursor(state_t* s);
 bool             haswindowtype(state_t* s, xcb_window_t win, xcb_atom_t type);
 bool             iswindowpopup(state_t* s, xcb_window_t win);
 bool             iswindowdock(state_t* s, xcb_window_t win);

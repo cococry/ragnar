@@ -1563,12 +1563,19 @@ switchmonitordesktop(state_t* s, int32_t desktop) {
   // (reset in evmotionnotify)
   ignoreenterlayout(s);
 
-  // Focus the first client on the switched-to desktop
-  for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-    if(cl->desktop == mondesktop(s, s->monfocus)->idx) {
-      focusclient(s, cl, false);
-      break;
+  // Focus the topmost client under the cursor on the switched-to
+  // desktop, the first client on it otherwise
+  client_t* newfocus = topclientundercursor(s);
+  if(!newfocus) {
+    for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
+      if(cl->desktop == mondesktop(s, s->monfocus)->idx) {
+        newfocus = cl;
+        break;
+      }
     }
+  }
+  if(newfocus) {
+    focusclient(s, newfocus, false);
   }
 
   // Leaving an emptied desktop unpublishes it
@@ -2709,62 +2716,47 @@ evmapnotify(state_t* s, xcb_generic_event_t* ev) {
 
 }
 
-void focus_top_client_under_cursor(state_t* s, xcb_connection_t *conn, xcb_window_t root) {
-    // Get pointer position
-    xcb_query_pointer_cookie_t pointer_cookie = xcb_query_pointer(conn, root);
-    xcb_query_pointer_reply_t *pointer_reply = xcb_query_pointer_reply(conn, pointer_cookie, NULL);
-    if (!pointer_reply)
-    return;
+/**
+ * @brief Returns the topmost client (in X stacking order) on the
+ * currently viewed desktop whose frame contains the pointer.
+ *
+ * @param s The window manager's state
+ *
+ * @return The topmost client under the pointer (NULL if there is none)
+ */
+client_t*
+topclientundercursor(state_t* s) {
+  bool success;
+  v2_t cursor = cursorpos(s, &success);
+  if(!success) return NULL;
 
-  int pointer_x = pointer_reply->root_x;
-  int pointer_y = pointer_reply->root_y;
-  free(pointer_reply);
+  xcb_query_tree_reply_t* tree = xcb_query_tree_reply(
+      s->con, xcb_query_tree(s->con, s->root), NULL);
+  if(!tree) return NULL;
 
-  // Get window stacking order (topmost last)
-  xcb_query_tree_cookie_t tree_cookie = xcb_query_tree(conn, root);
-  xcb_query_tree_reply_t *tree_reply = xcb_query_tree_reply(conn, tree_cookie, NULL);
-  if (!tree_reply)
-    return;
+  int32_t len = xcb_query_tree_children_length(tree);
+  xcb_window_t* children = xcb_query_tree_children(tree);
 
-  int len = xcb_query_tree_children_length(tree_reply);
-  xcb_window_t *children = xcb_query_tree_children(tree_reply);
-
-  // Check each window from top to bottom
-  for (int i = len - 1; i >= 0; i--) {
-    xcb_window_t win = children[i];
-
-    // Get window geometry
-    xcb_get_geometry_cookie_t geo_cookie = xcb_get_geometry(conn, win);
-    xcb_get_geometry_reply_t *geo = xcb_get_geometry_reply(conn, geo_cookie, NULL);
-    if (!geo)
-      continue;
-
-    int x = geo->x;
-    int y = geo->y;
-    int w = geo->width;
-    int h = geo->height;
-    free(geo);
-
-    // Check if pointer is inside this window
-  
-    if (pointer_x >= x && pointer_x < x + w &&
-      pointer_y >= y && pointer_y < y + h) {
-      logmsg(s, LogLevelTrace, "Win %i\n", win);
-      logmsg(s, LogLevelTrace, "===============");
-      for(client_t* cl = s->monfocus->clients; cl != NULL; cl = cl->next) {
-        logmsg(s, LogLevelTrace, "Client %i\n", cl->win);
-        logmsg(s, LogLevelTrace, "Client Frame %i\n", cl->frame);
-      }
-      logmsg(s, LogLevelTrace, "===============");
-      client_t* c = clientfromframe(s, win);
-      if (c) {
-        focusclient(s, c, false);
-        break;
-      }
+  client_t* found = NULL;
+  // topmost windows are last in the tree
+  for(int32_t i = len - 1; i >= 0 && !found; i--) {
+    client_t* cl = clientfromframe(s, children[i]);
+    if(!cl || cl->desktop != mondesktop(s, cl->mon)->idx) continue;
+    if(pointinarea(cursor, cl->area)) {
+      found = cl;
     }
   }
+  free(tree);
+  return found;
+}
 
-  free(tree_reply);
+void focus_top_client_under_cursor(state_t* s, xcb_connection_t *conn, xcb_window_t root) {
+  (void)conn;
+  (void)root;
+  client_t* cl = topclientundercursor(s);
+  if (cl) {
+    focusclient(s, cl, false);
+  }
 }
 
 
