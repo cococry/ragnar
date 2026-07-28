@@ -827,7 +827,6 @@ uint32_t         updatemons(state_t* s);
  *
  * @return The keysym of the given keycode (0 if no keysym associated) 
  */
-xcb_keysym_t     getkeysym(state_t* s, xcb_keycode_t keycode);
 
 /**
  * @brief Returns the keycode of a given keysym. 

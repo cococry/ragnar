@@ -176,6 +176,9 @@ typedef void (*keycallback_t)(state_t* s, passthrough_data_t data);
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
+  // keycode `key` resolved to at grab time, matched on key press
+  // so binds work on layouts with keysyms on a shift level (AZERTY)
+  xcb_keycode_t keycode;
   keycallback_t cb;
   passthrough_data_t data;
 } keybind_t;

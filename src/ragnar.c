@@ -2242,6 +2242,8 @@ grabkeybinds(state_t* s) {
   for (size_t i = 0; i < s->config.numkeybinds; ++i) {
     // Get the keycode for the keysym of the keybind
     xcb_keycode_t *keycode = getkeycodes(s, s->config.keybinds[i].key);
+    // remember the keycode for evkeypress to match on
+    s->config.keybinds[i].keycode = (keycode != NULL) ? *keycode : 0;
     // Grab the key if it is valid
     if (keycode != NULL) {
       // a bind with no modifier grabs the bare key, which is what the
@@ -2857,8 +2859,6 @@ eventernotify(state_t* s, xcb_generic_event_t* ev) {
 void
 evkeypress(state_t* s, xcb_generic_event_t* ev) {
   xcb_key_press_event_t *e = ( xcb_key_press_event_t *) ev;
-  // Get associated keysym for the keycode of the event
-  xcb_keysym_t keysym = getkeysym(s, e->detail);
 
   // lock state is not part of a bind, drop it before comparing
   uint16_t state = e->state & ~(XCB_MOD_MASK_LOCK | s->numlockmask);
@@ -2866,7 +2866,8 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
   /* Iterate throguh the keybinds and check if one of them was pressed. */
   for (uint32_t i = 0; i < s->config.numkeybinds; ++i) {
     // If it was pressed, call the callback of the keybind
-    if ((keysym == s->config.keybinds[i].key) && (state == s->config.keybinds[i].modmask)) {
+    if (s->config.keybinds[i].keycode && (e->detail == s->config.keybinds[i].keycode) &&
+        (state == s->config.keybinds[i].modmask)) {
       if(s->config.keybinds[i].cb) {
         setcursorhidden(s, true);
         s->config.keybinds[i].cb(s, s->config.keybinds[i].data);
@@ -3739,26 +3740,6 @@ updatemons(state_t* s) {
   free(res_reply);
 
   return registered_count;
-}
-
-/**
- * @brief Returns the keysym of a given key code. 
- * Returns 0 if there is no keysym for the given keycode.
- *
- * @param s The window manager's state
- * @param keycode The keycode to get the keysym from 
- *
- * @return The keysym of the given keycode (0 if no keysym associated) 
- */
-xcb_keysym_t
-getkeysym(state_t* s, xcb_keycode_t keycode) {
-  // Allocate key symbols 
-  xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(s->con);
-  // Get the keysym
-  xcb_keysym_t keysym = (!(keysyms) ? 0 : xcb_key_symbols_get_keysym(keysyms, keycode, 0));
-  // Free allocated resources
-  xcb_key_symbols_free(keysyms);
-  return keysym;
 }
 
 /**
