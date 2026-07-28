@@ -484,6 +484,16 @@ void             createdesktop(state_t* s, uint32_t idx, monitor_t* mon);
 void             prunedesktops(state_t* s, monitor_t* mon);
 
 /**
+ * @brief Switches to the first occupied desktop when the currently
+ * viewed desktop on the focused monitor has no clients left. Falls
+ * back to the default desktop when every desktop is empty.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor the drained client was on
+ */
+void             fallbackdesktop(state_t* s, monitor_t* mon);
+
+/**
  * @brief Initializes all important atoms for EWMH &
  * NetWM compatibility.
  *

@@ -2036,8 +2036,8 @@ updateewmhdesktops(state_t* s, monitor_t* mon) {
 
 /**
  * @brief Unpublishes active desktops that hold no client anymore and
- * notifies EWMH if any were removed. The currently viewed desktop and
- * the default desktop stay published even when empty.
+ * notifies EWMH if any were removed. The currently viewed desktop
+ * stays published even when empty.
  *
  * @param s The window manager's state
  * @param mon The monitor whose desktops are pruned
@@ -2048,7 +2048,6 @@ prunedesktops(state_t* s, monitor_t* mon) {
   bool changed = false;
   for(uint32_t i = 0; i < mon->desktopcount; i++) {
     if(!mon->activedesktops[i].init) continue;
-    if(i == s->config.desktopinit) continue;
     if(curdesk && i == curdesk->idx) continue;
 
     bool occupied = false;
@@ -2065,6 +2064,44 @@ prunedesktops(state_t* s, monitor_t* mon) {
   }
   if(changed) {
     updateewmhdesktops(s, mon);
+  }
+}
+
+/**
+ * @brief Switches to the first occupied desktop when the currently
+ * viewed desktop on the focused monitor has no clients left. Falls
+ * back to the default desktop when every desktop is empty.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor the drained client was on
+ */
+void
+fallbackdesktop(state_t* s, monitor_t* mon) {
+  if(!mon || mon != s->monfocus) return;
+  desktop_t* curdesk = mondesktop(s, mon);
+  if(!curdesk) return;
+
+  for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+    if(cl->desktop == curdesk->idx) return;
+  }
+
+  int32_t target = (int32_t)s->config.desktopinit;
+  for(uint32_t i = 0; i < mon->desktopcount; i++) {
+    bool occupied = false;
+    for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
+      if(cl->desktop == i) {
+        occupied = true;
+        break;
+      }
+    }
+    if(occupied) {
+      target = i;
+      break;
+    }
+  }
+
+  if((int32_t)curdesk->idx != target) {
+    switchmonitordesktop(s, target);
   }
 }
 
@@ -2794,6 +2831,7 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
   // Client may have been the last one on a background desktop
   if(clmon) {
     prunedesktops(s, clmon);
+    fallbackdesktop(s, clmon);
   }
 
   xcb_flush(s->con);
@@ -2821,6 +2859,7 @@ evdestroynotify(state_t* s, xcb_generic_event_t* ev) {
   unframeclient(s, cl);
   releaseclient(s, destroy_ev->window);
   prunedesktops(s, clmon);
+  fallbackdesktop(s, clmon);
 }
 
 /**
