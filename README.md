@@ -81,16 +81,19 @@ Ragnar uses `libconfig` to load an external configuration file:
 
 The configuration is loaded on startup and can be reloaded while the window manager is running, typically through a keybinding.
 
-You can add to `.xinitrc`:
+Example contents of `.xinitrc`:
 
-`exec path/to/ragnar` Then simply; `startx`
+```console
+picom -b; polybar &
+exec ragnar
+```
+
+Then simply; `startx`
 
 > By default it uses `alacritty` (Super+Return) and `dmenu` (Super+S), if you haven't edited these yet.
 > Both of these need fonts file; for instance `ttf-dejavu`
 
-You can also for example add: `picom -b; polybar &` before the `exec ragnar` line.
-
-Other optional deps can be seen in: [`PKGBUILD`](./PKGBUILD), might differ per distro.
+Other optional deps can be seen in: [`PKGBUILD`](./PKGBUILD), might differ per distro/configuration.
 
 ---
 
