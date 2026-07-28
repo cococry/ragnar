@@ -492,10 +492,18 @@ void             prunedesktops(state_t* s, monitor_t* mon);
 void             setupatoms(state_t* s);
 
 /**
- * @brief Grabs all the keybinds specified in config.h for the window 
+ * @brief Finds which modifier bit num lock is mapped to, so binds can be
+ * grabbed with it and matched without it.
+ *
+ * @param s The window manager's state
+ * */
+uint16_t         getnumlockmask(state_t* s);
+
+/**
+ * @brief Grabs all the keybinds specified in config.h for the window
  * manager. The function also ungrabs all previously grabbed keys
  *
- * @param s The window manager's state 
+ * @param s The window manager's state
  * */
 void             grabkeybinds(state_t* s);
 

@@ -511,9 +511,13 @@ struct state_t {
   xcb_window_t root;
   xcb_screen_t* screen; 
 
-  float lastexposetime, lastmotiontime; 
+  float lastexposetime, lastmotiontime;
 
-  Display* dsp; 
+  // modifier bit num lock lives on, looked up at grab time. keybinds are
+  // grabbed with and without it, and it is masked out when matching.
+  uint16_t numlockmask;
+
+  Display* dsp;
 
   bool ignore_enter_layout;
 

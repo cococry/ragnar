@@ -27,6 +27,9 @@ optdepends=(
   'alacritty: default terminal keybind'
   'polybar: optional status/desktops bars'
   'ttf-dejavu: fonts for both the above'
+  'wireplumber: default volume keybinds (wpctl)'
+  'brightnessctl: default brightness keybinds'
+  'playerctl: default media player keybinds (play/pause, next, prev)'
 )
 provides=('ragnarwm')
 options=('!debug')

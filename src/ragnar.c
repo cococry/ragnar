@@ -2164,27 +2164,97 @@ setupatoms(state_t* s) {
 
 
 /**
- * @brief Grabs all the keybinds specified in the config for the window 
+ * @brief Finds which modifier bit num lock is mapped to.
+ *
+ * X reports num lock and caps lock in the modifier state of a key press,
+ * so a grab for Super+Q does not fire while num lock is on: the state is
+ * Super|Mod2, which is a different combination as far as the server is
+ * concerned. The bit is not fixed (Mod2 by convention, not by rule), so
+ * it is looked up from the modifier mapping.
+ *
+ * @param s The window manager's state
+ *
+ * @return The modifier mask of num lock, or 0 if it is not mapped
+ * */
+uint16_t
+getnumlockmask(state_t* s) {
+  uint16_t mask = 0;
+
+  xcb_key_symbols_t* syms = xcb_key_symbols_alloc(s->con);
+  if(!syms) {
+    return 0;
+  }
+  xcb_keycode_t* numlock = xcb_key_symbols_get_keycode(syms, XK_Num_Lock);
+
+  xcb_get_modifier_mapping_reply_t* reply = xcb_get_modifier_mapping_reply(
+    s->con, xcb_get_modifier_mapping(s->con), NULL);
+
+  if(numlock && reply) {
+    xcb_keycode_t* codes = xcb_get_modifier_mapping_keycodes(reply);
+    // the reply is 8 modifiers of keycodes_per_modifier entries each,
+    // in the order Shift, Lock, Control, Mod1..Mod5
+    for(uint32_t mod = 0; mod < 8; mod++) {
+      for(uint32_t i = 0; i < reply->keycodes_per_modifier; i++) {
+        xcb_keycode_t code = codes[mod * reply->keycodes_per_modifier + i];
+        if(!code) continue;
+        for(xcb_keycode_t* it = numlock; *it != XCB_NO_SYMBOL; it++) {
+          if(code == *it) {
+            mask = (1 << mod);
+          }
+        }
+      }
+    }
+  }
+
+  free(reply);
+  free(numlock);
+  xcb_key_symbols_free(syms);
+  return mask;
+}
+
+/**
+ * @brief Grabs all the keybinds specified in the config for the window
  * manager. The function also ungrabs all previously grabbed keys
  *
- * @param s The window manager's state 
+ * @param s The window manager's state
  * */
 void
 grabkeybinds(state_t* s) {
   // Ungrab any grabbed keys
   xcb_ungrab_key(s->con, XCB_GRAB_ANY, s->root, XCB_MOD_MASK_ANY);
 
+  s->numlockmask = getnumlockmask(s);
+
+  // every bind is grabbed once per lock combination, otherwise it stops
+  // working the moment num lock or caps lock is on. num lock is not
+  // always mapped, and grabbing the same combination twice is a
+  // BadAccess, so the list only grows when there is a bit to add.
+  uint16_t locks[4];
+  uint32_t numlocks = 0;
+  locks[numlocks++] = 0;
+  locks[numlocks++] = XCB_MOD_MASK_LOCK;
+  if (s->numlockmask) {
+    locks[numlocks++] = s->numlockmask;
+    locks[numlocks++] = s->numlockmask | XCB_MOD_MASK_LOCK;
+  }
+
   // Grab every keybind
   for (size_t i = 0; i < s->config.numkeybinds; ++i) {
     // Get the keycode for the keysym of the keybind
     xcb_keycode_t *keycode = getkeycodes(s, s->config.keybinds[i].key);
-    // Grab the key if it is valid 
+    // Grab the key if it is valid
     if (keycode != NULL) {
-      xcb_grab_key(s->con, 1, s->root, s->config.keybinds[i].modmask, *keycode,
-	  XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+      // a bind with no modifier grabs the bare key, which is what the
+      // XF86 media keys need
+      for (uint32_t j = 0; j < numlocks; j++) {
+        xcb_grab_key(s->con, 1, s->root,
+            s->config.keybinds[i].modmask | locks[j], *keycode,
+            XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+      }
       logmsg(s,  LogLevelTrace, "grabbed key '%s' on X server.",
              XKeysymToString(s->config.keybinds[i].key));
 
+      free(keycode);
     }
   }
   xcb_flush(s->con);
@@ -2790,10 +2860,13 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
   // Get associated keysym for the keycode of the event
   xcb_keysym_t keysym = getkeysym(s, e->detail);
 
+  // lock state is not part of a bind, drop it before comparing
+  uint16_t state = e->state & ~(XCB_MOD_MASK_LOCK | s->numlockmask);
+
   /* Iterate throguh the keybinds and check if one of them was pressed. */
   for (uint32_t i = 0; i < s->config.numkeybinds; ++i) {
     // If it was pressed, call the callback of the keybind
-    if ((keysym == s->config.keybinds[i].key) && (e->state == s->config.keybinds[i].modmask)) {
+    if ((keysym == s->config.keybinds[i].key) && (state == s->config.keybinds[i].modmask)) {
       if(s->config.keybinds[i].cb) {
         setcursorhidden(s, true);
         s->config.keybinds[i].cb(s, s->config.keybinds[i].data);

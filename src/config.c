@@ -176,9 +176,7 @@ const key_mapping_t keymappings[] = {
     {"KeySuper_R", KeySuper_R},
     {"KeyHyper_L", KeyHyper_L},
     {"KeyHyper_R", KeyHyper_R},
-    {"KeyLowerAudio", KeyHyper_R},
 
-  
     {"KeyAudioLowerVolume", XF86XK_AudioLowerVolume},
     {"KeyAudioRaiseVolume", XF86XK_AudioRaiseVolume},
     {"KeyAudioMute", XF86XK_AudioMute},
@@ -547,13 +545,21 @@ cfgevalkeybinds(state_t* s, uint32_t* numkeybinds, const char* label) {
   {
     config_setting_t* keybind = config_setting_get_elem(setting, i);
 
-    const char* mods_str;
-    const char* key_str;
-    const char* do_str;
+    // libconfig leaves these untouched when the field is absent, so they
+    // have to start NULL. 'mod' is optional: without it the bind is a
+    // bare key, which is what media keys need.
+    const char* mods_str = NULL;
+    const char* key_str = NULL;
+    const char* do_str = NULL;
 
     config_setting_lookup_string(keybind, "mod", &mods_str);
     config_setting_lookup_string(keybind, "key", &key_str);
     config_setting_lookup_string(keybind, "do", &do_str);
+
+    if(!key_str || !do_str) {
+      logmsg(s, LogLevelError, "config: keybind is missing 'key' or 'do'.");
+      continue;
+    }
 
     uint16_t mods = kbmodsfromstr(s, mods_str);
     keycode_t key = keycodefromstr(key_str);
