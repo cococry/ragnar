@@ -532,6 +532,15 @@ void             applykblayout(state_t* s);
 void             loaddefaultcursor(state_t* s);
 
 void             setcursorhidden(state_t* s, bool hidden);
+
+/**
+ * @brief Ignores enter events until the pointer moves away from its
+ * current position. Used around layout changes that shift windows
+ * under a stationary pointer so they cannot steal focus.
+ *
+ * @param s The window manager's state
+ * */
+void             ignoreenterlayout(state_t* s);
 bool             haswindowtype(state_t* s, xcb_window_t win, xcb_atom_t type);
 bool             iswindowpopup(state_t* s, xcb_window_t win);
 bool             iswindowdock(state_t* s, xcb_window_t win);

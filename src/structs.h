@@ -524,6 +524,9 @@ struct state_t {
   Display* dsp;
 
   bool ignore_enter_layout;
+  // pointer position when the ignore was set, an enter somewhere
+  // else is real movement and lifts it
+  v2_t ignore_enter_pos;
 
   bool xfixes_ok;
   bool cursorhidden;
