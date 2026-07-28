@@ -2362,7 +2362,7 @@ loaddefaultcursor(state_t* s) {
 
 /**
  * @brief Hides or shows the cursor (no-op without XFixes). The cursor
- * is hidden on keybind use and shown again on real pointer motion.
+ * starts hidden and appears on the first real pointer motion.
  * */
 void
 setcursorhidden(state_t* s, bool hidden) {
@@ -2930,7 +2930,6 @@ evkeypress(state_t* s, xcb_generic_event_t* ev) {
     if (s->config.keybinds[i].keycode && (e->detail == s->config.keybinds[i].keycode) &&
         (state == s->config.keybinds[i].modmask)) {
       if(s->config.keybinds[i].cb) {
-        setcursorhidden(s, true);
         s->config.keybinds[i].cb(s, s->config.keybinds[i].data);
       }
     }
