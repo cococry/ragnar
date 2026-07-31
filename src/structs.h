@@ -176,6 +176,9 @@ typedef void (*keycallback_t)(state_t* s, passthrough_data_t data);
 typedef struct {
   uint16_t modmask;
   xcb_keysym_t key;
+  // keycode `key` resolved to at grab time, matched on key press
+  // so binds work on layouts with keysyms on a shift level (AZERTY)
+  xcb_keycode_t keycode;
   keycallback_t cb;
   passthrough_data_t data;
 } keybind_t;
@@ -485,13 +488,14 @@ typedef struct {
 
   uint32_t motion_notify_debounce_fps;
 
-  bool glvsync;
-
   char* logfile;
   bool logmessages;
   bool shouldlogtofile;
 
   char* cursorimage;
+
+  // optional startup keyboard layout, setxkbmap syntax ("be nodeadkeys")
+  char* kblayout;
 } config_data_t;
 
 typedef struct {
@@ -511,11 +515,18 @@ struct state_t {
   xcb_window_t root;
   xcb_screen_t* screen; 
 
-  float lastexposetime, lastmotiontime; 
+  float lastexposetime, lastmotiontime;
 
-  Display* dsp; 
+  // modifier bit num lock lives on, looked up at grab time. keybinds are
+  // grabbed with and without it, and it is masked out when matching.
+  uint16_t numlockmask;
+
+  Display* dsp;
 
   bool ignore_enter_layout;
+  // pointer position when the ignore was set, an enter somewhere
+  // else is real movement and lifts it
+  v2_t ignore_enter_pos;
 
   bool xfixes_ok;
   bool cursorhidden;

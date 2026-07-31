@@ -20,9 +20,19 @@
 void             setup(state_t* s);
 
 /**
- * @brief Event loop of the window manager 
+ * @brief Raises the window manager's event loop to real-time
+ * round-robin scheduling.
  *
- * This function polls for X server events and 
+ * Buys wake-up latency for input handling, not client framerate.
+ * Children are put back on SCHED_OTHER by the kernel across fork.
+ * Not fatal when it fails.
+ */
+void             setrrscheduling(state_t* s);
+
+/**
+ * @brief Event loop of the window manager
+ *
+ * This function polls for X server events and
  * handles them accoringly by calling the associated event handler.
  */
 void             loop(state_t* s);
@@ -474,6 +484,16 @@ void             createdesktop(state_t* s, uint32_t idx, monitor_t* mon);
 void             prunedesktops(state_t* s, monitor_t* mon);
 
 /**
+ * @brief Switches to the first occupied desktop when the currently
+ * viewed desktop on the focused monitor has no clients left. Falls
+ * back to the default desktop when every desktop is empty.
+ *
+ * @param s The window manager's state
+ * @param mon The monitor the drained client was on
+ */
+void             fallbackdesktop(state_t* s, monitor_t* mon);
+
+/**
  * @brief Initializes all important atoms for EWMH &
  * NetWM compatibility.
  *
@@ -482,12 +502,28 @@ void             prunedesktops(state_t* s, monitor_t* mon);
 void             setupatoms(state_t* s);
 
 /**
- * @brief Grabs all the keybinds specified in config.h for the window 
+ * @brief Finds which modifier bit num lock is mapped to, so binds can be
+ * grabbed with it and matched without it.
+ *
+ * @param s The window manager's state
+ * */
+uint16_t         getnumlockmask(state_t* s);
+
+/**
+ * @brief Grabs all the keybinds specified in config.h for the window
  * manager. The function also ungrabs all previously grabbed keys
  *
- * @param s The window manager's state 
+ * @param s The window manager's state
  * */
 void             grabkeybinds(state_t* s);
+
+/**
+ * @brief Applies the keyboard layout set in the config (if any) by
+ * running setxkbmap.
+ *
+ * @param s The window manager's state
+ * */
+void             applykblayout(state_t* s);
 
 /**
  * @brief Loads and sets the default cursor image of the window manager.
@@ -496,6 +532,25 @@ void             grabkeybinds(state_t* s);
 void             loaddefaultcursor(state_t* s);
 
 void             setcursorhidden(state_t* s, bool hidden);
+
+/**
+ * @brief Ignores enter events until the pointer moves away from its
+ * current position. Used around layout changes that shift windows
+ * under a stationary pointer so they cannot steal focus.
+ *
+ * @param s The window manager's state
+ * */
+void             ignoreenterlayout(state_t* s);
+
+/**
+ * @brief Returns the topmost client (in X stacking order) on the
+ * currently viewed desktop whose frame contains the pointer.
+ *
+ * @param s The window manager's state
+ *
+ * @return The topmost client under the pointer (NULL if there is none)
+ */
+client_t*        topclientundercursor(state_t* s);
 bool             haswindowtype(state_t* s, xcb_window_t win, xcb_atom_t type);
 bool             iswindowpopup(state_t* s, xcb_window_t win);
 bool             iswindowdock(state_t* s, xcb_window_t win);
@@ -675,6 +730,15 @@ void             evclientmessage(state_t* s, xcb_generic_event_t* ev);
 
 void             evfocusin(state_t* s, xcb_generic_event_t* ev);
 
+/**
+ * @brief Handles a X mapping notify event by re-grabbing all keybinds
+ * so they resolve against the new keymap (e.g after setxkbmap).
+ *
+ * @param s The window manager's state
+ * @param ev The generic event
+ */
+void             evmappingnotify(state_t* s, xcb_generic_event_t* ev);
+
 
 
 /**
@@ -801,18 +865,7 @@ monitor_t*       cursormon(state_t* s);
 uint32_t         updatemons(state_t* s);
 
 /**
- * @brief Returns the keysym of a given key code. 
- * Returns 0 if there is no keysym for the given keycode.
- *
- * @param s The window manager's state
- * @param keycode The keycode to get the keysym from 
- *
- * @return The keysym of the given keycode (0 if no keysym associated) 
- */
-xcb_keysym_t     getkeysym(state_t* s, xcb_keycode_t keycode);
-
-/**
- * @brief Returns the keycode of a given keysym. 
+ * @brief Returns the keycode of a given keysym.
  * Returns NULL if there is no keycode for the given keysym.
  *
  * @param s The window manager's state

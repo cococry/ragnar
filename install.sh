@@ -17,5 +17,15 @@ as_root() {
 make
 as_root make install
 
+# lets the event loop ask for SCHED_RR, which is about input latency under
+# load, not client framerate. optional: ragnar logs a warning and runs at
+# normal priority without it. skipped when libcap is not installed.
+if command -v setcap >/dev/null; then
+        as_root setcap cap_sys_nice=ep /usr/bin/ragnar ||
+                echo "setcap failed, ragnar will run at normal priority" >&2
+else
+        echo "no setcap (libcap), ragnar will run at normal priority" >&2
+fi
+
 # we do not need the make config anymore; logic unified.
 echo "Successfully installed ragnarwm."

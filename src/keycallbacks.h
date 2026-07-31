@@ -392,7 +392,7 @@ inline void cycledownlayout(state_t* s, passthrough_data_t data) {
   if (!s->monfocus->clients || !s->focus)
     return;
   
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 
   client_t* focus = NULL;
   for (focus = s->focus->next; 
@@ -422,7 +422,7 @@ inline void cycleuplayout(state_t* s, passthrough_data_t data) {
   if (!s->monfocus->clients || !s->focus)
     return;
 
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 
   client_t* focus = NULL;
   client_t* cl;
@@ -598,7 +598,7 @@ inline void inclayoutsizefocus(state_t* s, passthrough_data_t data) {
     return;
   }
   
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 
   // If the window is a master and there are more than one master 
   // or the window is a slave and there are more than one slave,
@@ -655,7 +655,7 @@ inline void declayoutsizefocus(state_t* s, passthrough_data_t data) {
     return;
   }
 
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 
   // If the window is a master and there are more than one master 
   // or the window is a slave and there are more than one slave,
@@ -704,7 +704,7 @@ inline void movefocusup(state_t* s, passthrough_data_t data) {
         s->monfocus->area.pos.y + s->monfocus->area.size.y
         - s->focus->area.size.y)};
   moveclient(s, s->focus, dest, true);
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 }
 
 /**
@@ -724,7 +724,7 @@ inline void movefocusdown(state_t* s, passthrough_data_t data) {
         s->monfocus->area.pos.y + s->monfocus->area.size.y 
         - s->focus->area.size.y)};
   moveclient(s, s->focus, dest, true);
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 }
 
 /**
@@ -743,7 +743,7 @@ inline void movefocusleft(state_t* s, passthrough_data_t data) {
       s->monfocus->area.pos.x + s->monfocus->area.size.x 
       - s->focus->area.size.x), pos.y};
   moveclient(s, s->focus, dest, true);
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 }
 
 /**
@@ -762,7 +762,7 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
       s->monfocus->area.pos.x + s->monfocus->area.size.x
       - s->focus->area.size.x), pos.y};
   moveclient(s, s->focus, dest, true);
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 }
 
 
@@ -778,7 +778,7 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
 inline void cyclefocusmonitordown(state_t* s, passthrough_data_t data) {
   (void)data;
   if(!s->focus) return;
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 
   monitor_t* prevmon = NULL;
   if(s->focus->mon == s->monitors) {
@@ -879,7 +879,7 @@ inline void cyclefocusmonitorup(state_t* s, passthrough_data_t data) {
   (void)data;
   if(!s->focus) return;
 
-  s->ignore_enter_layout = true;
+  ignoreenterlayout(s);
 
   monitor_t* nextmon = s->focus->mon->next;
   if(!nextmon) {
