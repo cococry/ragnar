@@ -496,6 +496,11 @@ typedef struct {
 
   // optional startup keyboard layout, setxkbmap syntax ("be nodeadkeys")
   char* kblayout;
+
+  // optional root window background colour. when unset the root is left
+  // alone so an external setter (xwallpaper, feh) keeps working.
+  uint32_t bgcolor;
+  bool     bgcolor_set;
 } config_data_t;
 
 typedef struct {
@@ -530,6 +535,10 @@ struct state_t {
 
   bool xfixes_ok;
   bool cursorhidden;
+
+  // root background pixmap ragnar owns, freed when it paints the next one.
+  // 0 when it has never painted one.
+  xcb_pixmap_t bgpixmap;
 
   client_t* focus;
   popup_list_t popups;

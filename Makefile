@@ -40,6 +40,15 @@ install:
 	install -Dm644 ragnar.desktop -t $(DESTDIR)$(PREFIX)/share/xsessions
 	install -Dm644 cfg/ragnar.cfg -t $(DESTDIR)$(SYSCONFDIR)/ragnarwm
 
+# the shipped cfg is the only fallback a fresh install has: readconfig
+# terminates when neither the user nor the global path parses, so a syntax
+# error here means a fresh install cannot start at all.
+.PHONY: check
+check:
+	mkdir -p ./bin
+	$(CC) -o bin/config_check $(ALL_CFLAGS) $(LDFLAGS) cfg/config_check.c -lconfig
+	./bin/config_check cfg/ragnar.cfg
+
 .PHONY: clean
 clean:
 	$(RM) bin/*

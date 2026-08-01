@@ -181,6 +181,9 @@ setup(state_t* s) {
   // Load the default root cursor image
   loaddefaultcursor(s);
 
+  // Paint the root background before any window is mapped over it
+  setbackground(s);
+
   // Apply the configured keyboard layout before resolving keybinds
   applykblayout(s);
 
@@ -2365,6 +2368,48 @@ loaddefaultcursor(state_t* s) {
     logmsg(s, LogLevelError, "XFixes unavailable, cursor auto-hide disabled.");
   }
   setcursorhidden(s, true);
+}
+
+/**
+ * @brief Paints the root window with the configured background colour.
+ * Does nothing when 'bg_color' is unset, leaving the root window to
+ * whatever external wallpaper setter the user runs.
+ * */
+void
+setbackground(state_t* s) {
+  if(!s->config.bgcolor_set) return;
+
+  uint16_t w = s->screen->width_in_pixels, h = s->screen->height_in_pixels;
+
+  // a pixmap rather than just XCB_CW_BACK_PIXEL: compositors read the root
+  // pixmap off _XROOTPMAP_ID to blend and blur against, and a background
+  // pixel leaves them nothing to point at.
+  xcb_pixmap_t pm = xcb_generate_id(s->con);
+  xcb_create_pixmap(s->con, s->screen->root_depth, pm, s->root, w, h);
+
+  xcb_gcontext_t gc = xcb_generate_id(s->con);
+  xcb_create_gc(s->con, gc, pm, XCB_GC_FOREGROUND, &s->config.bgcolor);
+  xcb_rectangle_t rect = { 0, 0, w, h };
+  xcb_poly_fill_rectangle(s->con, pm, gc, 1, &rect);
+  xcb_free_gc(s->con, gc);
+
+  xcb_change_window_attributes(s->con, s->root, XCB_CW_BACK_PIXMAP, &pm);
+  xcb_clear_area(s->con, 0, s->root, 0, 0, 0, 0);
+  // both names, different tools historically picked one or the other
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root,
+                      getatom(s, "_XROOTPMAP_ID"), XCB_ATOM_PIXMAP, 32, 1, &pm);
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root,
+                      getatom(s, "ESETROOT_PMAP_ID"), XCB_ATOM_PIXMAP, 32, 1, &pm);
+  xcb_flush(s->con);
+
+  // the root stops referencing the old pixmap only once it points at the new
+  // one, so the free happens here and not before. close down mode is left
+  // alone on purpose: RetainPermanent is per connection, it would outlive
+  // ragnar with every frame window it owns and not just this pixmap.
+  if(s->bgpixmap) {
+    xcb_free_pixmap(s->con, s->bgpixmap);
+  }
+  s->bgpixmap = pm;
 }
 
 /**

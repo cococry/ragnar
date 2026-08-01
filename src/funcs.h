@@ -531,6 +531,12 @@ void             applykblayout(state_t* s);
  * */
 void             loaddefaultcursor(state_t* s);
 
+/**
+ * @brief Paints the root window with the configured background colour.
+ * Does nothing when 'bg_color' is unset.
+ * */
+void             setbackground(state_t* s);
+
 void             setcursorhidden(state_t* s, bool hidden);
 
 /**

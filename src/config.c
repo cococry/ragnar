@@ -677,6 +677,11 @@ readconfig(state_t* s, config_data_t* data) {
 
   success = cfgreadstr(s, (const char**)&data->cursorimage, "cursor_image");
 
+  // optional, unset means the root window is left alone
+  int32_t bgcolor = 0;
+  data->bgcolor_set = (bool)config_lookup_int(&cfghndl, "bg_color", &bgcolor);
+  data->bgcolor = (uint32_t)bgcolor;
+
   // optional, the session's layout is used when unset
   data->kblayout = NULL;
   const char* kblayout = NULL;
@@ -716,6 +721,9 @@ reloadconfig(state_t* s, config_data_t* data) {
 
   // Load the default root cursor image
   loaddefaultcursor(s);
+
+  // Repaint the root background, the image or colour may have changed
+  setbackground(s);
 
   // Grab the window manager's keybinds
   grabkeybinds(s);
