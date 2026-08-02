@@ -79,7 +79,7 @@ Ragnar uses `libconfig` to load an external configuration file:
 ~/.config/ragnarwm/ragnar.cfg
 ```
 
-The configuration is loaded on startup and can be reloaded while the window manager is running, typically through a keybinding.
+The configuration is loaded on startup and can be reloaded while the window manager is running, typically through a keybinding (Super+C).
 
 Example contents of `.xinitrc`:
 
