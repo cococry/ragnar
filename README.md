@@ -84,7 +84,7 @@ The configuration is loaded on startup and can be reloaded while the window mana
 Example contents of `.xinitrc`:
 
 ```console
-feh --bg-fill ~/Downloads/nerd.jpg &
+feh --bg-fill ~/Downloads/nerd.jpg;
 picom -b; polybar &
 exec ragnar
 ```
