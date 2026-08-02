@@ -654,8 +654,6 @@ readconfig(state_t* s, config_data_t* data) {
   data->desktopnames = cfgevalstrarr(s, "desktop_names");
   success = data->desktopnames != NULL;
 
-  success = cfgreadbool(s, &data->usedecoration, "use_decoration");
-
   success = cfgreadfloat(s, &data->layoutmasterarea, "layout_master_area");
   success = cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_min");
   success = cfgreadfloat(s, &data->layoutmasterarea_max, "layout_master_area_max");
@@ -714,8 +712,6 @@ void
 reloadconfig(state_t* s, config_data_t* data) {
   destroyconfig();
 
-  bool using_decoration = s->config.usedecoration;
-
   initconfig(s);
   readconfig(s, data);
 
@@ -728,11 +724,7 @@ reloadconfig(state_t* s, config_data_t* data) {
   // Grab the window manager's keybinds
   grabkeybinds(s);
 
-  if(!using_decoration) {
-    s->config.usedecoration = false;
-  }
-
-  // Reload struts 
+  // Reload struts
   s->nwinstruts = 0;
   getwinstruts(s, s->root);
 

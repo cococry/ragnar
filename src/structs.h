@@ -465,8 +465,6 @@ typedef struct {
 
   char** desktopnames;
 
-  bool usedecoration;
-
   double layoutmasterarea;
   double layoutmasterarea_min;
   double layoutmasterarea_max;

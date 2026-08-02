@@ -5,6 +5,7 @@
 bin/
 pkg/
 /ragnar/
+src/ragnar/
 **.tar.zst
 .gdb.log
 compile_commands.json

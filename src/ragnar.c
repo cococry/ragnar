@@ -3429,13 +3429,6 @@ evpropertynotify(state_t* s, xcb_generic_event_t* ev) {
     if(prop_ev->atom == s->ewmh_atoms[EWMHwindowType]) {
       setwintype(s, cl);
     }
-    if(s->config.usedecoration) {
-      if(prop_ev->atom == s->ewmh_atoms[EWMHname]) {
-        if(cl->name)
-          free(cl->name);
-        cl->name = getclientname(s, cl);
-      }
-    }
   }
   xcb_flush(s->con);
 }
