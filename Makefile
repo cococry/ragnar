@@ -49,6 +49,15 @@ check:
 	$(CC) -o bin/config_check $(ALL_CFLAGS) $(LDFLAGS) cfg/config_check.c -lconfig
 	./bin/config_check cfg/ragnar.cfg
 
+# makepkg's $srcdir defaults to ./src, which collides with this project's
+# own src/. build out of tree so the clone never lands in the worktree.
+BUILDDIR ?= /tmp/makepkg
+SRCDEST  ?= $(HOME)/.cache/makepkg/sources
+
+.PHONY: package
+package:
+	BUILDDIR=$(BUILDDIR) SRCDEST=$(SRCDEST) makepkg -f
+
 .PHONY: clean
 clean:
 	$(RM) bin/*
