@@ -2372,12 +2372,32 @@ loaddefaultcursor(state_t* s) {
 
 /**
  * @brief Paints the root window with the configured background colour.
- * Does nothing when 'bg_color' is unset, leaving the root window to
- * whatever external wallpaper setter the user runs.
+ * Does nothing when 'bg_color' is unset and ragnar never painted, leaving
+ * the root window to whatever external wallpaper setter the user runs.
+ * Drops back to black when the key is removed across a reload.
  * */
 void
 setbackground(state_t* s) {
-  if(!s->config.bgcolor_set) return;
+  if(!s->config.bgcolor_set) {
+    // an unset key on a root ragnar never painted means an external setter
+    // owns it, so leave it alone. one it did paint has to be handed back,
+    // and black is what an untouched root shows.
+    if(!s->bgpixmap) return;
+
+    uint32_t black = 0x000000;
+    xcb_change_window_attributes(s->con, s->root, XCB_CW_BACK_PIXEL, &black);
+    xcb_clear_area(s->con, 0, s->root, 0, 0, 0, 0);
+    // drop these before the pixmap goes, a compositor still holding the id
+    // would otherwise be pointed at freed storage
+    xcb_delete_property(s->con, s->root, getatom(s, "_XROOTPMAP_ID"));
+    xcb_delete_property(s->con, s->root, getatom(s, "ESETROOT_PMAP_ID"));
+    xcb_flush(s->con);
+
+    xcb_free_pixmap(s->con, s->bgpixmap);
+    s->bgpixmap = 0;
+    xcb_flush(s->con);
+    return;
+  }
 
   uint16_t w = s->screen->width_in_pixels, h = s->screen->height_in_pixels;
 

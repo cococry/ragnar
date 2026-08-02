@@ -29,7 +29,7 @@ optdepends=(
   'picom: for proper vsync/fix tearing'
   'alacritty: default terminal keybind'
   'polybar: optional status/desktops bars'
-  'feh: optional wallpapers'
+  'feh: optional set wallpaper for X displays'
   'ttf-dejavu: fonts for both the above'
   'wireplumber: default volume keybinds'
   'brightnessctl: default brightness keybinds'
