@@ -27,6 +27,7 @@ depends=(
 makedepends=('git' 'make' 'gcc')
 optdepends=(
   'picom: for proper vsync/fix tearing'
+  'dmenu: default launcher'
   'alacritty: default terminal keybind'
   'polybar: optional status/desktops bars'
   'feh: optional set wallpaper for X displays'
