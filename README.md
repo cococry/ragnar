@@ -85,8 +85,8 @@ Example contents of `.xinitrc`:
 
 ```console
 feh --bg-fill ~/Downloads/nerd.jpg;
+xset s off -dpms;
 picom -b; polybar &
-xset s off -dpms
 exec ragnar
 ```
 
