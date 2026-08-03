@@ -35,6 +35,7 @@ optdepends=(
   'wireplumber: default volume keybinds'
   'brightnessctl: default brightness keybinds'
   'playerctl: default media player keybinds'
+  'xorg-xset: for screenblanking idle/DPMS'
 )
 
 provides=('ragnarwm')
