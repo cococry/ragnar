@@ -188,7 +188,7 @@ inline void cyclefocusdesktopdown(state_t* s, passthrough_data_t data) {
   if(new_desktop - 1 >= 0) {
     new_desktop--;
   } else {
-    new_desktop = s->config.maxdesktops - 1;
+    new_desktop = (int32_t)s->config.maxdesktops - 1;
   }
   switchclientdesktop(s, s->focus, new_desktop);
 }
