@@ -518,7 +518,9 @@ struct state_t {
   xcb_window_t root;
   xcb_screen_t* screen; 
 
-  float lastexposetime, lastmotiontime;
+  // X server timestamps: milliseconds, wrapping. Must stay uint32_t;
+  // a float only holds consecutive ms up to ~4.7h of server uptime.
+  uint32_t lastexposetime, lastmotiontime;
 
   // modifier bit num lock lives on, looked up at grab time. keybinds are
   // grabbed with and without it, and it is masked out when matching.

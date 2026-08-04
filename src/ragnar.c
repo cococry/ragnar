@@ -3172,7 +3172,11 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   // 0 disables the throttle rather than dividing by zero.
   uint32_t curtime = motion_ev->time;
   uint32_t fps = s->config.motion_notify_debounce_fps;
-  if (fps && (curtime - s->lastmotiontime) <= (1000 / fps)) {
+  // Unsigned subtraction is modular, so this stays correct across the
+  // ~49.7 day timestamp wrap. Multiply rather than divide by fps to keep
+  // the threshold exact; widen first so a large delta cannot overflow.
+  uint32_t delta = curtime - s->lastmotiontime;
+  if (fps && (uint64_t)delta * fps < 1000) {
     return;
   }
   s->lastmotiontime = curtime;
