@@ -311,9 +311,33 @@ getstate(state_t* s, xcb_window_t w)
         return -1;
     }
     
-    result = *((unsigned char *) xcb_get_property_value(prop_reply));
+    result = *((uint32_t *) xcb_get_property_value(prop_reply));
     free(prop_reply);
     return result;
+}
+
+/**
+ * @brief Sets the ICCCM WM_STATE property on a client's window.
+ *
+ * Mandatory for reparenting window managers (ICCCM 4.1.3.1): WM_STATE is
+ * what marks a window as a real client toplevel rather than a WM frame.
+ * Drag-and-drop target lookup, pagers and xprop/xwininfo all walk down
+ * from the root looking for it, and stop at the frame when it is absent.
+ *
+ * @param s The window manager's state
+ * @param cl The client to set the state on
+ * @param state One of XCB_ICCCM_WM_STATE_{WITHDRAWN,NORMAL,ICONIC}
+ */
+void
+setwmstate(state_t* s, client_t* cl, uint32_t state) {
+  if(!cl) {
+    return;
+  }
+  // WM_STATE is [state, icon window]; ragnar provides no icon window.
+  // uint32_t, not long: xcb writes the raw bytes with no 64->32 conversion.
+  uint32_t data[2] = { state, XCB_NONE };
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->wm_atoms[WMstate],
+      s->wm_atoms[WMstate], 32, 2, data);
 }
 
 
@@ -1117,8 +1141,9 @@ setxfocus(state_t* s, client_t* cl) {
   // Set input focus to client
   xcb_set_input_focus(s->con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
 
-  // Set active window hint
-  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->ewmh_atoms[EWMHactiveWindow],
+  // Set active window hint. EWMH puts this on the root window, not on the
+  // client; unfocusclient() already deletes it from the root.
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHactiveWindow],
       XCB_ATOM_WINDOW, 32, 1, &cl->win);
 
   // Raise take-focus event on the client
@@ -1253,6 +1278,7 @@ void
 hideclient(state_t* s, client_t* cl) {
   cl->ignoreunmap = true;
   cl->hidden = true;
+  setwmstate(s, cl, XCB_ICCCM_WM_STATE_ICONIC);
   xcb_unmap_window(s->con, cl->frame);
 }
 
@@ -1265,6 +1291,7 @@ hideclient(state_t* s, client_t* cl) {
 void
 showclient(state_t* s, client_t* cl) {
   cl->hidden = false;
+  setwmstate(s, cl, XCB_ICCCM_WM_STATE_NORMAL);
   xcb_map_window(s->con, cl->frame);
 }
 
@@ -2870,6 +2897,9 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
     if(cl->is_scratchpad) {
       removescratchpad(s, cl->scratchpad_index);
     }
+    // Window is going away but still exists here, so withdraw it properly.
+    // Not done on DestroyNotify: the window is already gone by then.
+    setwmstate(s, cl, XCB_ICCCM_WM_STATE_WITHDRAWN);
     unframeclient(s, cl);
   } else {
     xcb_unmap_window(s->con, unmap_ev->window);
@@ -3527,6 +3557,9 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
 
   // Create frame window for the client
   frameclient(s, cl);
+
+  // Publish WM_STATE now that the window is framed and managed
+  setwmstate(s, cl, XCB_ICCCM_WM_STATE_NORMAL);
 
   // Insert the new client at the beginning of the list
   cl->next = *clients;

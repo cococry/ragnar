@@ -284,6 +284,15 @@ void             frameclient(state_t* s, client_t* cl);
 void             unframeclient(state_t* s, client_t* cl);
 
 /**
+ * @brief Sets the ICCCM WM_STATE property on a client's window.
+ *
+ * @param s The window manager's state
+ * @param cl The client to set the state on
+ * @param state One of XCB_ICCCM_WM_STATE_{WITHDRAWN,NORMAL,ICONIC}
+ */
+void             setwmstate(state_t* s, client_t* cl, uint32_t state);
+
+/**
  * @brief Removes the focus from client's window by setting the 
  * X input focus to the root window and unsetting the highlight color 
  * of the window's border.
