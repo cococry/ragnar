@@ -977,11 +977,4 @@ void             logmsg(state_t* s, log_level_t lvl, const char* fmt, ...);
 void 		         logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args); 
 
 
-/**
- * @brief Returns the output of a given command 
- *
- * @param cmd The command to get the output of 
- *
- * @return The output of the given command */ 
-char* 		       cmdoutput(const char* cmd);
 

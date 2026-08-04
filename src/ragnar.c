@@ -4244,53 +4244,6 @@ void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
   fclose(file);
 }
 
-/**
- * @brief Returns the output of a given command 
- *
- * @param cmd The command to get the output of 
- *
- * @return The output of the given command */ 
-char* 
-cmdoutput(const char* cmd) {
-  FILE *fp;
-  char buffer[512];
-  char *result = NULL;
-  size_t result_len = 0;
-
-  // Open a pipe to the command
-  fp = popen(cmd, "r");
-  if (fp == NULL) {
-    perror("popen");
-    return NULL;
-  }
-
-  // Read the command's output
-  while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-    size_t buffer_len = strlen(buffer);
-    char *new_result = realloc(result, result_len + buffer_len + 1);
-    if (new_result == NULL) {
-      perror("realloc");
-      free(result);
-      pclose(fp);
-      return NULL;
-    }
-    result = new_result;
-    memcpy(result + result_len, buffer, buffer_len);
-    result_len += buffer_len;
-    result[result_len] = '\0'; 
-  }
-
-  // Close the pipe
-  if (pclose(fp) == -1) {
-    perror("pclose");
-    free(result);
-    return NULL;
-  }
-
-  return result;
-}
-
-
 int
 main(void) {
   state_t* wm_state = calloc(1, sizeof(state_t));
