@@ -651,8 +651,13 @@ readconfig(state_t* s, config_data_t* data) {
 
   cfgreadint(s, (int32_t*)&data->desktopinit, "initial_desktop");
 
+  // Fatal rather than dead: every desktop lookup indexes this array
+  // unguarded, so an unset desktop_names segfaults later instead of
+  // failing here where cfgevalstrarr has already logged why
   data->desktopnames = cfgevalstrarr(s, "desktop_names");
-  success = data->desktopnames != NULL;
+  if(!data->desktopnames) {
+    terminate(s, EXIT_FAILURE);
+  }
 
   cfgreadfloat(s, &data->layoutmasterarea, "layout_master_area");
   cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_min");

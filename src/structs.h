@@ -143,6 +143,7 @@ typedef enum {
   EWMHfullscreen, 
   EWMHactiveWindow, 
   EWMHwindowType,
+  EWMHwindowTypeNormal,
   EWMHwindowTypeDialog,
   EWMHwindowTypePopup,
   EWMHwindowTypeDock,
@@ -553,8 +554,12 @@ struct state_t {
   monitor_t* monitors;
   monitor_t* monfocus;
 
-  xcb_atom_t wm_atoms[WMcount]; 
+  xcb_atom_t wm_atoms[WMcount];
   xcb_atom_t ewmh_atoms[EWMHcount];
+  // Interned once in setupatoms like the arrays above, but kept out of
+  // ewmh_atoms: that whole array is published verbatim as _NET_SUPPORTED
+  // and neither of these is an EWMH hint ragnar supports
+  xcb_atom_t motifhints_atom, utf8str_atom;
 
   desktop_t* curdesktop;
 

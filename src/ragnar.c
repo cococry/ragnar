@@ -566,8 +566,8 @@ makeclient(state_t* s, xcb_window_t win) {
   // Adding the mapped client to our linked list
   client_t* cl = addclient(s, &clmon->clients, win);
 
-  // Setting border 
-  xcb_atom_t motif_hints = getatom(s, "_MOTIF_WM_HINTS");
+  // Setting border
+  xcb_atom_t motif_hints = s->motifhints_atom;
   xcb_get_property_cookie_t prop_cookie = xcb_get_property(
     s->con, 0, cl->win, motif_hints, motif_hints, 0, 5
   );
@@ -1021,9 +1021,9 @@ clienthasdeleteatom(state_t* s, client_t* cl) {
  */
 bool 
 clientshouldtile(state_t* s, client_t* cl) {
-  // Get atoms
-  xcb_atom_t wintype_atom = getatom(s, "_NET_WM_WINDOW_TYPE");
-  xcb_atom_t wintypenormal_atom = getatom(s, "_NET_WM_WINDOW_TYPE_NORMAL");
+  // Get atoms, interned once in setupatoms
+  xcb_atom_t wintype_atom = s->ewmh_atoms[EWMHwindowType];
+  xcb_atom_t wintypenormal_atom = s->ewmh_atoms[EWMHwindowTypeNormal];
 
   // Get window property for type
   xcb_get_property_cookie_t cookie = xcb_get_property(s->con, 0, cl->win, wintype_atom, XCB_ATOM_ATOM, 0, 1);
@@ -2067,7 +2067,7 @@ uploaddesktopnames(state_t* s, monitor_t* mon) {
                       XCB_PROP_MODE_REPLACE,
                       root_window,
                       s->ewmh_atoms[EWMHdesktopNames],
-                      getatom(s, "UTF8_STRING"),
+                      s->utf8str_atom,
                       8,
                       total_length,
                       data);
@@ -2217,6 +2217,7 @@ setupatoms(state_t* s) {
   s->ewmh_atoms[EWMHcheck]             = getatom(s, "_NET_SUPPORTING_WM_CHECK");
   s->ewmh_atoms[EWMHfullscreen]        = getatom(s, "_NET_WM_STATE_FULLSCREEN");
   s->ewmh_atoms[EWMHwindowType]        = getatom(s, "_NET_WM_WINDOW_TYPE");
+  s->ewmh_atoms[EWMHwindowTypeNormal]  = getatom(s, "_NET_WM_WINDOW_TYPE_NORMAL");
   s->ewmh_atoms[EWMHwindowTypeDialog]  = getatom(s, "_NET_WM_WINDOW_TYPE_DIALOG");
   s->ewmh_atoms[EWMHwindowTypePopup]  = getatom(s, "_NET_WM_WINDOW_TYPE_POPUP_MENU");
   s->ewmh_atoms[EWMHwindowTypeDock]    = getatom(s, "_NET_WM_WINDOW_TYPE_DOCK");
@@ -2225,7 +2226,10 @@ setupatoms(state_t* s) {
   s->ewmh_atoms[EWMHnumberOfDesktops]  = getatom(s, "_NET_NUMBER_OF_DESKTOPS");
   s->ewmh_atoms[EWMHdesktopNames]      = getatom(s, "_NET_DESKTOP_NAMES");
 
-  xcb_atom_t utf8str = getatom(s, "UTF8_STRING");
+  // Interned here so the per-client and per-desktop-change paths do not
+  // pay an intern round-trip each time they need them
+  s->motifhints_atom = getatom(s, "_MOTIF_WM_HINTS");
+  s->utf8str_atom = getatom(s, "UTF8_STRING");
 
   xcb_window_t wmcheckwin = xcb_generate_id(s->con);
   xcb_create_window(s->con, XCB_COPY_FROM_PARENT, wmcheckwin, s->root, 
@@ -2238,7 +2242,7 @@ setupatoms(state_t* s) {
 
   // Set _NET_WM_NAME property on the wmcheckwin
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, wmcheckwin, s->ewmh_atoms[EWMHname],
-      utf8str, 8, strlen("ragnar"), "ragnar");
+      s->utf8str_atom, 8, strlen("ragnar"), "ragnar");
 
   // Set _NET_WM_CHECK property on the root window
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcheck],
