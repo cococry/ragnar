@@ -633,7 +633,11 @@ void
 readconfig(state_t* s, config_data_t* data) {
   if(!data) return;
 
-  bool success = false;
+  // First: logmsg drops everything while logmessages is false, so any
+  // key read before this point fails silently. logfile is still NULL
+  // here, which logtofile checks, so only the console gets these
+  cfgreadbool(s, &data->logmessages, "log_messages");
+  cfgreadbool(s, &data->shouldlogtofile, "should_log_to_file");
 
   cfgreadint(s, (int32_t*)&data->maxstruts, "max_struts");
   cfgreadint(s, (int32_t*)&data->maxdesktops, "num_desktops");
@@ -656,6 +660,9 @@ readconfig(state_t* s, config_data_t* data) {
   // failing here where cfgevalstrarr has already logged why
   data->desktopnames = cfgevalstrarr(s, "desktop_names");
   if(!data->desktopnames) {
+    // straight to stderr, not logmsg: log_messages defaults to false, so
+    // a fatal config error would otherwise exit 1 with no reason given
+    fprintf(stderr, "ragnar: config: desktop_names is not set.\n");
     terminate(s, EXIT_FAILURE);
   }
 
@@ -707,15 +714,10 @@ readconfig(state_t* s, config_data_t* data) {
   // NULL on allocation failure; every use site checks before opening
   data->logfile = logpath;
 
-  cfgreadbool(s, &data->logmessages, "log_messages");
-  cfgreadbool(s, &data->shouldlogtofile, "should_log_to_file");
-
-
   data->keybinds = cfgevalkeybinds(s, (uint32_t*)&data->numkeybinds, "keybinds");
 
-  success = data->keybinds != NULL;
-
-  if(!success) {
+  if(!data->keybinds) {
+    fprintf(stderr, "ragnar: config: keybinds are not set.\n");
     terminate(s, EXIT_FAILURE);
   } else {
     printf("ragnar: successfully read config file.\n");
