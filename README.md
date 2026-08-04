@@ -90,7 +90,7 @@ picom -b; polybar &
 exec ragnar
 ```
 
-Then simply; `startx`
+Then simply; `startx` (and `pkill xinit` to stop it.)
 
 > By default it uses `alacritty` (Super+Return) and `dmenu` (Super+S), if you haven't edited these yet.
 > Both of these need fonts file; for instance `ttf-dejavu`
