@@ -66,9 +66,13 @@ void reloadconfigfile(state_t* s, passthrough_data_t data);
 
 #define VEC_INIT_CAP 4
 
+/* No allocation here on purpose: cap 0 makes the first vector_append call
+ * realloc(NULL, ...), which is malloc. The previous malloc sized itself
+ * with sizeof(*(vec)), the list struct rather than the element type, and
+ * cap = 0 discarded the block on first append regardless */
 #define vector_init(vec)                                                          \
 do {                                                                              \
-  (vec)->items = malloc(sizeof(*(vec)) * VEC_INIT_CAP);                           \
+  (vec)->items = NULL;                                                            \
   (vec)->size = 0;                                                                \
   (vec)->cap = 0;                                                                 \
 } while (0)

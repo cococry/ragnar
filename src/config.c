@@ -635,45 +635,45 @@ readconfig(state_t* s, config_data_t* data) {
 
   bool success = false;
 
-  success = cfgreadint(s, (int32_t*)&data->maxstruts, "max_struts");
-  success = cfgreadint(s, (int32_t*)&data->maxdesktops, "num_desktops");
-  success = cfgreadint(s, (int32_t*)&data->maxscratchpads, "max_scratchpads");
+  cfgreadint(s, (int32_t*)&data->maxstruts, "max_struts");
+  cfgreadint(s, (int32_t*)&data->maxdesktops, "num_desktops");
+  cfgreadint(s, (int32_t*)&data->maxscratchpads, "max_scratchpads");
 
-  success = cfgreadint(s, (int32_t*)&data->winborderwidth, "win_border_width");
-  success = cfgreadint(s, (int32_t*)&data->winbordercolor, "win_border_color");
-  success = cfgreadint(s, (int32_t*)&data->winbordercolor_selected, "win_border_color_selected");
+  cfgreadint(s, (int32_t*)&data->winborderwidth, "win_border_width");
+  cfgreadint(s, (int32_t*)&data->winbordercolor, "win_border_color");
+  cfgreadint(s, (int32_t*)&data->winbordercolor_selected, "win_border_color_selected");
 
-  success = cfgevalkbmod(s, &data->modkey, "mod_key"); 
-  success = cfgevalkbmod(s, &data->winmod, "win_mod"); 
+  cfgevalkbmod(s, &data->modkey, "mod_key"); 
+  cfgevalkbmod(s, &data->winmod, "win_mod"); 
 
-  success = cfgevalmousebtn(s, &data->movebtn, "move_button");
-  success = cfgevalmousebtn(s, &data->resizebtn, "resize_button");
+  cfgevalmousebtn(s, &data->movebtn, "move_button");
+  cfgevalmousebtn(s, &data->resizebtn, "resize_button");
 
-  success = cfgreadint(s, (int32_t*)&data->desktopinit, "initial_desktop");
+  cfgreadint(s, (int32_t*)&data->desktopinit, "initial_desktop");
 
   data->desktopnames = cfgevalstrarr(s, "desktop_names");
   success = data->desktopnames != NULL;
 
-  success = cfgreadfloat(s, &data->layoutmasterarea, "layout_master_area");
-  success = cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_min");
-  success = cfgreadfloat(s, &data->layoutmasterarea_max, "layout_master_area_max");
-  success = cfgreadfloat(s, &data->layoutmasterarea_step, "layout_master_area_step");
+  cfgreadfloat(s, &data->layoutmasterarea, "layout_master_area");
+  cfgreadfloat(s, &data->layoutmasterarea_min, "layout_master_area_min");
+  cfgreadfloat(s, &data->layoutmasterarea_max, "layout_master_area_max");
+  cfgreadfloat(s, &data->layoutmasterarea_step, "layout_master_area_step");
 
-  success = cfgreadfloat(s, &data->layoutsize_step, "layout_size_step");
-  success = cfgreadfloat(s, &data->layoutsize_min, "layout_size_min");
+  cfgreadfloat(s, &data->layoutsize_step, "layout_size_step");
+  cfgreadfloat(s, &data->layoutsize_min, "layout_size_min");
 
-  success = cfgreadfloat(s, &data->keywinmove_step, "key_win_move_step");
+  cfgreadfloat(s, &data->keywinmove_step, "key_win_move_step");
 
 
-  success = cfgreadint(s, (int32_t*)&data->winlayoutgap, "win_layout_gap");
-  success = cfgreadint(s, (int32_t*)&data->winlayoutgap_max, "win_layout_gap_max");
-  success = cfgreadint(s, (int32_t*)&data->winlayoutgap_step, "win_layout_gap_step");
+  cfgreadint(s, (int32_t*)&data->winlayoutgap, "win_layout_gap");
+  cfgreadint(s, (int32_t*)&data->winlayoutgap_max, "win_layout_gap_max");
+  cfgreadint(s, (int32_t*)&data->winlayoutgap_step, "win_layout_gap_step");
 
   data->initlayout = cfgevallayouttype(s, "initial_layout");
 
-  success = cfgreadint(s, (int32_t*)&data->motion_notify_debounce_fps, "motion_notify_debounce_fps");
+  cfgreadint(s, (int32_t*)&data->motion_notify_debounce_fps, "motion_notify_debounce_fps");
 
-  success = cfgreadstr(s, (const char**)&data->cursorimage, "cursor_image");
+  cfgreadstr(s, (const char**)&data->cursorimage, "cursor_image");
 
   // optional, unset means the root window is left alone
   int32_t bgcolor = 0;
@@ -687,14 +687,23 @@ readconfig(state_t* s, config_data_t* data) {
     data->kblayout = strdup(kblayout);
   }
 
+  // HOME is unset under su and some service managers, and strlen(NULL)
+  // segfaults before any of the logging guards get a chance to run
   const char* home = getenv("HOME");
+  if(!home) {
+    home = "/tmp";
+  }
   const char* relpath = "/.ragnarwm.log";
-  char* logpath = malloc(strlen(home) + strlen(relpath) + 2);
-  sprintf(logpath, "%s%s", home, relpath);
+  size_t logpathlen = strlen(home) + strlen(relpath) + 1;
+  char* logpath = malloc(logpathlen);
+  if(logpath) {
+    snprintf(logpath, logpathlen, "%s%s", home, relpath);
+  }
+  // NULL on allocation failure; every use site checks before opening
   data->logfile = logpath;
 
-  success = cfgreadbool(s, &data->logmessages, "log_messages");
-  success = cfgreadbool(s, &data->shouldlogtofile, "should_log_to_file");
+  cfgreadbool(s, &data->logmessages, "log_messages");
+  cfgreadbool(s, &data->shouldlogtofile, "should_log_to_file");
 
 
   data->keybinds = cfgevalkeybinds(s, (uint32_t*)&data->numkeybinds, "keybinds");

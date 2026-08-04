@@ -1,13 +1,14 @@
 *.o
 *.a
 *.patch
+*.data
+.*.md
+**.tar.zst
 .cache/
 bin/
 pkg/
 /ragnar/
 src/ragnar/
-**.tar.zst
 .gdb.log
 compile_commands.json
 compile_flags.txt
-.*.md

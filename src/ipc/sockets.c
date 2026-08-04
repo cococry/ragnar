@@ -16,7 +16,6 @@
 #include "../config.h"
 #include <ragnar/api.h>
 
-#define SOCKPATH "/tmp/ragnar_socket"
 #define MSGSIZE 256
 
 #include "sockets.h"
@@ -118,7 +117,10 @@ cmdgetwins(state_t* s, const uint8_t* data, int32_t clientfd) {
       numwins++;
     }
   }
-  RgWindow wins[numwins];
+  // +1 so the array is never zero-length, which is undefined for a VLA.
+  // The write below sizes itself on numwins, so the spare slot is never
+  // sent and the wire format is unchanged
+  RgWindow wins[numwins + 1];
   uint32_t i = 0;
   for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
     for(client_t* cl = mon->clients; cl != NULL; cl = cl->next) {
@@ -130,7 +132,7 @@ cmdgetwins(state_t* s, const uint8_t* data, int32_t clientfd) {
     logmsg(s, LogLevelError, 
            "ipc: RgCommandGetWindows: failed to send number of client windows.");
   }
-  if(write(clientfd, wins, sizeof(wins)) == -1) {
+  if(write(clientfd, wins, numwins * sizeof(*wins)) == -1) {
     logmsg(s, LogLevelError, 
            "ipc: RgCommandGetWindows: failed to send array of client windows.");
   }
@@ -321,13 +323,16 @@ ipcserverthread(void* arg) {
     terminate(s, EXIT_FAILURE);
   }
 
-  // Set up the address structure
+  // Set up the address structure. Written straight into sun_path: it is
+  // already zeroed and snprintf always terminates, so no strncpy dance
   memset(&addr, 0, sizeof(struct sockaddr_un));
   addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, SOCKPATH, sizeof(addr.sun_path) - 1);
+  rg_socket_path(addr.sun_path, sizeof(addr.sun_path));
 
-  // Remove any existing socket file
-  unlink(SOCKPATH);
+  // Remove any existing socket file. Per display, so this only ever
+  // clears this server's own stale socket, never another instance's
+  unlink(addr.sun_path);
+  logmsg(s, LogLevelTrace, "ipc: binding socket at '%s'.", addr.sun_path);
 
   // Bind the socket
   if (bind(serverfd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un)) < 0) {

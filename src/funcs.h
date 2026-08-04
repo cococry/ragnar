@@ -43,8 +43,12 @@ void             loop(state_t* s);
  * This function terminates the window manager by
  * giving up the connection to the X server and
  * exiting the program.
+ *
+ * _Noreturn because it always ends in exit(). Without it every caller
+ * looks like it can fall through, which the analyzer reports as use of
+ * values the error path already ruled out
  */
-void             terminate(state_t* s, int32_t exitcode);
+_Noreturn void   terminate(state_t* s, int32_t exitcode);
 
 /**
  * @brief Manages all windows that are avaiable on the 

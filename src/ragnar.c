@@ -113,7 +113,16 @@ setup(state_t* s) {
   initconfig(s);
   readconfig(s, &s->config);
 
-  fclose(fopen(s->config.logfile, "w"));
+  // Truncate the log for this run. The path can be unwritable or NULL,
+  // and fclose(NULL) is undefined rather than a no-op
+  if(s->config.logfile) {
+    FILE* logf = fopen(s->config.logfile, "w");
+    if(logf) {
+      fclose(logf);
+    } else {
+      perror("ragnar: error truncating log file.");
+    }
+  }
 
   s->lastexposetime = 0;
   s->lastmotiontime = 0;
@@ -260,7 +269,7 @@ loop(state_t* s) {
  * diss->conecting the s->conection to the X server and
  * exiting the program.
  */
-void 
+_Noreturn void
 terminate(state_t* s, int32_t exitcode) {
   // Release every client
   for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
@@ -416,7 +425,9 @@ void managewins(state_t* s) {
       s->nwinstruts = 0;
       getwinstruts(s, s->root);
 
-      if(!cl->floating) {
+      // makeclient returns NULL when the window vanishes mid-scan or its
+      // geometry cannot be read
+      if(cl && !cl->floating) {
         addtolayout(s, cl);
       }
     }
@@ -506,6 +517,11 @@ toggleedgewindows(state_t* s, client_t* cl, bool toggle) {
 }
 void 
 createwindowedges(state_t* s, client_t* cl) {
+  // addclient bails when the calloc fails, so this holds; keep the guard
+  // so the loop below can never walk a null array
+  if(!cl->edges) {
+    return;
+  }
   xcb_window_t parent = cl->win;
   uint32_t mask = XCB_CW_EVENT_MASK;
   uint32_t val = XCB_EVENT_MASK_ENTER_WINDOW |
@@ -591,7 +607,14 @@ makeclient(state_t* s, xcb_window_t win) {
   {
     bool success;
     cl->area = winarea(s, cl->frame, &success);
-    if(!success) return NULL;
+    if(!success) {
+      // addclient already linked cl into the monitor list, so bailing out
+      // here has to unlink it too; otherwise the list keeps a client with
+      // no valid geometry that every layout pass then walks over
+      unframeclient(s, cl);
+      releaseclient(s, cl->win);
+      return NULL;
+    }
   }
 
   cl->area.size = applysizehints(s, cl, cl->area.size);
@@ -2006,6 +2029,11 @@ swapclients(state_t* s, client_t* c1, client_t* c2) {
  */
 void
 uploaddesktopnames(state_t* s, monitor_t* mon) {
+  // monfocus is NULL before the first cursormon() and on a monitorless
+  // setup, and every caller passes it straight through
+  if(!mon) {
+    return;
+  }
   // Calculate the total length of the property value
   size_t total_length = 0;
   for (uint32_t i = 0; i < mon->desktopcount; i++) {
@@ -2013,8 +2041,13 @@ uploaddesktopnames(state_t* s, monitor_t* mon) {
     total_length += strlen(mon->activedesktops[i].name) + 1; // +1 for the null byte
   }
 
-  // Allocate memory for the data
+  // Allocate memory for the data. total_length is 0 when no desktop is
+  // initialized yet, and malloc(0) may legally hand back NULL
   char* data = malloc(total_length);
+  if(total_length && !data) {
+    logmsg(s, LogLevelError, "failed to allocate desktop name buffer.");
+    return;
+  }
 
   // Concatenate the desktop names into the data buffer
   char* ptr = data;
@@ -3538,7 +3571,10 @@ evfocusin(state_t* s, xcb_generic_event_t* ev) {
 client_t*
 addclient(state_t* s, client_t** clients, xcb_window_t win) {
   // Allocate client structure
-  client_t* cl = (client_t*)malloc(sizeof(*cl));
+  // calloc, not malloc: addclient reads some fields (frame, decorated,
+  // floating) before every field has been assigned, and garbage there
+  // decides real branches
+  client_t* cl = (client_t*)calloc(1, sizeof(*cl));
   cl->win = win;
   cl->edges = NULL;
 
@@ -3570,8 +3606,15 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
   // Update the head of the list to the new client
   *clients = cl;
 
-  edgegrab_t* edges = calloc(9, sizeof(edgegrab_t));
-  cl->edges = edges;  // Add this pointer to your client_t struct
+  // 9 so the window_edge_t values index directly, EdgeNone at 0 unused.
+  // createwindowedges walks this unconditionally, so a failed allocation
+  // is a null deref rather than a degraded client
+  cl->edges = calloc(9, sizeof(edgegrab_t));
+  if(!cl->edges) {
+    logmsg(s, LogLevelError, "failed to allocate edge grabs for client.");
+    releaseclient(s, cl->win);
+    return NULL;
+  }
 
   logmsg(s,  LogLevelTrace, "Added client ('%s') to the linked list of clients.", 
          cl->name ? cl->name : "No name");
@@ -3636,7 +3679,11 @@ releaseclient(state_t* s, xcb_window_t win) {
         if(wasfocus) {
           s->focus = NULL;
         }
-        // Freeing memory allocated for client
+        // Freeing memory allocated for client. name is strndup'd by
+        // getclientname and edges is the calloc'd array of 9 grab
+        // handles; both die with the client or they leak per window
+        free(cl->name);
+        free(cl->edges);
         free(cl);
         // Released client held focus; hand it to the first client
         // (master slot) still on the visible desktop
@@ -4153,7 +4200,7 @@ void logmsg(state_t* s, log_level_t lvl, const char* fmt, ...) {
  * @param fmt The format string
  * @param args The variadic arguments list */
 void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
-  if (!s->config.shouldlogtofile) return;
+  if (!s->config.shouldlogtofile || !s->config.logfile) return;
 
   FILE *file = fopen(s->config.logfile, "a");
 
@@ -4163,8 +4210,15 @@ void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
     return;
   }
 
-  // Write the date to the file
-  char* date = cmdoutput("date +\"%d.%m.%y %H:%M:%S\"");
+  // Write the date to the file. strftime, not popen("date"): logmsg runs
+  // in the event path of a SCHED_RR process, so a fork+exec of a shell per
+  // log line is both a leak (the buffer was never freed) and orders of
+  // magnitude slower than formatting it here
+  char date[32];
+  time_t now = time(NULL);
+  struct tm tm;
+  localtime_r(&now, &tm);
+  strftime(date, sizeof(date), "%d.%m.%y %H:%M:%S", &tm);
   fprintf(file, "%s | ", date);
 
   switch(lvl) {

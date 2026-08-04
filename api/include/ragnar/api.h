@@ -2,6 +2,36 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+/*
+ * IPC socket path, computed rather than fixed. XDG_RUNTIME_DIR scopes it
+ * per user and DISPLAY per X server: one hardcoded path meant a second
+ * instance (a nested Xephyr session, a second seat) unlinked the running
+ * WM's socket out from under it at startup
+ *
+ * static inline in the public header on purpose. The WM links none of
+ * api.c and only includes these headers, so this is the single place both
+ * sides can share the path and not drift apart
+ */
+static inline void
+rg_socket_path(char* buf, size_t len) {
+  const char* dir = getenv("XDG_RUNTIME_DIR");
+  if(!dir) {
+    dir = "/tmp";
+  }
+  const char* display = getenv("DISPLAY");
+  if(!display) {
+    display = ":0";
+  }
+  // DISPLAY is ":1" or ":0.0"; drop the leading colon so the result reads
+  // as ragnar-1.socket rather than ragnar-:1.socket
+  if(*display == ':') {
+    display++;
+  }
+  snprintf(buf, len, "%s/ragnar-%s.socket", dir, display);
+}
 
 typedef int32_t RgWindow;
 

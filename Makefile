@@ -4,7 +4,13 @@ CC = cc
 # bought nothing and -ffinite-math-only would let divisions by a zero-sized
 # monitor fold away instead of showing up.
 CFLAGS ?= -O2
-ALL_CFLAGS = $(CFLAGS) $(CPPFLAGS) -Wall -Wextra -pedantic -isystem api/include
+WARN_CFLAGS = -Wall -Wextra -pedantic -isystem api/include
+ALL_CFLAGS = $(CFLAGS) $(CPPFLAGS) $(WARN_CFLAGS)
+
+# -O1 : for readable ASAN traces. Separate from CFLAGS because that is ?=
+# and a distro build must not pick these up.
+DEBUG_CFLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined
+ALL_DEBUG_CFLAGS = $(DEBUG_CFLAGS) $(CPPFLAGS) $(WARN_CFLAGS)
 
 LDLIBS = -lxcb -lxcb-keysyms -lxcb-icccm -lxcb-cursor -lxcb-randr -lxcb-xfixes -lX11 -lX11-xcb -lconfig
 
@@ -19,6 +25,16 @@ SYSCONFDIR = /etc
 all:
 	mkdir -p ./bin
 	$(CC) -o bin/$(BIN) $(ALL_CFLAGS) $(LDFLAGS) $(SRC) $(LDLIBS)
+
+# ASan + UBSan + LSan build, overwrites bin/ragnar. LSan only reports on a
+# normal exit, so quit ragnar through its own keybind: a SIGKILL prints
+# nothing. .PHONY matters here, the ./debug Xephyr script shares the name
+# and make would otherwise call the target up to date.
+#   make debug && ./debug
+.PHONY: debug
+debug:
+	mkdir -p ./bin
+	$(CC) -o bin/$(BIN) $(ALL_DEBUG_CFLAGS) $(LDFLAGS) $(SRC) $(LDLIBS)
 
 # client-side IPC library. the WM links none of it, only the headers under
 # api/include are needed to build. opt-in, for writing external clients.
@@ -37,7 +53,6 @@ install-api:
 .PHONY: install
 install:
 	install -Dm755 bin/$(BIN) -t $(DESTDIR)$(BINDIR)
-	install -Dm644 ragnar.desktop -t $(DESTDIR)$(PREFIX)/share/xsessions
 	install -Dm644 cfg/ragnar.cfg -t $(DESTDIR)$(SYSCONFDIR)/ragnarwm
 
 # the shipped cfg is the only fallback a fresh install has: readconfig
@@ -65,5 +80,4 @@ clean:
 .PHONY: uninstall
 uninstall:
 	$(RM) $(DESTDIR)$(BINDIR)/$(BIN)
-	$(RM) $(DESTDIR)$(PREFIX)/share/xsessions/ragnar.desktop
 	$(RM) -r $(DESTDIR)$(SYSCONFDIR)/ragnarwm
