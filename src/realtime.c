@@ -25,9 +25,8 @@
  * puts every child back on SCHED_OTHER at nice 0 across fork, so the
  * terminals and browsers started by runcmd keybinds never inherit
  * real-time priority. sway does the same containment with a
- * pthread_atfork handler, which would not cover the popen() in
- * cmdoutput(): glibc implements popen with posix_spawn, and posix_spawn
- * does not run atfork handlers. The kernel flag covers both paths.
+ * pthread_atfork handler; the kernel flag needs no handler and holds
+ * across exec.
  *
  * pid 0 is the calling thread, so the IPC thread started in setup()
  * stays on SCHED_OTHER.

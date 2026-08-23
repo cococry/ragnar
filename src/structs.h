@@ -66,9 +66,13 @@ void reloadconfigfile(state_t* s, passthrough_data_t data);
 
 #define VEC_INIT_CAP 4
 
+/* No allocation here on purpose: cap 0 makes the first vector_append call
+ * realloc(NULL, ...), which is malloc. The previous malloc sized itself
+ * with sizeof(*(vec)), the list struct rather than the element type, and
+ * cap = 0 discarded the block on first append regardless */
 #define vector_init(vec)                                                          \
 do {                                                                              \
-  (vec)->items = malloc(sizeof(*(vec)) * VEC_INIT_CAP);                           \
+  (vec)->items = NULL;                                                            \
   (vec)->size = 0;                                                                \
   (vec)->cap = 0;                                                                 \
 } while (0)
@@ -139,6 +143,7 @@ typedef enum {
   EWMHfullscreen, 
   EWMHactiveWindow, 
   EWMHwindowType,
+  EWMHwindowTypeNormal,
   EWMHwindowTypeDialog,
   EWMHwindowTypePopup,
   EWMHwindowTypeDock,
@@ -465,8 +470,6 @@ typedef struct {
 
   char** desktopnames;
 
-  bool usedecoration;
-
   double layoutmasterarea;
   double layoutmasterarea_min;
   double layoutmasterarea_max;
@@ -496,6 +499,11 @@ typedef struct {
 
   // optional startup keyboard layout, setxkbmap syntax ("be nodeadkeys")
   char* kblayout;
+
+  // optional root window background colour. when unset the root is left
+  // alone so an external setter (xwallpaper, feh) keeps working.
+  uint32_t bgcolor;
+  bool     bgcolor_set;
 } config_data_t;
 
 typedef struct {
@@ -515,7 +523,9 @@ struct state_t {
   xcb_window_t root;
   xcb_screen_t* screen; 
 
-  float lastexposetime, lastmotiontime;
+  // X server timestamps: milliseconds, wrapping. Must stay uint32_t;
+  // a float only holds consecutive ms up to ~4.7h of server uptime.
+  uint32_t lastexposetime, lastmotiontime;
 
   // modifier bit num lock lives on, looked up at grab time. keybinds are
   // grabbed with and without it, and it is masked out when matching.
@@ -531,6 +541,10 @@ struct state_t {
   bool xfixes_ok;
   bool cursorhidden;
 
+  // root background pixmap ragnar owns, freed when it paints the next one.
+  // 0 when it has never painted one.
+  xcb_pixmap_t bgpixmap;
+
   client_t* focus;
   popup_list_t popups;
 
@@ -540,8 +554,12 @@ struct state_t {
   monitor_t* monitors;
   monitor_t* monfocus;
 
-  xcb_atom_t wm_atoms[WMcount]; 
+  xcb_atom_t wm_atoms[WMcount];
   xcb_atom_t ewmh_atoms[EWMHcount];
+  // Interned once in setupatoms like the arrays above, but kept out of
+  // ewmh_atoms: that whole array is published verbatim as _NET_SUPPORTED
+  // and neither of these is an EWMH hint ragnar supports
+  xcb_atom_t motifhints_atom, utf8str_atom;
 
   desktop_t* curdesktop;
 

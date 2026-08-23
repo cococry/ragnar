@@ -43,8 +43,12 @@ void             loop(state_t* s);
  * This function terminates the window manager by
  * giving up the connection to the X server and
  * exiting the program.
+ *
+ * _Noreturn because it always ends in exit(). Without it every caller
+ * looks like it can fall through, which the analyzer reports as use of
+ * values the error path already ruled out
  */
-void             terminate(state_t* s, int32_t exitcode);
+_Noreturn void   terminate(state_t* s, int32_t exitcode);
 
 /**
  * @brief Manages all windows that are avaiable on the 
@@ -282,6 +286,15 @@ void             frameclient(state_t* s, client_t* cl);
  * @param cl The client to unframe 
  */
 void             unframeclient(state_t* s, client_t* cl);
+
+/**
+ * @brief Sets the ICCCM WM_STATE property on a client's window.
+ *
+ * @param s The window manager's state
+ * @param cl The client to set the state on
+ * @param state One of XCB_ICCCM_WM_STATE_{WITHDRAWN,NORMAL,ICONIC}
+ */
+void             setwmstate(state_t* s, client_t* cl, uint32_t state);
 
 /**
  * @brief Removes the focus from client's window by setting the 
@@ -530,6 +543,12 @@ void             applykblayout(state_t* s);
  * The default image is the left facing pointer.
  * */
 void             loaddefaultcursor(state_t* s);
+
+/**
+ * @brief Paints the root window with the configured background colour.
+ * Does nothing when 'bg_color' is unset.
+ * */
+void             setbackground(state_t* s);
 
 void             setcursorhidden(state_t* s, bool hidden);
 
@@ -958,11 +977,4 @@ void             logmsg(state_t* s, log_level_t lvl, const char* fmt, ...);
 void 		         logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args); 
 
 
-/**
- * @brief Returns the output of a given command 
- *
- * @param cmd The command to get the output of 
- *
- * @return The output of the given command */ 
-char* 		       cmdoutput(const char* cmd);
 

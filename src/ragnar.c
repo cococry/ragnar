@@ -113,7 +113,16 @@ setup(state_t* s) {
   initconfig(s);
   readconfig(s, &s->config);
 
-  fclose(fopen(s->config.logfile, "w"));
+  // Truncate the log for this run. The path can be unwritable or NULL,
+  // and fclose(NULL) is undefined rather than a no-op
+  if(s->config.logfile) {
+    FILE* logf = fopen(s->config.logfile, "w");
+    if(logf) {
+      fclose(logf);
+    } else {
+      perror("ragnar: error truncating log file.");
+    }
+  }
 
   s->lastexposetime = 0;
   s->lastmotiontime = 0;
@@ -180,6 +189,9 @@ setup(state_t* s) {
 
   // Load the default root cursor image
   loaddefaultcursor(s);
+
+  // Paint the root background before any window is mapped over it
+  setbackground(s);
 
   // Apply the configured keyboard layout before resolving keybinds
   applykblayout(s);
@@ -257,7 +269,7 @@ loop(state_t* s) {
  * diss->conecting the s->conection to the X server and
  * exiting the program.
  */
-void 
+_Noreturn void
 terminate(state_t* s, int32_t exitcode) {
   // Release every client
   for(monitor_t* mon = s->monitors; mon != NULL; mon = mon->next) {
@@ -308,9 +320,33 @@ getstate(state_t* s, xcb_window_t w)
         return -1;
     }
     
-    result = *((unsigned char *) xcb_get_property_value(prop_reply));
+    result = *((uint32_t *) xcb_get_property_value(prop_reply));
     free(prop_reply);
     return result;
+}
+
+/**
+ * @brief Sets the ICCCM WM_STATE property on a client's window.
+ *
+ * Mandatory for reparenting window managers (ICCCM 4.1.3.1): WM_STATE is
+ * what marks a window as a real client toplevel rather than a WM frame.
+ * Drag-and-drop target lookup, pagers and xprop/xwininfo all walk down
+ * from the root looking for it, and stop at the frame when it is absent.
+ *
+ * @param s The window manager's state
+ * @param cl The client to set the state on
+ * @param state One of XCB_ICCCM_WM_STATE_{WITHDRAWN,NORMAL,ICONIC}
+ */
+void
+setwmstate(state_t* s, client_t* cl, uint32_t state) {
+  if(!cl) {
+    return;
+  }
+  // WM_STATE is [state, icon window]; ragnar provides no icon window.
+  // uint32_t, not long: xcb writes the raw bytes with no 64->32 conversion.
+  uint32_t data[2] = { state, XCB_NONE };
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->wm_atoms[WMstate],
+      s->wm_atoms[WMstate], 32, 2, data);
 }
 
 
@@ -389,7 +425,9 @@ void managewins(state_t* s) {
       s->nwinstruts = 0;
       getwinstruts(s, s->root);
 
-      if(!cl->floating) {
+      // makeclient returns NULL when the window vanishes mid-scan or its
+      // geometry cannot be read
+      if(cl && !cl->floating) {
         addtolayout(s, cl);
       }
     }
@@ -479,6 +517,11 @@ toggleedgewindows(state_t* s, client_t* cl, bool toggle) {
 }
 void 
 createwindowedges(state_t* s, client_t* cl) {
+  // addclient bails when the calloc fails, so this holds; keep the guard
+  // so the loop below can never walk a null array
+  if(!cl->edges) {
+    return;
+  }
   xcb_window_t parent = cl->win;
   uint32_t mask = XCB_CW_EVENT_MASK;
   uint32_t val = XCB_EVENT_MASK_ENTER_WINDOW |
@@ -523,8 +566,8 @@ makeclient(state_t* s, xcb_window_t win) {
   // Adding the mapped client to our linked list
   client_t* cl = addclient(s, &clmon->clients, win);
 
-  // Setting border 
-  xcb_atom_t motif_hints = getatom(s, "_MOTIF_WM_HINTS");
+  // Setting border
+  xcb_atom_t motif_hints = s->motifhints_atom;
   xcb_get_property_cookie_t prop_cookie = xcb_get_property(
     s->con, 0, cl->win, motif_hints, motif_hints, 0, 5
   );
@@ -564,7 +607,14 @@ makeclient(state_t* s, xcb_window_t win) {
   {
     bool success;
     cl->area = winarea(s, cl->frame, &success);
-    if(!success) return NULL;
+    if(!success) {
+      // addclient already linked cl into the monitor list, so bailing out
+      // here has to unlink it too; otherwise the list keeps a client with
+      // no valid geometry that every layout pass then walks over
+      unframeclient(s, cl);
+      releaseclient(s, cl->win);
+      return NULL;
+    }
   }
 
   cl->area.size = applysizehints(s, cl, cl->area.size);
@@ -971,9 +1021,9 @@ clienthasdeleteatom(state_t* s, client_t* cl) {
  */
 bool 
 clientshouldtile(state_t* s, client_t* cl) {
-  // Get atoms
-  xcb_atom_t wintype_atom = getatom(s, "_NET_WM_WINDOW_TYPE");
-  xcb_atom_t wintypenormal_atom = getatom(s, "_NET_WM_WINDOW_TYPE_NORMAL");
+  // Get atoms, interned once in setupatoms
+  xcb_atom_t wintype_atom = s->ewmh_atoms[EWMHwindowType];
+  xcb_atom_t wintypenormal_atom = s->ewmh_atoms[EWMHwindowTypeNormal];
 
   // Get window property for type
   xcb_get_property_cookie_t cookie = xcb_get_property(s->con, 0, cl->win, wintype_atom, XCB_ATOM_ATOM, 0, 1);
@@ -1114,8 +1164,9 @@ setxfocus(state_t* s, client_t* cl) {
   // Set input focus to client
   xcb_set_input_focus(s->con, XCB_INPUT_FOCUS_POINTER_ROOT, cl->win, XCB_CURRENT_TIME);
 
-  // Set active window hint
-  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, cl->win, s->ewmh_atoms[EWMHactiveWindow],
+  // Set active window hint. EWMH puts this on the root window, not on the
+  // client; unfocusclient() already deletes it from the root.
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHactiveWindow],
       XCB_ATOM_WINDOW, 32, 1, &cl->win);
 
   // Raise take-focus event on the client
@@ -1250,6 +1301,7 @@ void
 hideclient(state_t* s, client_t* cl) {
   cl->ignoreunmap = true;
   cl->hidden = true;
+  setwmstate(s, cl, XCB_ICCCM_WM_STATE_ICONIC);
   xcb_unmap_window(s->con, cl->frame);
 }
 
@@ -1262,6 +1314,7 @@ hideclient(state_t* s, client_t* cl) {
 void
 showclient(state_t* s, client_t* cl) {
   cl->hidden = false;
+  setwmstate(s, cl, XCB_ICCCM_WM_STATE_NORMAL);
   xcb_map_window(s->con, cl->frame);
 }
 
@@ -1976,6 +2029,11 @@ swapclients(state_t* s, client_t* c1, client_t* c2) {
  */
 void
 uploaddesktopnames(state_t* s, monitor_t* mon) {
+  // monfocus is NULL before the first cursormon() and on a monitorless
+  // setup, and every caller passes it straight through
+  if(!mon) {
+    return;
+  }
   // Calculate the total length of the property value
   size_t total_length = 0;
   for (uint32_t i = 0; i < mon->desktopcount; i++) {
@@ -1983,8 +2041,13 @@ uploaddesktopnames(state_t* s, monitor_t* mon) {
     total_length += strlen(mon->activedesktops[i].name) + 1; // +1 for the null byte
   }
 
-  // Allocate memory for the data
+  // Allocate memory for the data. total_length is 0 when no desktop is
+  // initialized yet, and malloc(0) may legally hand back NULL
   char* data = malloc(total_length);
+  if(total_length && !data) {
+    logmsg(s, LogLevelError, "failed to allocate desktop name buffer.");
+    return;
+  }
 
   // Concatenate the desktop names into the data buffer
   char* ptr = data;
@@ -2004,7 +2067,7 @@ uploaddesktopnames(state_t* s, monitor_t* mon) {
                       XCB_PROP_MODE_REPLACE,
                       root_window,
                       s->ewmh_atoms[EWMHdesktopNames],
-                      getatom(s, "UTF8_STRING"),
+                      s->utf8str_atom,
                       8,
                       total_length,
                       data);
@@ -2154,6 +2217,7 @@ setupatoms(state_t* s) {
   s->ewmh_atoms[EWMHcheck]             = getatom(s, "_NET_SUPPORTING_WM_CHECK");
   s->ewmh_atoms[EWMHfullscreen]        = getatom(s, "_NET_WM_STATE_FULLSCREEN");
   s->ewmh_atoms[EWMHwindowType]        = getatom(s, "_NET_WM_WINDOW_TYPE");
+  s->ewmh_atoms[EWMHwindowTypeNormal]  = getatom(s, "_NET_WM_WINDOW_TYPE_NORMAL");
   s->ewmh_atoms[EWMHwindowTypeDialog]  = getatom(s, "_NET_WM_WINDOW_TYPE_DIALOG");
   s->ewmh_atoms[EWMHwindowTypePopup]  = getatom(s, "_NET_WM_WINDOW_TYPE_POPUP_MENU");
   s->ewmh_atoms[EWMHwindowTypeDock]    = getatom(s, "_NET_WM_WINDOW_TYPE_DOCK");
@@ -2162,7 +2226,10 @@ setupatoms(state_t* s) {
   s->ewmh_atoms[EWMHnumberOfDesktops]  = getatom(s, "_NET_NUMBER_OF_DESKTOPS");
   s->ewmh_atoms[EWMHdesktopNames]      = getatom(s, "_NET_DESKTOP_NAMES");
 
-  xcb_atom_t utf8str = getatom(s, "UTF8_STRING");
+  // Interned here so the per-client and per-desktop-change paths do not
+  // pay an intern round-trip each time they need them
+  s->motifhints_atom = getatom(s, "_MOTIF_WM_HINTS");
+  s->utf8str_atom = getatom(s, "UTF8_STRING");
 
   xcb_window_t wmcheckwin = xcb_generate_id(s->con);
   xcb_create_window(s->con, XCB_COPY_FROM_PARENT, wmcheckwin, s->root, 
@@ -2175,7 +2242,7 @@ setupatoms(state_t* s) {
 
   // Set _NET_WM_NAME property on the wmcheckwin
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, wmcheckwin, s->ewmh_atoms[EWMHname],
-      utf8str, 8, strlen("ragnar"), "ragnar");
+      s->utf8str_atom, 8, strlen("ragnar"), "ragnar");
 
   // Set _NET_WM_CHECK property on the root window
   xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root, s->ewmh_atoms[EWMHcheck],
@@ -2365,6 +2432,68 @@ loaddefaultcursor(state_t* s) {
     logmsg(s, LogLevelError, "XFixes unavailable, cursor auto-hide disabled.");
   }
   setcursorhidden(s, true);
+}
+
+/**
+ * @brief Paints the root window with the configured background colour.
+ * Does nothing when 'bg_color' is unset and ragnar never painted, leaving
+ * the root window to whatever external wallpaper setter the user runs.
+ * Drops back to black when the key is removed across a reload.
+ * */
+void
+setbackground(state_t* s) {
+  if(!s->config.bgcolor_set) {
+    // an unset key on a root ragnar never painted means an external setter
+    // owns it, so leave it alone. one it did paint has to be handed back,
+    // and black is what an untouched root shows.
+    if(!s->bgpixmap) return;
+
+    uint32_t black = 0x000000;
+    xcb_change_window_attributes(s->con, s->root, XCB_CW_BACK_PIXEL, &black);
+    xcb_clear_area(s->con, 0, s->root, 0, 0, 0, 0);
+    // drop these before the pixmap goes, a compositor still holding the id
+    // would otherwise be pointed at freed storage
+    xcb_delete_property(s->con, s->root, getatom(s, "_XROOTPMAP_ID"));
+    xcb_delete_property(s->con, s->root, getatom(s, "ESETROOT_PMAP_ID"));
+    xcb_flush(s->con);
+
+    xcb_free_pixmap(s->con, s->bgpixmap);
+    s->bgpixmap = 0;
+    xcb_flush(s->con);
+    return;
+  }
+
+  uint16_t w = s->screen->width_in_pixels, h = s->screen->height_in_pixels;
+
+  // a pixmap rather than just XCB_CW_BACK_PIXEL: compositors read the root
+  // pixmap off _XROOTPMAP_ID to blend and blur against, and a background
+  // pixel leaves them nothing to point at.
+  xcb_pixmap_t pm = xcb_generate_id(s->con);
+  xcb_create_pixmap(s->con, s->screen->root_depth, pm, s->root, w, h);
+
+  xcb_gcontext_t gc = xcb_generate_id(s->con);
+  xcb_create_gc(s->con, gc, pm, XCB_GC_FOREGROUND, &s->config.bgcolor);
+  xcb_rectangle_t rect = { 0, 0, w, h };
+  xcb_poly_fill_rectangle(s->con, pm, gc, 1, &rect);
+  xcb_free_gc(s->con, gc);
+
+  xcb_change_window_attributes(s->con, s->root, XCB_CW_BACK_PIXMAP, &pm);
+  xcb_clear_area(s->con, 0, s->root, 0, 0, 0, 0);
+  // both names, different tools historically picked one or the other
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root,
+                      getatom(s, "_XROOTPMAP_ID"), XCB_ATOM_PIXMAP, 32, 1, &pm);
+  xcb_change_property(s->con, XCB_PROP_MODE_REPLACE, s->root,
+                      getatom(s, "ESETROOT_PMAP_ID"), XCB_ATOM_PIXMAP, 32, 1, &pm);
+  xcb_flush(s->con);
+
+  // the root stops referencing the old pixmap only once it points at the new
+  // one, so the free happens here and not before. close down mode is left
+  // alone on purpose: RetainPermanent is per connection, it would outlive
+  // ragnar with every frame window it owns and not just this pixmap.
+  if(s->bgpixmap) {
+    xcb_free_pixmap(s->con, s->bgpixmap);
+  }
+  s->bgpixmap = pm;
 }
 
 /**
@@ -2805,6 +2934,9 @@ evunmapnotify(state_t* s, xcb_generic_event_t* ev) {
     if(cl->is_scratchpad) {
       removescratchpad(s, cl->scratchpad_index);
     }
+    // Window is going away but still exists here, so withdraw it properly.
+    // Not done on DestroyNotify: the window is already gone by then.
+    setwmstate(s, cl, XCB_ICCCM_WM_STATE_WITHDRAWN);
     unframeclient(s, cl);
   } else {
     xcb_unmap_window(s->con, unmap_ev->window);
@@ -3077,7 +3209,11 @@ evmotionnotify(state_t* s, xcb_generic_event_t* ev) {
   // 0 disables the throttle rather than dividing by zero.
   uint32_t curtime = motion_ev->time;
   uint32_t fps = s->config.motion_notify_debounce_fps;
-  if (fps && (curtime - s->lastmotiontime) <= (1000 / fps)) {
+  // Unsigned subtraction is modular, so this stays correct across the
+  // ~49.7 day timestamp wrap. Multiply rather than divide by fps to keep
+  // the threshold exact; widen first so a large delta cannot overflow.
+  uint32_t delta = curtime - s->lastmotiontime;
+  if (fps && (uint64_t)delta * fps < 1000) {
     return;
   }
   s->lastmotiontime = curtime;
@@ -3364,13 +3500,6 @@ evpropertynotify(state_t* s, xcb_generic_event_t* ev) {
     if(prop_ev->atom == s->ewmh_atoms[EWMHwindowType]) {
       setwintype(s, cl);
     }
-    if(s->config.usedecoration) {
-      if(prop_ev->atom == s->ewmh_atoms[EWMHname]) {
-        if(cl->name)
-          free(cl->name);
-        cl->name = getclientname(s, cl);
-      }
-    }
   }
   xcb_flush(s->con);
 }
@@ -3446,7 +3575,10 @@ evfocusin(state_t* s, xcb_generic_event_t* ev) {
 client_t*
 addclient(state_t* s, client_t** clients, xcb_window_t win) {
   // Allocate client structure
-  client_t* cl = (client_t*)malloc(sizeof(*cl));
+  // calloc, not malloc: addclient reads some fields (frame, decorated,
+  // floating) before every field has been assigned, and garbage there
+  // decides real branches
+  client_t* cl = (client_t*)calloc(1, sizeof(*cl));
   cl->win = win;
   cl->edges = NULL;
 
@@ -3470,13 +3602,23 @@ addclient(state_t* s, client_t** clients, xcb_window_t win) {
   // Create frame window for the client
   frameclient(s, cl);
 
+  // Publish WM_STATE now that the window is framed and managed
+  setwmstate(s, cl, XCB_ICCCM_WM_STATE_NORMAL);
+
   // Insert the new client at the beginning of the list
   cl->next = *clients;
   // Update the head of the list to the new client
   *clients = cl;
 
-  edgegrab_t* edges = calloc(9, sizeof(edgegrab_t));
-  cl->edges = edges;  // Add this pointer to your client_t struct
+  // 9 so the window_edge_t values index directly, EdgeNone at 0 unused.
+  // createwindowedges walks this unconditionally, so a failed allocation
+  // is a null deref rather than a degraded client
+  cl->edges = calloc(9, sizeof(edgegrab_t));
+  if(!cl->edges) {
+    logmsg(s, LogLevelError, "failed to allocate edge grabs for client.");
+    releaseclient(s, cl->win);
+    return NULL;
+  }
 
   logmsg(s,  LogLevelTrace, "Added client ('%s') to the linked list of clients.", 
          cl->name ? cl->name : "No name");
@@ -3541,7 +3683,11 @@ releaseclient(state_t* s, xcb_window_t win) {
         if(wasfocus) {
           s->focus = NULL;
         }
-        // Freeing memory allocated for client
+        // Freeing memory allocated for client. name is strndup'd by
+        // getclientname and edges is the calloc'd array of 9 grab
+        // handles; both die with the client or they leak per window
+        free(cl->name);
+        free(cl->edges);
         free(cl);
         // Released client held focus; hand it to the first client
         // (master slot) still on the visible desktop
@@ -4058,7 +4204,7 @@ void logmsg(state_t* s, log_level_t lvl, const char* fmt, ...) {
  * @param fmt The format string
  * @param args The variadic arguments list */
 void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
-  if (!s->config.shouldlogtofile) return;
+  if (!s->config.shouldlogtofile || !s->config.logfile) return;
 
   FILE *file = fopen(s->config.logfile, "a");
 
@@ -4068,8 +4214,15 @@ void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
     return;
   }
 
-  // Write the date to the file
-  char* date = cmdoutput("date +\"%d.%m.%y %H:%M:%S\"");
+  // Write the date to the file. strftime, not popen("date"): logmsg runs
+  // in the event path of a SCHED_RR process, so a fork+exec of a shell per
+  // log line is both a leak (the buffer was never freed) and orders of
+  // magnitude slower than formatting it here
+  char date[32];
+  time_t now = time(NULL);
+  struct tm tm;
+  localtime_r(&now, &tm);
+  strftime(date, sizeof(date), "%d.%m.%y %H:%M:%S", &tm);
   fprintf(file, "%s | ", date);
 
   switch(lvl) {
@@ -4094,53 +4247,6 @@ void logtofile(log_level_t lvl, state_t* s, const char* fmt, va_list args) {
   // Close the file
   fclose(file);
 }
-
-/**
- * @brief Returns the output of a given command 
- *
- * @param cmd The command to get the output of 
- *
- * @return The output of the given command */ 
-char* 
-cmdoutput(const char* cmd) {
-  FILE *fp;
-  char buffer[512];
-  char *result = NULL;
-  size_t result_len = 0;
-
-  // Open a pipe to the command
-  fp = popen(cmd, "r");
-  if (fp == NULL) {
-    perror("popen");
-    return NULL;
-  }
-
-  // Read the command's output
-  while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-    size_t buffer_len = strlen(buffer);
-    char *new_result = realloc(result, result_len + buffer_len + 1);
-    if (new_result == NULL) {
-      perror("realloc");
-      free(result);
-      pclose(fp);
-      return NULL;
-    }
-    result = new_result;
-    memcpy(result + result_len, buffer, buffer_len);
-    result_len += buffer_len;
-    result[result_len] = '\0'; 
-  }
-
-  // Close the pipe
-  if (pclose(fp) == -1) {
-    perror("pclose");
-    free(result);
-    return NULL;
-  }
-
-  return result;
-}
-
 
 int
 main(void) {

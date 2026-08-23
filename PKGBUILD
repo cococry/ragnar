@@ -26,14 +26,18 @@ depends=(
 )
 makedepends=('git' 'make' 'gcc')
 optdepends=(
-  'picom: for proper vsync/fix tearing'
+  'picom: additional compositor features'
+  'dmenu: default launcher'
   'alacritty: default terminal keybind'
   'polybar: optional status/desktops bars'
+  'feh: optional set wallpaper for X displays'
   'ttf-dejavu: fonts for both the above'
   'wireplumber: default volume keybinds'
   'brightnessctl: default brightness keybinds'
   'playerctl: default media player keybinds'
+  'xorg-xset: for screenblanking idle/DPMS'
 )
+
 provides=('ragnarwm')
 options=('!debug')
 backup=('etc/ragnarwm/ragnar.cfg')
@@ -43,6 +47,7 @@ install="${pkgname}.install"
 source=("${_pkgname}::git+${url}.git#branch=${_branch}")
 sha256sums=('SKIP')
 
+# TODO add a release flow that bumps on gh automatically
 pkgver() {
   cd $_pkgname || exit 1
   echo $pkgver
@@ -51,6 +56,12 @@ pkgver() {
 build() {
   cd $_pkgname || exit 1
   make
+}
+
+# check the shipped config is not borken
+check() {
+  cd $_pkgname || exit 1
+  make check
 }
 
 package() {

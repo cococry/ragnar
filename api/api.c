@@ -106,10 +106,10 @@ clientinit(socket_client_t* cl) {
 
   memset(&cl->addr, 0, sizeof(struct sockaddr_un));
   cl->addr.sun_family = AF_UNIX;
-  strncpy(cl->addr.sun_path, SOCKPATH, sizeof(cl->addr.sun_path) - 1);
+  rg_socket_path(cl->addr.sun_path, sizeof(cl->addr.sun_path));
 
   if(s_logging) {
-    printf("ragnar api: created unix domain socket on: '%s'\n", SOCKPATH);
+    printf("ragnar api: created unix domain socket on: '%s'\n", cl->addr.sun_path);
   }
   return 0;
 }

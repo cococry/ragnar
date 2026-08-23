@@ -3,6 +3,8 @@
 #include "funcs.h"
 #include "structs.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -147,14 +149,10 @@ inline void cycledesktopdown(state_t* s, passthrough_data_t data) {
   if(newdesktop - 1 >= 0) {
     newdesktop--;
   } else {
-    uint32_t ninit = 0;
-    for(uint32_t i = 0; i < s->monfocus->desktopcount; i++) {
-      if(!s->monfocus->activedesktops[i].init) continue;
-      ninit++;
-    }
-    newdesktop = ninit - 1;
-
-
+    // Wrap to the last slot, mirroring cycledesktopup's wrap to 0.
+    // Bound on maxdesktops, not on the initialized count: desktops are
+    // initialized lazily, so an empty slot is a valid destination.
+    newdesktop = (int32_t)s->config.maxdesktops - 1;
   }
   switchdesktop(s, (passthrough_data_t){.i = newdesktop});
 }
@@ -192,7 +190,7 @@ inline void cyclefocusdesktopdown(state_t* s, passthrough_data_t data) {
   if(new_desktop - 1 >= 0) {
     new_desktop--;
   } else {
-    new_desktop = s->config.maxdesktops - 1;
+    new_desktop = (int32_t)s->config.maxdesktops - 1;
   }
   switchclientdesktop(s, s->focus, new_desktop);
 }
@@ -699,8 +697,10 @@ inline void movefocusup(state_t* s, passthrough_data_t data) {
   if(!s->focus || !s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
+  // keywinmove_step is a double (libconfig reads floats as double), so
+  // narrow explicitly at the v2_t boundary rather than implicitly
   v2_t dest = (v2_t){pos.x,
-    MIN(MAX(pos.y - s->config.keywinmove_step, s->monfocus->area.pos.y), 
+    (float)MIN(MAX(pos.y - s->config.keywinmove_step, s->monfocus->area.pos.y),
         s->monfocus->area.pos.y + s->monfocus->area.size.y
         - s->focus->area.size.y)};
   moveclient(s, s->focus, dest, true);
@@ -720,8 +720,8 @@ inline void movefocusdown(state_t* s, passthrough_data_t data) {
 
   v2_t pos = s->focus->area.pos;
   v2_t dest = (v2_t){pos.x,
-    MIN(MAX(pos.y + s->config.keywinmove_step, s->monfocus->area.pos.y), 
-        s->monfocus->area.pos.y + s->monfocus->area.size.y 
+    (float)MIN(MAX(pos.y + s->config.keywinmove_step, s->monfocus->area.pos.y),
+        s->monfocus->area.pos.y + s->monfocus->area.size.y
         - s->focus->area.size.y)};
   moveclient(s, s->focus, dest, true);
   ignoreenterlayout(s);
@@ -739,8 +739,8 @@ inline void movefocusleft(state_t* s, passthrough_data_t data) {
   if(!s->focus || !s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
-  v2_t dest = (v2_t){MIN(MAX(pos.x - s->config.keywinmove_step, s->monfocus->area.pos.x), 
-      s->monfocus->area.pos.x + s->monfocus->area.size.x 
+  v2_t dest = (v2_t){(float)MIN(MAX(pos.x - s->config.keywinmove_step, s->monfocus->area.pos.x),
+      s->monfocus->area.pos.x + s->monfocus->area.size.x
       - s->focus->area.size.x), pos.y};
   moveclient(s, s->focus, dest, true);
   ignoreenterlayout(s);
@@ -758,7 +758,7 @@ inline void movefocusright(state_t* s, passthrough_data_t data) {
   if(!s->focus || !s->focus->floating) return;
 
   v2_t pos = s->focus->area.pos;
-  v2_t dest = (v2_t){MIN(MAX(pos.x + s->config.keywinmove_step, s->monfocus->area.pos.x),
+  v2_t dest = (v2_t){(float)MIN(MAX(pos.x + s->config.keywinmove_step, s->monfocus->area.pos.x),
       s->monfocus->area.pos.x + s->monfocus->area.size.x
       - s->focus->area.size.x), pos.y};
   moveclient(s, s->focus, dest, true);
