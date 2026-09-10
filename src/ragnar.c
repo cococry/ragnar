@@ -91,7 +91,7 @@ xerror(Display *dpy, XErrorEvent *ee)
  * @param s The window manager's state
  * This function establishes a connection to the X server,
  * sets up the root window and window manager keybindings.
- * The event mask of the root window is being cofigured to  
+ * The event mask of the root window is being configured to  
  * listen to necessary events. 
  * After the configuration of the root window, all the specified
  * keybinds in the config are grabbed by the window manager.
